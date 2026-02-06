@@ -1,0 +1,5 @@
+{
+    "password": "CleverSearch2026!@", 
+    "backend_roles": ["admin"], 
+    "opendistro_security_roles": ["all_access"]
+  }

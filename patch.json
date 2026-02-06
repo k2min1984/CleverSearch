@@ -1,0 +1,9 @@
+{
+    "operations": [
+      {
+        "op": "replace", 
+        "path": "/password", 
+        "value": "CleverSearch2026!"
+      }
+    ]
+  }

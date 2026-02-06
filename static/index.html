@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HanSeek 통합검색</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 하이라이트 태그에 대한 추가 스타일 (필요시) */
+        em {
+            font-style: normal;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <div class="max-w-4xl mx-auto py-12 px-4">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-blue-600 mb-2">HanSeek</h1>
+            <p class="text-gray-500">한전아트센터 종합문서 통합검색 시스템</p>
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <div class="flex gap-2">
+                <input type="text" id="searchInput" 
+                    class="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="검색어를 입력하세요 (예: 대관, 회원, 코드)"
+                    onkeyup="if(window.event.keyCode==13){performSearch()}">
+                <button onclick="performSearch()" 
+                    class="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition">
+                    검색
+                </button>
+            </div>
+        </div>
+
+        <div id="resultCount" class="mb-4 text-gray-600 font-medium hidden">
+            검색 결과 <span id="countNumber" class="text-blue-600">0</span>건
+        </div>
+
+        <div id="resultList" class="space-y-4">
+            <div class="text-center py-20 text-gray-400">
+                검색어를 입력하고 검색 버튼을 눌러주세요.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * 통합 검색 실행 함수
+         */
+        async function performSearch() {
+            const query = document.getElementById('searchInput').value;
+            const resultList = document.getElementById('resultList');
+            const resultCount = document.getElementById('resultCount');
+            const countNumber = document.getElementById('countNumber');
+
+            if (!query || !query.trim()) {
+                alert('검색어를 입력해주세요.');
+                return;
+            }
+
+            // 로딩 상태 표시
+            resultList.innerHTML = '<div class="text-center py-10 text-blue-500 font-medium">데이터를 분석 중입니다...</div>';
+
+            try {
+                // 백엔드 API 호출 (SearchService.execute_search와 연결)
+                const response = await fetch('https://127.0.0.1:8000/api/v1/search/query', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        include_keywords: [],
+                        exclude_keywords: [],
+                        start_date: "",
+                        end_date: "",
+                        size: 20
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`서버 응답 에러: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                // 결과 UI 업데이트
+                resultCount.classList.remove('hidden');
+                countNumber.innerText = data.total || 0;
+                resultList.innerHTML = '';
+
+                if (data.items && data.items.length > 0) {
+                    data.items.forEach(item => {
+                        const card = document.createElement('div');
+                        card.className = 'bg-white p-5 rounded-lg shadow border-l-4 border-blue-500 hover:shadow-lg transition cursor-pointer';
+                        
+                        // [중요] 백엔드 SearchService에서 가공된 summary(빨간색 강조 포함)를 사용
+                        const displaySummary = item.summary || '상세 내용 요약 정보가 없습니다.';
+
+                        card.innerHTML = `
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded">
+                                    ${item.location}
+                                </span>
+                            </div>
+                            <div class="text-gray-800 text-lg mb-2 leading-relaxed">
+                                ${displaySummary}
+                            </div>
+                            <div class="text-sm text-gray-400">
+                                파일: ${item.content.origin_file || '정보 없음'} | 시트: ${item.content.origin_sheet || 'N/A'}
+                            </div>
+                        `;
+                        
+                        // 클릭 시 전체 텍스트를 볼 수 있는 확장성 고려 (추후 개발)
+                        card.onclick = () => console.log("상세 데이터:", item.content);
+                        
+                        resultList.appendChild(card);
+                    });
+                } else {
+                    resultList.innerHTML = '<div class="text-center py-20 text-gray-400">일치하는 검색 결과가 없습니다.</div>';
+                }
+            } catch (error) {
+                console.error("Search Error:", error);
+                resultList.innerHTML = '<div class="text-center py-20 text-red-500 font-medium">서버 연결에 실패했습니다. API 서버가 작동 중인지 확인하세요.</div>';
+            }
+        }
+    </script>
+</body>
+</html>

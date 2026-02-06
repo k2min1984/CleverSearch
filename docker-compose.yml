@@ -1,0 +1,98 @@
+########################################################
+# Description
+# Docker Compose 서비스 정의
+# - CleverSearch Engine (OpenSearch + Nori)
+# - Dashboards (시각화 도구)
+#
+# Modified History
+# 강광묵 / 2026-01-20 / 명칭 변경 및 볼륨 경로 상대경로화
+########################################################
+
+version: '3.8'
+
+services:
+  # 1. 메인 검색 엔진 (OpenSearch)
+  opensearch:
+    build:
+      context: .
+      dockerfile: opensearch.Dockerfile
+    container_name: cleversearch-os  # 컨테이너 이름 변경
+    environment:
+      - cluster.name=cleversearch-cluster
+      - node.name=cleversearch-node1
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      
+      # [보안 설정] SSL/TLS 활성화
+      - plugins.security.disabled=false
+      - plugins.security.ssl.http.enabled=true
+      
+      # [인증서 경로] 프로젝트 루트의 cert 폴더 기준
+      - plugins.security.ssl.http.pemcert_filepath=cert/localhost+2.pem
+      - plugins.security.ssl.http.pemkey_filepath=cert/localhost+2-key.pem
+      - plugins.security.ssl.http.pemtrustedcas_filepath=cert/localhost+2.pem
+      
+      # 노드 간 통신 설정 (단일 노드라 최소 설정)
+      - plugins.security.ssl.transport.enforce_hostname_verification=false
+      - plugins.security.ssl.transport.pemcert_filepath=esnode.pem
+      - plugins.security.ssl.transport.pemkey_filepath=esnode-key.pem
+      - plugins.security.ssl.transport.pemtrustedcas_filepath=root-ca.pem
+      
+      # JAVA 힙 메모리 설정 (서버 사양에 따라 조절)
+      - "OPENSEARCH_JAVA_OPTS=-Xms1024m -Xmx2048m"
+      
+    volumes:
+      # [경로 수정] 상대 경로를 사용하여 다른 PC에서도 바로 실행되도록 변경
+      - ./opensearch_data:/usr/share/opensearch/data
+      # 인증서 폴더 마운트
+      - ./cert:/usr/share/opensearch/config/cert
+      
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    networks:
+      - cleversearch-net
+
+  # 2. 데이터 시각화 및 관리 (Dashboards)
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.0
+    container_name: cleversearch-dashboards
+    environment:
+      # OpenSearch 컨테이너 이름과 포트로 연결
+      - 'OPENSEARCH_HOSTS=["https://cleversearch-os:9200"]'
+      - "OPENSEARCH_USERNAME=admin"
+      - "OPENSEARCH_PASSWORD=admin" # 초기 비밀번호 (접속 후 변경 권장)
+      - "OPENSEARCH_SSL_VERIFICATIONMODE=none"
+      - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=false"
+      - "SERVER_SSL_ENABLED=true"  # SSL 활성화
+      - "SERVER_SSL_CERTIFICATE=/usr/share/opensearch-dashboards/config/cert/localhost+2.pem"
+      - "SERVER_SSL_KEY=/usr/share/opensearch-dashboards/config/cert/localhost+2-key.pem"
+    volumes:
+      # [중요] 인증서 폴더를 대시보드에도 연결해줘야 함
+      - ./cert:/usr/share/opensearch-dashboards/config/cert
+    ports:
+      - "5601:5601"
+    depends_on:
+      - opensearch
+    networks:
+      - cleversearch-net
+
+  # 3. FastAPI 애플리케이션 (옵션: Docker로 같이 띄울 경우 추가)
+  api:
+    build: .
+    container_name: cleversearch-api
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENSEARCH_URL=https://cleversearch-os:9200
+    depends_on:
+      - opensearch
+    networks:
+      - cleversearch-net
+
+networks:
+  cleversearch-net:
+    driver: bridge
