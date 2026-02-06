@@ -1,0 +1,13 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# 환경 변수 및 인증서 (mkcert로 만든 파일 포함)
+.env
+*.pem
+localhost+*-key.pem
+
+# OS 관련
+.DS_Store
+Thumbs.db

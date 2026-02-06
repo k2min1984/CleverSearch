@@ -4,6 +4,8 @@ import struct
 import zipfile
 import xml.etree.ElementTree as ET
 import olefile
+# import
+from app.utils import string
 
 # [한글파일] 추출
 def _extract_text(content: bytes, ext: str) -> str:
@@ -73,7 +75,7 @@ def _extract_text_hwp(content: bytes) -> str:
                     
                     try:
                         raw_text = rec_data.decode('utf-16-le', errors='ignore')
-                        clean_text = _clean_text(raw_text)
+                        clean_text = string.clean_text(raw_text)
                         
                         if clean_text.strip():
                             text_result.append(clean_text)
@@ -114,7 +116,7 @@ def _extract_text_hwpx(content: bytes) -> str:
                     for elem in root.iter():
                         # 텍스트 태그 <hp:t>
                         if elem.tag.endswith('t') and elem.text:
-                            clean_text = _clean_text(elem.text)
+                            clean_text = string.clean_text(elem.text)
                             if clean_text:
                                 text_result.append(clean_text)
                         
@@ -127,7 +129,7 @@ def _extract_text_hwpx(content: bytes) -> str:
         return "".join(text_result).strip()
 
     except Exception as e:
-        return f"HWPX 추출 중 오류: {str(e)}"
+        return f"HWPX 추출 중 오류: {str(e)}
 
 # [한글파일] 필터링
 def _clean_text(text: str) -> str:
