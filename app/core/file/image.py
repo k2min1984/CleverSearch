@@ -70,7 +70,7 @@ def _extract_text(content: bytes) -> str:
         
         # 추출된 단어 결합
         raw_result = " ".join(filtered_text)
-        
+        print("[ORC 텍스트 추출]\n",raw_result)
         # 6. 최종 문자열 정제 (특수문자 및 제어문자 정리)
         return string.clean_text(raw_result)
 

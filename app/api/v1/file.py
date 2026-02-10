@@ -120,7 +120,7 @@ async def upload_file(file: UploadFile = File(...)):
             text_content = office.parse_pptx(content)
 
         elif ext in ['jpg', 'jpeg', 'png']:
-            text_content = image.extract_text(content)
+            text_content = image._extract_text(content)
 
         # 4. 본문용 텍스트 1차 정화 (사용자님이 만든 hwp._clean_text 활용)
         clean_body_text = hwp._clean_text(text_content)

@@ -129,7 +129,7 @@ def _extract_text_hwpx(content: bytes) -> str:
         return "".join(text_result).strip()
 
     except Exception as e:
-        return f"HWPX 추출 중 오류: {str(e)}
+        return f"HWPX 추출 중 오류: {str(e)}"
 
 # [한글파일] 필터링
 def _clean_text(text: str) -> str:
