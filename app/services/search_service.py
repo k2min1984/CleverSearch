@@ -2,198 +2,343 @@
 ########################################################
 # Description
 # OpenSearch 검색 비즈니스 로직 서비스
-# 파일명: Search_Service.py
-# - [최종 수정] 에디터 경고(NameError) 해결 및 함수 구조 최적화
-# - 단어 단위 가중치 부여 및 정교한 하이라이트 반영
+# - [1순위] 상세 필터(작성자, 최소점수) 기능 강화
+# - [3순위] 검색 로그 기록 및 실패(0건) 추적 로직 통합
 ########################################################
 """
 
+import re
+from datetime import datetime
 from app.core.opensearch import get_client
 from app.schemas.search_schema import SearchRequest
 from app.core.config import settings
-import re
+from app.common.utils import DocumentUtils 
+from hanspell import spell_checker
+from app.common.embedding import embedder
 
 client = get_client()
 
+# --- 동의어 사전 ---
+SYNONYM_DICT = {
+    "AI": ["인공지능", "지능형", "Machine Learning"],
+    "한전": ["한국전력공사", "KEPCO"],
+    "RAG": ["검색 증강 생성"]
+}
+
+# [도우미] 페이지 번호 역추적
+def find_page_number(full_text, hit_index):
+    if not full_text or hit_index < 0: return "1"
+    text_before_hit = full_text[:hit_index]
+    matches = list(re.finditer(r'\[\[Page\s+(\d+)\]\]', text_before_hit))
+    return matches[-1].group(1) if matches else "1"
+
+# [도우미] 스니펫 생성
+def make_snippet(full_text, start_idx, end_idx):
+    context_start = max(0, start_idx - 60)
+    context_end = min(len(full_text), end_idx + 60)
+    prefix = "..." if context_start > 0 else ""
+    suffix = "..." if context_end < len(full_text) else ""
+    target_word = full_text[start_idx:end_idx]
+    return (
+        f"{prefix}{full_text[context_start:start_idx]}"
+        f"<mark>{target_word}</mark>"
+        f"{full_text[end_idx:context_end]}{suffix}"
+    )
+
+# [하이라이트] 초성용
+def manual_chosung_highlight(full_text, chosung_kw):
+    if not full_text or not chosung_kw: return None, "1"
+    full_chosung = DocumentUtils.convert_to_chosung(full_text)
+    search_kw = chosung_kw.strip().replace(" ", "")
+    start_idx = full_chosung.find(search_kw)
+    if start_idx == -1: return None, "1"
+    return make_snippet(full_text, start_idx, start_idx + len(search_kw)), find_page_number(full_text, start_idx)
+
+# [하이라이트] 일반 텍스트용
+def manual_text_highlight(full_text, keyword):
+    if not full_text or not keyword: return None, "1"
+    lower_text = full_text.lower()
+    lower_kw = keyword.lower().strip()
+    start_idx = lower_text.find(lower_kw)
+    if start_idx == -1: return None, "1"
+    return make_snippet(full_text, start_idx, start_idx + len(lower_kw)), find_page_number(full_text, start_idx)
+
 class SearchService:
+    
+    # --- [3순위] 검색 실패 추적을 위한 로그 기록 함수 ---
+    @staticmethod
+    async def log_search_event(query: str, total_hits: int):
+        log_index = "search_logs"
+        log_doc = {
+            "query": query,
+            "query_keyword": query.strip(), # 분석용 키워드
+            "total_hits": total_hits,
+            "is_failed": total_hits == 0,
+            "timestamp": datetime.now().isoformat(),
+            "type": "manual_search" # 자동완성과 구분하기 위함
+        }
+        try:
+            client.index(index=log_index, body=log_doc)
+        except Exception as e:
+            print(f"로그 저장 실패: {e}")
+
     @staticmethod
     async def execute_search(req: SearchRequest):
         index_name = settings.OPENSEARCH_INDEX
         
-        # [해결] 에디터 경고를 없애기 위해 호출되는 메서드 내부에 함수 정의
-        # 이렇게 하면 'build_weighted_query'를 바로 호출할 수 있습니다.
-        def build_weighted_query(keyword):
-            clean_kw = keyword.strip()
-            if not clean_kw: return None
+        # 1. 검색어 방역 및 오타 교정
+        req.query = DocumentUtils.sanitize_text(req.query)
+        try:
+            corrected = spell_checker.check(req.query)
+            clean_query = corrected.checked
+        except:
+            clean_query = req.query
 
+        # 2. 검색어 확장 (동의어)
+        target_keywords = [clean_query]
+        for key, synonyms in SYNONYM_DICT.items():
+            if key.lower() in clean_query.lower():
+                target_keywords.extend(synonyms)
+        
+        # ---------------------------------------------------------
+        # 🚀 [추가됨] 3. 쿼리 빌드 및 AI 벡터 변환 (하이브리드 장착)
+        # ---------------------------------------------------------
+        is_chosung = bool(re.match(r'^[ㄱ-ㅎ| ]+$', clean_query))
+        
+        # 프론트엔드에서 넘어온 검색어를 768차원 AI 숫자로 변환
+        query_vector = []
+        if not is_chosung:
+            try:
+                query_vector = embedder.get_embedding(clean_query)
+            except Exception as e:
+                print(f"AI 벡터 변환 실패 (일반 검색으로 진행): {e}")
+
+        def build_weighted_query(keyword):
+            if is_chosung:
+                return { "wildcard": { "chosung_text": { "value": f"*{keyword}*", "boost": 10 } } }
             return {
                 "bool": {
                     "should": [
-                        # 1단계: 정확히 단어가 일치하는 경우 (가장 높은 가중치)
-                        {
-                            "match_phrase": {
-                                "all_text": {
-                                    "query": clean_kw,
-                                    "boost": 10
-                                }
-                            }
-                        },
-                        # 2단계: 단어 중심 검색 (조사가 붙어도 핵심어 매칭)
-                        {
-                            "query_string": {
-                                "query": f"\"{clean_kw}\" OR {clean_kw}",
-                                "fields": ["all_text^5", "Title^3"],
-                                "default_operator": "OR",
-                                "boost": 5
-                            }
-                        },
-                        # 3단계: 기존 와일드카드 방식 (부분 일치 보장)
-                        {
-                            "query_string": {
-                                "query": f"*{clean_kw}*",
-                                "fields": ["all_text^10", "Content^3", "Title^2", "origin_file"],
-                                "analyze_wildcard": True,
-                                "default_operator": "OR",
-                                "fuzziness": "AUTO",
-                                "boost": 1
-                            }
-                        }
+                        { "match_phrase": { "Title": { "query": keyword, "boost": 20 } } }, 
+                        { "match": { "Title": { "query": keyword, "boost": 10 } } },
+                        { "match_phrase": { "all_text": { "query": keyword, "boost": 5 } } },
+                        { "match": { "all_text": { "query": keyword, "boost": 1 } } }
                     ]
                 }
             }
 
-        # --- 1. 필수 검색어 쿼리 조립 ---
-        must_queries = []
-        if req.query and req.query.strip():
-            # 이제 노란 물결선 없이 정상 호출됩니다.
-            q = build_weighted_query(req.query)
-            if q: must_queries.append(q)
-            
-        for word in req.include_keywords:
-            if word.strip():
-                q = build_weighted_query(word)
-                if q: must_queries.append(q)
-            
-        # --- 2. 제외 검색어 쿼리 조립 ---
-        must_not_queries = []
-        for word in req.exclude_keywords:
-            if word.strip():
-                must_not_queries.append({
-                    "query_string": {
-                        "query": f"*{word.strip()}*",
-                        "fields": ["all_text"]
-                    }
-                })
+        search_clauses = [build_weighted_query(kw) for kw in target_keywords if kw]
 
-        # --- 3. 최종 OpenSearch 쿼리 바디 ---
+        #  AI 문맥 검색 쿼리 추가 (하이브리드 결합)
+        if query_vector:
+            search_clauses.append({
+                "knn": {
+                    "text_vector": {
+                        "vector": query_vector,
+                        "k": req.size if hasattr(req, 'size') and req.size else 10,
+                        "boost": 1.0 # AI 문맥 일치 가중치!
+                    }
+                }
+            })
+
+        # 4. 전체 검색 바디 구성 (하이브리드 엔진 적용)
         query_body = {
-            "from": 0,
-            "size": req.size,
+            "from": 0, "size": req.size,
+            "min_score": 0.0047,
             "query": {
                 "bool": {
-                    "must": must_queries if must_queries else [{"match_all": {}}],
-                    "must_not": must_not_queries
+                    "should": search_clauses,
+                    "minimum_should_match": 1,
+                    "filter": []
                 }
             },
-            "highlight": {
-                "require_field_match": False,
-                "pre_tags": ["<b style='color: red; font-weight: bold;'>"],
-                "post_tags": ["</b>"],
-                "fields": {
-                    "all_text": {
-                        "fragment_size": 400,
-                        "number_of_fragments": 1,
-                        "type": "unified" 
-                    },
-                    "Title": {"fragment_size": 200},
-                    "Content": {"fragment_size": 400}
-                },
-                "fragmenter": "span", 
-                "no_match_size": 300
+            # 프론트엔드 보호를 위해 768개 숫자 데이터 숨김
+            "_source": {"excludes": ["text_vector"]},
+            "sort": [ { "_score": { "order": "desc" } }, { "indexed_at": { "order": "desc" } } ],
+            "aggs": {
+                "group_by_category": {
+                    "terms": { "field": "doc_category" }
+                }
             }
         }
 
-        # --- 4. 날짜 필터 적용 및 검색 실행 ---
+        # --- [1순위] 상세 필터 로직 강화 ---
+        filters = query_body["query"]["bool"]["filter"]
         if req.start_date:
-            date_filter = {"range": {"indexed_at": {"gte": req.start_date}}}
-            if req.end_date: date_filter["range"]["indexed_at"]["lte"] = req.end_date
-            if "filter" not in query_body["query"]["bool"]:
-                query_body["query"]["bool"]["filter"] = []
-            query_body["query"]["bool"]["filter"].append(date_filter)
+            filters.append({"range": {"indexed_at": {"gte": req.start_date}}})
+        if req.file_ext:
+            filters.append({"term": {"file_ext": req.file_ext.lower()}})
+        if req.doc_category:
+            filters.append({"term": {"doc_category": req.doc_category}})
+        
+        # 신규 추가: 작성자 필터링
+        if hasattr(req, 'author') and req.author:
+            filters.append({"term": {"author.keyword": req.author}})
             
+        # 신규 추가: 최소 점수 필터링 (품질 제어)
+        if hasattr(req, 'min_score') and req.min_score > 0:
+            query_body["min_score"] = req.min_score
+
+        # 6. OpenSearch 실행
         try:
             response = client.search(index=index_name, body=query_body)
-        except Exception as e:
-            return {"total": 0, "items": [], "message": f"에러 발생: {str(e)}"}
+            total_hits = response['hits']['total']['value']
 
-        # --- 5. 결과 가공 및 하이라이트 ---
-        processed_results = []
-        hits = response.get('hits', {}).get('hits', [])
-        
-        for hit in hits:
-            source = hit['_source']
-            highlight_dict = hit.get('highlight', {})
+            # [여기에 딱 2줄 추가!] 터미널 창에 1등 문서 점수 출력하기
+            if response['hits']['hits']:
+                print(f"👉 [점수 확인] '{req.query}' 검색 ➡️ 최고 점수: {response['hits']['hits'][0]['_score']}")            
+
+            # --- [3순위] 검색 실패 및 통계 추적 로그 남기기 ---
+            await SearchService.log_search_event(clean_query, total_hits)
             
-            highlighted_summary = ""
-            if highlight_dict:
-                for field in ["all_text", "Content", "Title"]:
-                    if field in highlight_dict and highlight_dict[field]:
-                        highlighted_summary = highlight_dict[field][0]
-                        break
+            # 카테고리 통계 추출
+            buckets = response.get('aggregations', {}).get('group_by_category', {}).get('buckets', [])
+            category_stats = {b['key']: b['doc_count'] for b in buckets}
             
-            # 하이라이트 실패 시 수동 강조
-            if not highlighted_summary and req.query:
-                raw_text = source.get("all_text") or source.get("Content") or ""
-                idx = raw_text.lower().find(req.query.lower())
-                if idx != -1:
-                    start = max(0, idx - 150) 
-                    end = start + 450
-                    snippet = raw_text[start:end]
-                    pattern = re.compile(re.escape(req.query), re.IGNORECASE)
-                    highlighted_summary = pattern.sub(
-                        f"<b style='color: red; font-weight: bold;'>{req.query}</b>", 
-                        snippet
-                    )
-                    if start > 0: highlighted_summary = "..." + highlighted_summary
-                    highlighted_summary += "..."
+            # 결과 가공
+            processed_results = []
+            for hit in response.get('hits', {}).get('hits', []):
+                source = hit['_source']
+                raw_text = source.get("all_text", "")
+                summary, page_num = None, "1"
+                if is_chosung:
+                    summary, page_num = manual_chosung_highlight(raw_text, clean_query)
                 else:
-                    highlighted_summary = (raw_text[:400] + "...") if raw_text else "내용 없음"
+                    for kw in target_keywords:
+                        summary, page_num = manual_text_highlight(raw_text, kw)
+                        if summary: break
+                
+                if not summary:
+                    summary = (raw_text[:200] + "...") if raw_text else "내용 없음"
 
-            processed_results.append({
-                "id": hit["_id"],
-                # 시트 정보가 없는 일반 문서는 깔끔하게 파일명만 나오도록 정돈
-                "location": f"[{source.get('origin_file', 'N/A')}] {source.get('origin_sheet', '')}".strip(), 
-                "content": source,
-                "summary": highlighted_summary,
-                "score": hit["_score"]
-            })
-            
-        return {
-            "total": response['hits']['total']['value'],
-            "items": processed_results
-        }
-    
+                processed_results.append({
+                    "id": hit["_id"],
+                    "location": f"{page_num}페이지", 
+                    "content": source,
+                    "summary": summary,
+                    "score": hit["_score"],
+                    "indexed_at": source.get("indexed_at", "")
+                })
+
+            return {
+                "total": total_hits,
+                "items": processed_results,
+                "category_stats": category_stats
+            }
+        except Exception as e:
+            print(f"Search Error: {str(e)}")
+            return {"total": 0, "items": [], "category_stats": {}, "error": str(e)}
+
     @staticmethod
     async def get_autocomplete(q: str):
         index_name = settings.OPENSEARCH_INDEX
-        search_field = "all_text" 
+        safe_q = DocumentUtils.sanitize_text(q)
+        if not safe_q: return []
         
-        query = {
-            "size": 5,
-            "query": {
-                "match_phrase_prefix": {
-                    "all_text": {"query": q, "max_expansions": 10}
-                }
-            },
-            "_source": ["all_text"]
-        }
+        is_chosung = bool(re.match(r'^[ㄱ-ㅎ| ]+$', safe_q))
+        if is_chosung:
+            query = { "query": { "wildcard": { "chosung_text": f"*{safe_q}*" } } }
+        else:
+            query = { "query": { "match_phrase_prefix": { "Title": safe_q } } }
         
         try:
-            response = client.search(index=index_name, body=query)
-            suggestions = []
-            for hit in response['hits']['hits']:
-                text = hit['_source'].get('all_text', '')
-                if text: suggestions.append(text[:50])
-            return list(set(suggestions))
-        except Exception:
+            res = client.search(index=index_name, body={**query, "size": 5, "_source": ["Title"]})
+            return list(set([h['_source']['Title'] for h in res['hits']['hits'] if h['_source'].get('Title')]))
+        except:
             return []
+        
+    # 
+    @staticmethod
+    async def get_popular_keywords():
+        """실시간으로 가장 많이 등록된 본문 키워드 5개를 추출"""
+        index_name = settings.OPENSEARCH_INDEX
+        
+        # OpenSearch의 Aggregation 기능을 사용하여 빈도가 높은 단어 추출
+        query = {
+            "size": 0,
+            "aggs": {
+                "popular_tags": {
+                    "terms": {
+                        "field": "all_text.keyword", # 본문 텍스트 기준
+                        "size": 5            # 상위 5개
+                    }
+                }
+            }
+        }
+        try:
+            res = client.search(index=index_name, body=query)
+            buckets = res.get('aggregations', {}).get('popular_tags', {}).get('buckets', [])
+            # 한 글자짜리 단어는 제외하고 키워드만 리스트로 반환
+            return [b['key'] for b in buckets if len(b['key']) > 1]
+        except Exception as e:
+            print(f"인기 검색어 추출 에러: {e}")
+            return ["지능", "계획서", "연구", "가이드"] # 에러 시 기본값
+        
+    @staticmethod
+    async def get_failed_analysis(days: int = 7):
+        """최근 N일간 결과가 0건이었던 검색어들을 집계하여 빈도순으로 반환"""
+        query = {
+            "size": 0,
+            "query": {
+                "bool": {
+                    "must": [
+                        { "term": { "is_failed": True } },
+                        { "range": { "timestamp": { "gte": f"now-{days}d/d" } } }
+                    ]
+                }
+            },
+            "aggs": {
+                "failed_keywords": {
+                    "terms": {
+                        "field": "query_keyword.keyword", # [수정 완료] 필드명 수정 및 .keyword 적용
+                        "size": 10
+                    }
+                }
+            }
+        }
+        try:
+            res = client.search(index="search_logs", body=query)
+            buckets = res.get('aggregations', {}).get('failed_keywords', {}).get('buckets', [])
+            return [{"keyword": b['key'], "count": b['doc_count']} for b in buckets]
+        except Exception as e:
+            return {"error": str(e), "message": "로그 인덱스가 아직 생성되지 않았을 수 있습니다."}
+
+    @staticmethod
+    async def setup_hybrid_index():
+        """기존 인덱스에 AI 벡터(k-NN) 검색용 필드와 세팅을 추가합니다."""
+        index_name = settings.OPENSEARCH_INDEX
+        try:
+            # 1. 인덱스 설정 변경을 위해 잠시 가게 문 닫기 (데이터는 안전하게 유지됨)
+            client.indices.close(index=index_name)
+            
+            # 2. DB에 k-NN(벡터 검색) 엔진 전원 켜기
+            client.indices.put_settings(
+                index=index_name, 
+                body={"index": {"knn": True}}
+            )
+            
+            # 3. 인테리어 끝났으니 가게 문 다시 열기
+            client.indices.open(index=index_name)
+            
+            # 4. 768차원 숫자가 들어갈 'text_vector' 라는 특수 방 만들기
+            mapping = {
+                "properties": {
+                    "text_vector": {
+                        "type": "knn_vector",
+                        "dimension": 768, # 우리가 깐 모델(sroberta)의 벡터 크기
+                        "method": {
+                            "name": "hnsw",
+                            "space_type": "l2",
+                            "engine": "nmslib"
+                        }
+                    }
+                }
+            }
+            client.indices.put_mapping(index=index_name, body=mapping)
+            
+            return {"status": "success", "message": f"[{index_name}] 인덱스 하이브리드 벡터 세팅 완료!"}
+            
+        except Exception as e:
+            # 만약 에러가 나더라도 가게 문이 닫혀있으면 안 되므로 강제로 다시 열어줌
+            client.indices.open(index=index_name)
+            return {"status": "error", "message": str(e)}        

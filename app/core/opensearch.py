@@ -39,7 +39,7 @@ def get_client():
         timeout=30,
         
         # 2. 데이터 압축 보내기: 엑셀처럼 글자가 많을 때 전송 속도를 높임
-        http_compress=True,
+        http_compress=False,
         
         # 3. 전용 차선 10개 확보: 매번 새로 연결하지 않고 미리 뚫어놓은 통로 10개를 재사용함
         pool_maxsize=10        
