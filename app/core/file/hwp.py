@@ -12,13 +12,10 @@ def _extract_text(content: bytes, ext: str) -> str:
     """
     파일 확장자나 헤더를 보고 HWP와 HWPX를 자동으로 분기하여 처리합니다.
     """
-    print("한글파일추출["+ext+"]")
-    # 1. 파일 확장자가 HWPX
     if ext == "hwpx":
         return _extract_text_hwpx(content)
-    
-    # 2. 그 외에는 HWP(OLE)로 간주하고 처리
-    return _extract_text_hwp(content)
+    else:
+        return _extract_text_hwp(content)
 
 # [한글파일] HWP
 def _extract_text_hwp(content: bytes) -> str:
@@ -31,13 +28,16 @@ def _extract_text_hwp(content: bytes) -> str:
         dirs = ole.listdir()
         
         body_sections = sorted(
-            ["/".join(d) for d in dirs if d[0] == "BodyText" and d[1].startswith("Section")],
+            ["/".join(d) for d in dirs if len(d) >= 2 and d[0] == "BodyText" and d[1].startswith("Section")],
             key=lambda x: int(x.split("Section")[1])
         )
         
         text_result = []
 
-        for section_path in body_sections:
+        for i, section_path in enumerate(body_sections):
+            # 섹션 시작 부분에 페이지 마커 삽입 (검색 위치 추적용)
+            text_result.append(f"[[Page {i+1}]]\n")
+            
             data = ole.openstream(section_path).read()
             
             # [1] 압축 해제 시도 (실패 시 바이너리 유출 방지)
@@ -75,7 +75,8 @@ def _extract_text_hwp(content: bytes) -> str:
                     
                     try:
                         raw_text = rec_data.decode('utf-16-le', errors='ignore')
-                        clean_text = string.clean_text(raw_text)
+                        raw_text = raw_text.replace('\x00', '')  # NULL 문자 제거
+                        clean_text = string._clean_text(raw_text)
                         
                         if clean_text.strip():
                             text_result.append(clean_text)
@@ -84,6 +85,9 @@ def _extract_text_hwp(content: bytes) -> str:
                         pass
                 
                 pos += rec_len
+
+            # 섹션 간 구분감 추가
+            text_result.append("\n\n")
 
         ole.close()
         return "".join(text_result).strip()
@@ -108,21 +112,31 @@ def _extract_text_hwpx(content: bytes) -> str:
                 [n for n in z.namelist() if n.startswith("Contents/section") and n.endswith(".xml")]
             )
             
-            for section in section_files:
+            for i, section in enumerate(section_files):
+                # 섹션 시작 부분에 페이지 마커 삽입
+                text_result.append(f"[[Page {i+1}]]\n")
+                
                 try:
                     xml_data = z.read(section)
                     root = ET.fromstring(xml_data)
                     
+                    # 문단(p) 단위로 순회하여 텍스트(t)를 합침 (구조 보존 강화)
                     for elem in root.iter():
-                        # 텍스트 태그 <hp:t>
-                        if elem.tag.endswith('t') and elem.text:
-                            clean_text = string.clean_text(elem.text)
-                            if clean_text:
-                                text_result.append(clean_text)
-                        
-                        # 문단 태그 <hp:p>
                         if elem.tag.endswith('p'):
-                            text_result.append("\n")
+                            para_text = []
+                            for child in elem.iter():
+                                if child.tag.endswith('t') and child.text:
+                                    para_text.append(child.text)
+                            
+                            if para_text:
+                                line = "".join(para_text)
+                                clean_line = string._clean_text(line)
+                                if clean_line:
+                                    text_result.append(clean_line)
+                                    text_result.append("\n")
+                    
+                    # 섹션 간 구분감 추가
+                    text_result.append("\n")
                 except:
                     continue
 
@@ -130,38 +144,3 @@ def _extract_text_hwpx(content: bytes) -> str:
 
     except Exception as e:
         return f"HWPX 추출 중 오류: {str(e)}"
-
-# [한글파일] 필터링
-def _clean_text(text: str) -> str:
-    """
-    [화이트리스트 필터링]
-    한글, 영어, 숫자, 기본 문장부호만 남기고 나머지는 제거합니다.
-    제어 문자(Code 31 이하) 및 깨진 문자(Mojibake), 한자 등을 제거하여 
-    검색 엔진(OpenSearch) 인덱싱 오류를 원천 차단합니다.
-    """
-    clean_chars = []
-    for char in text:
-        code = ord(char)
-        
-        # 1. 한글 완성형 (가~힣)
-        if 0xAC00 <= code <= 0xD7A3:
-            clean_chars.append(char)
-        
-        # 2. 한글 자모 (ㄱ~ㅎ, ㅏ~ㅣ)
-        elif 0x3131 <= code <= 0x318E:
-            clean_chars.append(char)
-        
-        # 3. 영어, 숫자, 기본 특수문자 (ASCII 32~126)
-        elif 32 <= code <= 126:
-            clean_chars.append(char)
-        
-        # 4. 필수 제어 문자 (탭, 줄바꿈, 캐리지리턴)
-        elif code in [9, 10, 13]:
-            clean_chars.append(char)
-            
-        # [참고] 한자(大韓民國)를 살려야 한다면 아래 주석 해제
-        # 해당 주석 해제 시 서식 정보(글자 색, 폰트 정보 등)나 제어 코드가 텍스트로 잘못 해석되어 글자 깨짐
-        # elif 0x4E00 <= code <= 0x9FFF:
-        #     clean_chars.append(char)
-
-    return "".join(clean_chars)

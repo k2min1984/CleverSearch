@@ -22,6 +22,7 @@ from app.api.v1 import search
 from app.api.v1 import index
 from app.api.v1 import file
 from app.core.setup import create_index # 인덱스 초기화 함수
+from app.utils.db import create_selected_db_connections, close_db_connections
 
 # --- [경로 설정] 프로젝트 루트 디렉터리 및 정적 파일 경로 확정 ---
 # os.path.abspath(__file__) -> .../app/main.py
@@ -43,10 +44,23 @@ async def lifespan(app: FastAPI):
         print("✅ [System] 인덱스 설정 및 확인 완료")
     except Exception as e:
         print(f"❌ [System] 인덱스 초기화 실패: {e}")
+
+    app.state.db_connections = {}
+    try:
+        app.state.db_connections = create_selected_db_connections()
+        if app.state.db_connections:
+            db_names = ", ".join(app.state.db_connections.keys())
+            print(f"✅ [System] DB 연결 완료: {db_names}")
+        else:
+            print("ℹ️ [System] 활성화된 RDB 연결이 없습니다. (.env의 DB 설정 확인)")
+    except Exception as e:
+        print(f"❌ [System] DB 연결 초기화 실패: {e}")
+        raise
     
     yield  # 서버 가동 중 (API 요청 처리)
     
     # 2. 서버 종료 시
+    close_db_connections(getattr(app.state, "db_connections", {}))
     print("👋 [System] CleverSearch 엔진 종료")
 
 # --- FastAPI 인스턴스 설정 ---

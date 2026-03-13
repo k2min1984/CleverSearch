@@ -88,11 +88,33 @@ services:
       - "8000:8000"
     environment:
       - OPENSEARCH_URL=https://cleversearch-os:9200
+      - DB=postgres
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DATABASE=cleversearch_db
+      - POSTGRES_USER=cleversearch
+      - 'POSTGRES_PASSWORD=dudflgks12!@'
     depends_on:
       - opensearch
+      - postgres
     networks:
       - cleversearch-net
 
+  # 4. postgres
+  postgres:
+    image: pgvector/pgvector:pg16 # PostgreSQL 16 기반 (필요에 따라 태그 변경 가능)
+    container_name: postgres_pgvector
+    environment:
+      - "POSTGRES_USER=cleversearch"
+      - 'POSTGRES_PASSWORD=dudflgks12!@'
+      - "POSTGRES_DB=cleversearch_db"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    ports:
+      - "55432:5432"
+    networks:
+      - cleversearch-net
+      
 networks:
   cleversearch-net:
     driver: bridge

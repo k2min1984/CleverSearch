@@ -1,33 +1,79 @@
 import io
 import re
-import json
 import pandas as pd
 import pdfplumber
 from docx import Document
 from pptx import Presentation
 from datetime import datetime
-from opensearchpy import helpers
 
 # FastAPI 관련 항목들을 한 줄로 통합
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query 
+from fastapi.concurrency import run_in_threadpool
 
 # 프로젝트 내부 모듈
 from app.core.opensearch import get_client
-from app.core.file import excel, hwp, image, office, pdf
+from app.core.file import hwp, image
 from app.common.utils import DocumentUtils
 from app.common.embedding import embedder  #[추가] AI 벡터 변환기 가져오기
 
 router = APIRouter()
 client = get_client()
 INDEX_NAME = "cleversearch-docs"
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20MB
+EMBEDDING_DIMENSION = 768
+_index_checked = False
 
-# 허용된 확장자 목록
-ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'hwp', 'hwpx', 'pdf', 'docx', 'doc', 'pptx', 'ppt', 'jpg', 'jpeg', 'png'}
 # 허용된 확장자 목록 (doc, ppt는 라이브러리 미지원으로 제외)
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'hwp', 'hwpx', 'pdf', 'docx', 'pptx', 'jpg', 'jpeg', 'png'}
 
+
+def _strip_control_chars(text: str) -> str:
+    return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+
+
+def _extract_text_content(content: bytes, ext: str) -> str:
+    """확장자별 본문 텍스트 추출 (동기 함수, threadpool에서 실행)."""
+    if ext in ['hwp', 'hwpx']:
+        raw_text = hwp._extract_text(content, ext)
+        return f"[[Page 1]]\n{_strip_control_chars(raw_text)}"
+
+    if ext == 'pdf':
+        with pdfplumber.open(io.BytesIO(content)) as pdf_file:
+            pages = [
+                f"[[Page {i+1}]]\n{p.extract_text()}"
+                for i, p in enumerate(pdf_file.pages)
+                if p.extract_text()
+            ]
+            return "\n\n".join(pages)
+
+    if ext == 'docx':
+        doc = Document(io.BytesIO(content))
+        return "[[Page 1]]\n" + "\n".join([p.text for p in doc.paragraphs])
+
+    if ext == 'pptx':
+        prs = Presentation(io.BytesIO(content))
+        slides = []
+        for i, slide in enumerate(prs.slides):
+            slide_txt = "\n".join([shape.text for shape in slide.shapes if hasattr(shape, "text")])
+            slides.append(f"[[Page {i+1}]]\n{slide_txt}")
+        return "\n\n".join(slides)
+
+    if ext in ['xlsx', 'xls']:
+        excel_data = pd.read_excel(io.BytesIO(content), sheet_name=None)
+        sheets = [f"[[Sheet: {name}]]\n{df.to_string()}" for name, df in excel_data.items()]
+        return "\n\n".join(sheets)
+
+    if ext in ['jpg', 'jpeg', 'png']:
+        return image._extract_text(content)
+
+    return ""
+
 def ensure_index():
     """인덱스가 없을 경우 초기 설정(Settings/Mappings)과 함께 생성"""
+    global _index_checked
+    if _index_checked:
+        return
+
     if not client.indices.exists(index=INDEX_NAME):
         # 🛡️ 여기가 우리가 다시 잡아야 할 '원점' 설계도입니다.
         index_body = {
@@ -71,14 +117,15 @@ def ensure_index():
         }
         
         try:
-            # 강광민 님이 말씀하신 출력문 그대로 살려둡니다!
             client.indices.create(
                 index=INDEX_NAME, 
                 body=index_body
             )
-            print(f"✅ 인덱스 [{INDEX_NAME}] 생성 성공") # 이 로그가 떠야 성공입니다.
+            print(f"✅ 인덱스 [{INDEX_NAME}] 생성 성공")
         except Exception as e:
-            print(f"❌ 인덱스 생성 실패: {str(e)}")
+            raise RuntimeError(f"인덱스 생성 실패: {str(e)}")
+
+    _index_checked = True
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -87,54 +134,28 @@ async def upload_file(file: UploadFile = File(...)):
     전체 프로세스를 담당하는 엔드포인트
     """
     # 1. 인덱스 존재 여부 확인 및 생성
-    ensure_index()
+    await run_in_threadpool(ensure_index)
     
     # 2. 파일명 방역 및 정보 추출
-    filename = DocumentUtils.sanitize_text(file.filename)
+    filename = DocumentUtils.sanitize_text(file.filename or "")
+    if not filename:
+        raise HTTPException(status_code=400, detail="유효한 파일명이 필요합니다.")
+
     ext = filename.split('.')[-1].lower() if '.' in filename else ""
     
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"지원하지 않는 확장자입니다: {ext}")
         
     content = await file.read()
-    text_content = ""
+    if not content:
+        raise HTTPException(status_code=400, detail="빈 파일은 업로드할 수 없습니다.")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"파일 크기 제한({MAX_UPLOAD_BYTES // (1024 * 1024)}MB)을 초과했습니다.")
 
     try:
         # 3. 확장자별 텍스트 추출 (페이지 마커 삽입)
-        if ext in ['hwp', 'hwpx']:
-            #raw_text = hwp._extract_text(content, ext)
-            # 🔥 추가: 한글 파일 특유의 깨진 제어문자 및 0x1F(Code 31) 강제 제거
-            #raw_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', raw_text)
-            text_content = hwp._extract_text(content, ext)
-            
-        elif ext == 'pdf':
-            #with pdfplumber.open(io.BytesIO(content)) as pdf_file:
-            #    pages = [f"[[Page {i+1}]]\n{p.extract_text()}" for i, p in enumerate(pdf_file.pages) if p.extract_text()]
-            #    text_content = "\n\n".join(pages)
-            text_content = pdf._extract_text(content)
-                
-        #elif ext == 'docx':
-            #doc = Document(io.BytesIO(content))
-            #text_content = f"[[Page 1]]\n" + "\n".join([p.text for p in doc.paragraphs])
-            
-        elif ext in ['pptx', 'ppt', 'docx']:
-            #prs = Presentation(io.BytesIO(content))
-            #slides = []
-            #for i, slide in enumerate(prs.slides):
-            #    slide_txt = "\n".join([shape.text for shape in slide.shapes if hasattr(shape, "text")])
-            #    slides.append(f"[[Page {i+1}]]\n{slide_txt}")
-            #text_content = "\n\n".join(slides)
-            text_content = office._extract_text(content, ext)
-            
-        elif ext in ['xlsx', 'xls']:
-            text_content = excel._extract_text(content, ext)
-            
-        elif ext in ['jpg', 'jpeg', 'png']:
-            text_content = image._extract_text(content)
+        text_content = await run_in_threadpool(_extract_text_content, content, ext)
 
-        #디버깅
-        print(f"debug: 추출된 원본 텍스트 (처리 전) 길이: {len(text_content)} / 내용 일부: {text_content[:200]}")
-        
         # 4. 공통 유틸리티를 이용한 본문 방역 (제어문자 제거)
         clean_body_text = DocumentUtils.sanitize_text(text_content)
         
@@ -142,10 +163,15 @@ async def upload_file(file: UploadFile = File(...)):
             return {"status": "fail", "message": "추출된 텍스트가 없습니다."}
 
         # 5. 중복 확인용 지문(Digest) 생성
-        content_digest = DocumentUtils.generate_content_digest(clean_body_text, filename)
+        content_digest = await run_in_threadpool(DocumentUtils.generate_content_digest, clean_body_text, filename)
 
         # 6. 내용 중복 체크 (DB 조회)
-        is_dup, existing_file = DocumentUtils.check_duplicate_content(client, INDEX_NAME, content_digest)
+        is_dup, existing_file = await run_in_threadpool(
+            DocumentUtils.check_duplicate_content,
+            client,
+            INDEX_NAME,
+            content_digest,
+        )
         if is_dup:
             return {
                 "status": "skipped", 
@@ -156,10 +182,12 @@ async def upload_file(file: UploadFile = File(...)):
         category = DocumentUtils.map_category(filename)
 
         #최종 저장 전, 모든 필드의 텍스트에서 불법 제어문자(Code 31 등)를 싹 비웁니다.
-        clean_body_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', clean_body_text)
+        clean_body_text = _strip_control_chars(clean_body_text)
         # [추가] AI 두뇌로 본문 텍스트를 768차원 숫자로 변환
         # 주의: AI 모델은 한 번에 너무 긴 글을 읽으면 뻗으므로, 핵심 내용이 있는 앞부분 2000자만 잘라서 벡터로 만듭니다.
-        vector_data = embedder.get_embedding(clean_body_text[:2000])
+        vector_data = await run_in_threadpool(embedder.get_embedding, clean_body_text[:2000])
+        if not isinstance(vector_data, list) or len(vector_data) != EMBEDDING_DIMENSION:
+            raise HTTPException(status_code=500, detail="임베딩 벡터 차원이 올바르지 않습니다.")
 
         # 8. 최종 데이터 구조 생성
         doc_source = {
@@ -174,14 +202,8 @@ async def upload_file(file: UploadFile = File(...)):
             "text_vector": vector_data  #[추가] 768개의 숫자 리스트를 전용 방에 저장!
         }
 
-        ## 9. OpenSearch 저장 (Code 31 압축 에러 방어막 적용!)
-        import json
-        
-        # 딕셔너리를 순수 JSON 문자열로 꽝꽝 얼려서 파이썬이 마음대로 압축하지 못하게 막습니다.
-        safe_doc = json.dumps(doc_source, ensure_ascii=False)
-        
-        # 안전하게 변환된 문자열로 DB에 1건 저장
-        client.index(index=INDEX_NAME, body=safe_doc, refresh=True)
+        # 9. OpenSearch 저장
+        await run_in_threadpool(client.index, index=INDEX_NAME, body=doc_source, refresh=True)
 
         return {
             "status": "success", 
@@ -189,6 +211,8 @@ async def upload_file(file: UploadFile = File(...)):
             "category": category
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         # 에러 메시지도 방역 처리하여 전달
         clean_err = DocumentUtils.sanitize_text(str(e))

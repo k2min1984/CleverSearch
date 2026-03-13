@@ -1,0 +1,12 @@
+.git
+.gitignore
+.venv
+__pycache__
+**/__pycache__
+postgres_data
+opensearch_data
+opensearch/volumes
+uploads
+*.log
+*.tmp
+*.bak

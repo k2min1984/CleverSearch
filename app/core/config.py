@@ -37,5 +37,33 @@ class Settings:
     # 검색 엔에서 사용할 메인 인덱스 명칭 (file.py, index.py와 통일)
     OPENSEARCH_INDEX = os.getenv("OPENSEARCH_INDEX", "cleversearch-docs")
 
+    # ------------------------------------------------------------------
+    # RDB 설정 (Oracle / MySQL / PostgreSQL)
+    # DB 예시: "oracle" 또는 "oracle,mysql,postgres"
+    # ------------------------------------------------------------------
+    DB = os.getenv("DB", "")
+
+    # Oracle
+    ORACLE_HOST = os.getenv("ORACLE_HOST", "localhost")
+    ORACLE_PORT = int(os.getenv("ORACLE_PORT", "1521"))
+    ORACLE_SERVICE_NAME = os.getenv("ORACLE_SERVICE_NAME", "")
+    ORACLE_USER = os.getenv("ORACLE_USER", "")
+    ORACLE_PASSWORD = os.getenv("ORACLE_PASSWORD", "")
+    ORACLE_DSN = os.getenv("ORACLE_DSN", "")
+
+    # MySQL
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+    MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
+    MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "")
+    MYSQL_USER = os.getenv("MYSQL_USER", "")
+    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+
+    # PostgreSQL
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+    POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+    POSTGRES_DATABASE = os.getenv("POSTGRES_DATABASE", "")
+    POSTGRES_USER = os.getenv("POSTGRES_USER", "")
+    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
+
 # 전역에서 import하여 사용할 수 있도록 인스턴스 생성
 settings = Settings()
