@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.common.utils import DocumentUtils 
 from hanspell import spell_checker
 from app.common.embedding import embedder
+from app.services.db_service import DBService
 
 client = get_client()
 
@@ -63,11 +64,21 @@ def manual_text_highlight(full_text, keyword):
     if start_idx == -1: return None, "1"
     return make_snippet(full_text, start_idx, start_idx + len(lower_kw)), find_page_number(full_text, start_idx)
 
+
+def contains_exact_keyword(source: dict, keyword: str) -> bool:
+    """짧은 고유명사 검색에서 오탐 방지를 위한 정확 포함 여부 검사"""
+    if not keyword:
+        return False
+    needle = keyword.strip().lower()
+    title = (source.get("Title") or "").lower()
+    body = (source.get("all_text") or "").lower()
+    return needle in title or needle in body
+
 class SearchService:
     
     # --- [3순위] 검색 실패 추적을 위한 로그 기록 함수 ---
     @staticmethod
-    async def log_search_event(query: str, total_hits: int):
+    async def log_search_event(query: str, total_hits: int, user_id: str = "anonymous"):
         log_index = "search_logs"
         log_doc = {
             "query": query,
@@ -75,12 +86,20 @@ class SearchService:
             "total_hits": total_hits,
             "is_failed": total_hits == 0,
             "timestamp": datetime.now().isoformat(),
-            "type": "manual_search" # 자동완성과 구분하기 위함
+            "type": "manual_search", # 자동완성과 구분하기 위함
+            "user_id": user_id,
         }
         try:
             client.index(index=log_index, body=log_doc)
         except Exception as e:
             print(f"로그 저장 실패: {e}")
+
+        # 운영 리포트/추천용으로는 앱 DB를 기준 데이터로 사용합니다.
+        try:
+            DBService.save_search_log(user_id=user_id, query=query.strip(), total_hits=total_hits)
+            DBService.save_recent_search(user_id=user_id, query=query.strip())
+        except Exception as e:
+            print(f"앱 DB 로그 저장 실패: {e}")
 
     @staticmethod
     async def execute_search(req: SearchRequest):
@@ -128,6 +147,15 @@ class SearchService:
             }
 
         search_clauses = [build_weighted_query(kw) for kw in target_keywords if kw]
+        lexical_query = {
+            "bool": {
+                "should": search_clauses,
+                "minimum_should_match": 1
+            }
+        }
+
+        # 짧은 고유명사(예: 사람 이름) 검색은 벡터 단독 매칭을 차단하여 오탐을 줄입니다.
+        enforce_lexical_for_short_query = (len(clean_query.strip()) <= 4) and (" " not in clean_query.strip())
 
         #  AI 문맥 검색 쿼리 추가 (하이브리드 결합)
         if query_vector:
@@ -142,9 +170,11 @@ class SearchService:
             })
 
         # 4. 전체 검색 바디 구성 (하이브리드 엔진 적용)
+        page = req.page if req.page and req.page > 0 else 1
+        offset = (page - 1) * req.size
         query_body = {
-            "from": 0, "size": req.size,
-            "min_score": 0.0047,
+            "from": offset, "size": req.size,
+            "min_score": 0.0058,
             "query": {
                 "bool": {
                     "should": search_clauses,
@@ -162,6 +192,28 @@ class SearchService:
             }
         }
 
+        if enforce_lexical_for_short_query:
+            knn_should = []
+            if query_vector:
+                # 짧은 검색어는 키워드 일치를 먼저 강제하고, 벡터 점수는 보조 신호로만 사용합니다.
+                knn_should.append({
+                    "knn": {
+                        "text_vector": {
+                            "vector": query_vector,
+                            "k": req.size if hasattr(req, 'size') and req.size else 10,
+                            "boost": 1.0
+                        }
+                    }
+                })
+
+            query_body["query"] = {
+                "bool": {
+                    "must": [lexical_query],
+                    "should": knn_should,
+                    "filter": []
+                }
+            }
+
         # --- [1순위] 상세 필터 로직 강화 ---
         filters = query_body["query"]["bool"]["filter"]
         if req.start_date:
@@ -170,6 +222,24 @@ class SearchService:
             filters.append({"term": {"file_ext": req.file_ext.lower()}})
         if req.doc_category:
             filters.append({"term": {"doc_category": req.doc_category}})
+
+        if req.end_date:
+            filters.append({"range": {"indexed_at": {"lte": req.end_date}}})
+
+        if req.include_keywords:
+            for keyword in req.include_keywords:
+                safe_kw = DocumentUtils.sanitize_text(keyword)
+                if safe_kw:
+                    filters.append({"match_phrase": {"all_text": safe_kw}})
+
+        if req.exclude_keywords:
+            must_not = []
+            for keyword in req.exclude_keywords:
+                safe_kw = DocumentUtils.sanitize_text(keyword)
+                if safe_kw:
+                    must_not.append({"match_phrase": {"all_text": safe_kw}})
+            if must_not:
+                query_body["query"]["bool"]["must_not"] = must_not
         
         # 신규 추가: 작성자 필터링
         if hasattr(req, 'author') and req.author:
@@ -189,15 +259,35 @@ class SearchService:
                 print(f"👉 [점수 확인] '{req.query}' 검색 ➡️ 최고 점수: {response['hits']['hits'][0]['_score']}")            
 
             # --- [3순위] 검색 실패 및 통계 추적 로그 남기기 ---
-            await SearchService.log_search_event(clean_query, total_hits)
+            await SearchService.log_search_event(clean_query, total_hits, req.user_id or "anonymous")
             
             # 카테고리 통계 추출
             buckets = response.get('aggregations', {}).get('group_by_category', {}).get('buckets', [])
             category_stats = {b['key']: b['doc_count'] for b in buckets}
+
+            raw_hits = response.get('hits', {}).get('hits', [])
+
+            # 이름/약어처럼 짧은 검색어는 최종 결과를 문자열 포함 기준으로 한 번 더 거릅니다.
+            if enforce_lexical_for_short_query:
+                raw_hits = [
+                    hit for hit in raw_hits
+                    if contains_exact_keyword(hit.get('_source', {}), clean_query)
+                ]
+                total_hits = len(raw_hits)
+
+                # 후처리로 결과가 바뀌면 화면 카테고리 통계도 함께 다시 계산해야 합니다.
+                recalc_stats = {}
+                for hit in raw_hits:
+                    cat = (hit.get('_source', {}) or {}).get('doc_category')
+                    if cat:
+                        recalc_stats[cat] = recalc_stats.get(cat, 0) + 1
+                category_stats = recalc_stats
             
             # 결과 가공
             processed_results = []
-            for hit in response.get('hits', {}).get('hits', []):
+            for hit in raw_hits:
+                # [추가] 모든 문서의 실제 점수를 터미널에 까발려라!
+                print(f"📄 문서: {hit['_source'].get('Title')} ➡️ 점수: {hit['_score']}")
                 source = hit['_source']
                 raw_text = source.get("all_text", "")
                 summary, page_num = None, "1"
@@ -223,11 +313,13 @@ class SearchService:
             return {
                 "total": total_hits,
                 "items": processed_results,
-                "category_stats": category_stats
+                "category_stats": category_stats,
+                "page": page,
+                "size": req.size,
             }
         except Exception as e:
             print(f"Search Error: {str(e)}")
-            return {"total": 0, "items": [], "category_stats": {}, "error": str(e)}
+            return {"total": 0, "items": [], "category_stats": {}, "error": str(e), "page": page, "size": req.size}
 
     @staticmethod
     async def get_autocomplete(q: str):
@@ -250,58 +342,66 @@ class SearchService:
     # 
     @staticmethod
     async def get_popular_keywords():
-        """실시간으로 가장 많이 등록된 본문 키워드 5개를 추출"""
-        index_name = settings.OPENSEARCH_INDEX
-        
-        # OpenSearch의 Aggregation 기능을 사용하여 빈도가 높은 단어 추출
-        query = {
-            "size": 0,
-            "aggs": {
-                "popular_tags": {
-                    "terms": {
-                        "field": "all_text.keyword", # 본문 텍스트 기준
-                        "size": 5            # 상위 5개
-                    }
-                }
-            }
-        }
+        """앱 DB에서 최근 검색 로그를 기준으로 인기 검색어를 반환"""
         try:
-            res = client.search(index=index_name, body=query)
-            buckets = res.get('aggregations', {}).get('popular_tags', {}).get('buckets', [])
-            # 한 글자짜리 단어는 제외하고 키워드만 리스트로 반환
-            return [b['key'] for b in buckets if len(b['key']) > 1]
+            return DBService.get_popular_keywords(days=7, limit=10)
         except Exception as e:
             print(f"인기 검색어 추출 에러: {e}")
-            return ["지능", "계획서", "연구", "가이드"] # 에러 시 기본값
+            return []
         
     @staticmethod
     async def get_failed_analysis(days: int = 7):
         """최근 N일간 결과가 0건이었던 검색어들을 집계하여 빈도순으로 반환"""
-        query = {
-            "size": 0,
-            "query": {
-                "bool": {
-                    "must": [
-                        { "term": { "is_failed": True } },
-                        { "range": { "timestamp": { "gte": f"now-{days}d/d" } } }
-                    ]
-                }
-            },
-            "aggs": {
-                "failed_keywords": {
-                    "terms": {
-                        "field": "query_keyword.keyword", # [수정 완료] 필드명 수정 및 .keyword 적용
-                        "size": 10
-                    }
-                }
-            }
-        }
         try:
-            res = client.search(index="search_logs", body=query)
-            buckets = res.get('aggregations', {}).get('failed_keywords', {}).get('buckets', [])
-            return [{"keyword": b['key'], "count": b['doc_count']} for b in buckets]
+            return DBService.get_failed_keywords(days=days, limit=10)
         except Exception as e:
-            return {"error": str(e), "message": "로그 인덱스가 아직 생성되지 않았을 수 있습니다."}
+            return {"error": str(e), "message": "앱 DB 실패어 분석 중 오류가 발생했습니다."}
+
+    @staticmethod
+    async def get_recent_keywords(user_id: str = "anonymous", limit: int = 10):
+        try:
+            return DBService.get_recent_searches(user_id=user_id, limit=limit)
+        except Exception:
+            return []
+
+    @staticmethod
+    async def remove_recent_keyword(user_id: str = "anonymous", query: str = ""):
+        safe_query = DocumentUtils.sanitize_text(query)
+        if not safe_query:
+            return {"deleted": 0, "message": "삭제할 검색어가 비어있습니다."}
+        try:
+            deleted = DBService.remove_recent_search(user_id=user_id, query=safe_query)
+            return {"deleted": deleted}
+        except Exception as e:
+            return {"deleted": 0, "error": str(e)}
+
+    @staticmethod
+    async def clear_recent_keywords(user_id: str = "anonymous"):
+        try:
+            deleted = DBService.clear_recent_searches(user_id=user_id)
+            return {"deleted": deleted}
+        except Exception as e:
+            return {"deleted": 0, "error": str(e)}
+
+    @staticmethod
+    async def get_recommended_keywords(user_id: str = "anonymous", limit: int = 10):
+        try:
+            return DBService.get_recommended_keywords(user_id=user_id, limit=limit)
+        except Exception:
+            return []
+
+    @staticmethod
+    async def get_related_keywords(query: str, days: int = 30, limit: int = 10):
+        try:
+            return DBService.get_related_keywords(query=query, days=days, limit=limit)
+        except Exception:
+            return []
+
+    @staticmethod
+    async def get_document_detail(doc_id: str):
+        index_name = settings.OPENSEARCH_INDEX
+        res = client.get(index=index_name, id=doc_id)
+        return res.get("_source", {})
 
     @staticmethod
     async def setup_hybrid_index():

@@ -21,7 +21,9 @@ import os
 from app.api.v1 import search
 from app.api.v1 import index
 from app.api.v1 import file
+from app.api.v1 import admin
 from app.core.setup import create_index # 인덱스 초기화 함수
+from app.core.database import init_database
 
 # --- [경로 설정] 프로젝트 루트 디렉터리 및 정적 파일 경로 확정 ---
 # os.path.abspath(__file__) -> .../app/main.py
@@ -38,6 +40,9 @@ async def lifespan(app: FastAPI):
     # 1. 서버 시작 시: OpenSearch 인덱스 자동 생성 및 설정 확인
     print("🚀 [System] CleverSearch 엔진 시동 중...")
     try:
+        init_database()
+        print("✅ [System] 업무 DB 테이블 초기화 완료")
+
         # [주의] setup.py의 create_index도 DocumentUtils의 매핑을 따르도록 수정되어야 함
         create_index() 
         print("✅ [System] 인덱스 설정 및 확인 완료")
@@ -77,6 +82,7 @@ else:
 app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
 app.include_router(index.router, prefix="/api/v1/index", tags=["Index"])
 app.include_router(file.router, prefix="/api/v1/file", tags=["File"])
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 
 # --- 루트 경로: index.html 반환 ---
 @app.get("/", summary="메인 페이지", include_in_schema=False)
@@ -86,3 +92,12 @@ async def root():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"status": "error", "message": "UI 메인 파일을 찾을 수 없습니다."}
+
+
+@app.get("/admin", summary="관리자 페이지", include_in_schema=False)
+async def admin_page():
+    """관리자 목록 페이지를 반환합니다."""
+    admin_path = os.path.join(STATIC_DIR, "admin.html")
+    if os.path.exists(admin_path):
+        return FileResponse(admin_path)
+    return {"status": "error", "message": "관리자 페이지 파일을 찾을 수 없습니다."}

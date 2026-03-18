@@ -14,16 +14,14 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 # 프로젝트 내부 모듈
 from app.core.opensearch import get_client
 from app.core.file import hwp, image 
-from app.core.file import hwp, image
 from app.common.utils import DocumentUtils
 from app.common.embedding import embedder  #[추가] AI 벡터 변환기 가져오기
+from app.services.db_service import DBService
 
 router = APIRouter()
 client = get_client()
 INDEX_NAME = "cleversearch-docs"
 
-# 허용된 확장자 목록
-ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'hwp', 'hwpx', 'pdf', 'docx', 'doc', 'pptx', 'ppt', 'jpg', 'jpeg', 'png'}
 # 허용된 확장자 목록 (doc, ppt는 라이브러리 미지원으로 제외)
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'hwp', 'hwpx', 'pdf', 'docx', 'pptx', 'jpg', 'jpeg', 'png'}
 
@@ -104,7 +102,7 @@ async def upload_file(file: UploadFile = File(...)):
         # 3. 확장자별 텍스트 추출 (페이지 마커 삽입)
         if ext in ['hwp', 'hwpx']:
             raw_text = hwp._extract_text(content, ext)
-            # 🔥 추가: 한글 파일 특유의 깨진 제어문자 및 0x1F(Code 31) 강제 제거
+            # 추가: 한글 파일 특유의 깨진 제어문자 및 0x1F(Code 31) 강제 제거
             raw_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', raw_text)
             text_content = f"[[Page 1]]\n{raw_text}"
             
@@ -179,8 +177,19 @@ async def upload_file(file: UploadFile = File(...)):
         # 딕셔너리를 순수 JSON 문자열로 꽝꽝 얼려서 파이썬이 마음대로 압축하지 못하게 막습니다.
         safe_doc = json.dumps(doc_source, ensure_ascii=False)
         
-        # 안전하게 변환된 문자열로 DB에 1건 저장
-        client.index(index=INDEX_NAME, body=safe_doc, refresh=True)
+        # 안전하게 변환된 문자열로 OpenSearch에 1건 저장
+        index_res = client.index(index=INDEX_NAME, body=safe_doc, refresh=True)
+
+        # OpenSearch는 검색용 저장소이고, 업무 DB는 관리자 조회/감사 대응용 저장소입니다.
+        DBService.save_indexed_document(
+            os_doc_id=index_res.get("_id", ""),
+            origin_file=str(filename),
+            file_ext=ext,
+            doc_category=category,
+            content_hash=str(content_digest),
+            title=str(filename),
+            all_text=str(clean_body_text),
+        )
 
         return {
             "status": "success", 
@@ -244,7 +253,7 @@ async def search_documents(keyword: str = Query(...)):
                 "minimum_should_match": 1
             }
         },
-        # 🔥 [이게 정답입니다!] 0.5가 아니라 0.75로 세팅해야 유령 단어가 죽습니다!
+        # 0.5가 아니라 0.75로 세팅해야 유령 단어가 죽습니다!
         "min_score": 0.75, 
         
         "_source": {"excludes": ["text_vector"]},
@@ -254,7 +263,7 @@ async def search_documents(keyword: str = Query(...)):
     # 4. OpenSearch에 하이브리드 쿼리 발사!
     res = client.search(index=INDEX_NAME, body=hybrid_query)
 
-    # 🚀 [여기에 딱 2줄 추가!] 백엔드에서 실제로 몇 점을 주고 있는지 멱살 잡고 확인하기
+    # 백엔드에서 실제로 몇 점을 주고 있는지 멱살 잡고 확인하기
     if res['hits']['hits']:
         print(f"👉 [디버그] 검색어: '{keyword}' / 1등 문서 점수: {res['hits']['hits'][0]['_score']}")
 

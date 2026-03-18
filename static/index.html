@@ -20,6 +20,9 @@
 
     <div class="main-wrapper max-w-5xl mx-auto px-4 transition-all duration-500">
         <div class="text-center mb-6" id="headerArea">
+            <div class="flex justify-end mb-2">
+                <a href="/admin" class="text-xs text-gray-400 hover:text-white">관리자 리스트</a>
+            </div>
             <h1 class="text-5xl font-bold mb-8 cursor-pointer tracking-tight" onclick="location.reload()">
                 <span class="text-blue-500">Han</span><span class="text-white">Seek</span>
             </h1>
@@ -36,9 +39,7 @@
             <div id="trendingSection" class="mt-4 text-sm text-gray-400">
                 인기 검색어: 
                 <span class="inline-flex gap-2 ml-2" id="popularTags">
-                    <button onclick="quickSearch('지능')" class="hover:text-blue-400">#지능</button>
-                    <button onclick="quickSearch('계획서')" class="hover:text-blue-400">#계획서</button>
-                    <button onclick="quickSearch('연구')" class="hover:text-blue-400">#연구</button>
+                    <span class="text-gray-500">로딩 중...</span>
                 </span>
             </div>
         </div>
@@ -69,11 +70,25 @@
             약 <span id="countNumber" class="text-blue-400 font-bold">0</span>개의 결과가 검색되었습니다.
         </div>
         <div id="resultList" class="space-y-6 max-w-3xl mx-auto pb-20 text-left"></div>
+        <div id="paginationArea" class="hidden max-w-3xl mx-auto pb-10 flex items-center justify-center gap-3">
+            <button id="prevPageBtn" class="px-4 py-2 rounded border border-gray-600 text-sm hover:bg-gray-800">이전</button>
+            <span id="pageInfo" class="text-sm text-gray-400">1 / 1</span>
+            <button id="nextPageBtn" class="px-4 py-2 rounded border border-gray-600 text-sm hover:bg-gray-800">다음</button>
+        </div>
     </div>
 
     <script>
         const API_BASE = "https://127.0.0.1:8000/api/v1/search";
         const FILE_BASE = "https://127.0.0.1:8000/api/v1/file";
+
+        function getUserId() {
+            let userId = localStorage.getItem('hanseek_user_id');
+            if (!userId) {
+                userId = `user-${crypto.randomUUID()}`;
+                localStorage.setItem('hanseek_user_id', userId);
+            }
+            return userId;
+        }
 
         async function loadPopularTags() {
             try {
@@ -85,9 +100,12 @@
                     container.innerHTML = tags.map(tag => 
                         `<button onclick="quickSearch('${tag}')" class="hover:text-blue-400">#${tag}</button>`
                     ).join('');
+                } else {
+                    container.innerHTML = '<span class="text-gray-500">집계된 인기 검색어가 없습니다.</span>';
                 }
             } catch (error) {
                 console.error("인기 검색어 로드 실패:", error);
+                document.getElementById('popularTags').innerHTML = '<span class="text-red-400">인기 검색어 로드 실패</span>';
             }
         }
 
@@ -102,6 +120,8 @@
 
         // [추가] 카테고리 상태 관리 변수
         let currentCategory = 'all';
+        let currentPage = 1;
+        let totalPages = 1;
 
         // [기능 1] 자동완성
         searchInput.addEventListener('input', async (e) => {
@@ -129,6 +149,7 @@
 
         function quickSearch(text) {
             searchInput.value = text;
+            currentPage = 1;
             performSearch();
         }
 
@@ -144,13 +165,15 @@
             const activeTab = document.getElementById(`tab-${category}`);
             if (activeTab) activeTab.classList.add('border-blue-500', 'text-blue-500', 'font-bold');
             
+            currentPage = 1;
             performSearch(); 
         }
 
         // [수정] 통합 검색 실행 (카테고리 필터 및 통계 연동)
-        async function performSearch() {
+        async function performSearch(page = currentPage) {
             const query = searchInput.value.trim();
             if (!query) return;
+            currentPage = page;
 
             const dateRange = document.getElementById('dateFilter').value;
             const fileExt = document.getElementById('extFilter').value;
@@ -179,7 +202,9 @@
                         start_date: startDate,
                         file_ext: fileExt === 'all' ? null : fileExt,
                         doc_category: currentCategory === 'all' ? null : currentCategory, // [카테고리 전송]
-                        size: 20
+                        size: 20,
+                        page: currentPage,
+                        user_id: getUserId(),
                     })
                 });
 
@@ -225,6 +250,12 @@
             resultCount.classList.remove('hidden');
             document.getElementById('countNumber').innerText = data.total || 0;
             resultList.innerHTML = '';
+            totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.size || 20)));
+            const pageInfo = document.getElementById('pageInfo');
+            pageInfo.innerText = `${currentPage} / ${totalPages}`;
+            document.getElementById('paginationArea').classList.remove('hidden');
+            document.getElementById('prevPageBtn').disabled = currentPage <= 1;
+            document.getElementById('nextPageBtn').disabled = currentPage >= totalPages;
 
             if (!data.items || data.items.length === 0) {
                 resultList.innerHTML = '<div class="text-center py-20 text-gray-500 font-light text-xl">일치하는 문서를 찾지 못했습니다.</div>';
@@ -266,11 +297,23 @@
         }
 
         // 필터 변경 감지 이벤트
-        document.getElementById('dateFilter').addEventListener('change', performSearch);
-        document.getElementById('extFilter').addEventListener('change', performSearch);
+        document.getElementById('dateFilter').addEventListener('change', () => {
+            currentPage = 1;
+            performSearch(1);
+        });
+        document.getElementById('extFilter').addEventListener('change', () => {
+            currentPage = 1;
+            performSearch(1);
+        });
+        document.getElementById('prevPageBtn').addEventListener('click', () => {
+            if (currentPage > 1) performSearch(currentPage - 1);
+        });
+        document.getElementById('nextPageBtn').addEventListener('click', () => {
+            if (currentPage < totalPages) performSearch(currentPage + 1);
+        });
 
         // 엔터키 처리 및 외부 클릭 제어
-        searchInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') performSearch(); });
+        searchInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') { currentPage = 1; performSearch(1); } });
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.group')) autocompleteList.classList.add('hidden');
         });

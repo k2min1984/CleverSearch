@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CleverSearch 관리자 목록</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #111827; color: #e5e7eb; }
+        .tab.active { background: #1d4ed8; color: #fff; }
+        table th, table td { white-space: nowrap; }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <div class="flex items-center justify-between mb-6">
+            <h1 class="text-2xl font-bold">CleverSearch 관리자 리스트</h1>
+            <a href="/" class="px-3 py-2 rounded bg-gray-700 hover:bg-gray-600 text-sm">검색 페이지로</a>
+        </div>
+
+        <div class="flex flex-wrap gap-2 mb-4">
+            <button class="tab active px-3 py-2 rounded bg-gray-700 text-sm" data-tab="popular">인기검색 카운트</button>
+            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="docs">업무DB 문서 목록</button>
+            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="logs">검색 로그</button>
+            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="recent">최근 검색어</button>
+            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="failed">실패 검색어</button>
+        </div>
+
+        <div id="panel-popular" class="panel">
+            <div class="flex gap-2 mb-3">
+                <input id="popularDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+                <button onclick="loadPopular()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+            </div>
+            <div class="overflow-auto border border-gray-700 rounded">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-800"><tr><th class="p-2 text-left">순위</th><th class="p-2 text-left">키워드</th><th class="p-2 text-left">카운트</th></tr></thead>
+                    <tbody id="popularBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="panel-docs" class="panel hidden">
+            <div class="flex gap-2 mb-3">
+                <button onclick="loadDocs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+            </div>
+            <div class="overflow-auto border border-gray-700 rounded">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">제목</th><th class="p-2 text-left">파일명</th><th class="p-2 text-left">확장자</th><th class="p-2 text-left">카테고리</th><th class="p-2 text-left">등록일시</th><th class="p-2 text-left">본문 미리보기</th></tr></thead>
+                    <tbody id="docsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="panel-logs" class="panel hidden">
+            <div class="flex gap-2 mb-3">
+                <button onclick="loadLogs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+            </div>
+            <div class="overflow-auto border border-gray-700 rounded">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">사용자</th><th class="p-2 text-left">검색어</th><th class="p-2 text-left">결과수</th><th class="p-2 text-left">실패여부</th><th class="p-2 text-left">시각</th></tr></thead>
+                    <tbody id="logsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="panel-recent" class="panel hidden">
+            <div class="flex gap-2 mb-3">
+                <input id="recentUserId" type="text" placeholder="user_id (선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-48" />
+                <button onclick="loadRecent()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+            </div>
+            <div class="overflow-auto border border-gray-700 rounded">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">사용자</th><th class="p-2 text-left">검색어</th><th class="p-2 text-left">시각</th></tr></thead>
+                    <tbody id="recentBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="panel-failed" class="panel hidden">
+            <div class="flex gap-2 mb-3">
+                <input id="failedDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+                <button onclick="loadFailed()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+            </div>
+            <div class="overflow-auto border border-gray-700 rounded">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-800"><tr><th class="p-2 text-left">순위</th><th class="p-2 text-left">키워드</th><th class="p-2 text-left">카운트</th></tr></thead>
+                    <tbody id="failedBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = "https://127.0.0.1:8000/api/v1/admin";
+
+        function fmt(v) { return (v === null || v === undefined || v === "") ? "-" : v; }
+        function yesNo(v) { return v ? "Y" : "N"; }
+
+        async function loadPopular() {
+            const days = document.getElementById("popularDays").value || 7;
+            const res = await fetch(`${API}/popular-keywords?days=${days}&limit=50`);
+            const data = await res.json();
+            const body = document.getElementById("popularBody");
+            body.innerHTML = (data || []).map((row, i) =>
+                `<tr class="border-t border-gray-700"><td class="p-2">${i + 1}</td><td class="p-2">${fmt(row.keyword)}</td><td class="p-2">${fmt(row.count)}</td></tr>`
+            ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
+        }
+
+        async function loadDocs() {
+            const res = await fetch(`${API}/indexed-documents?skip=0&limit=100`);
+            const data = await res.json();
+            const items = data.items || [];
+            const body = document.getElementById("docsBody");
+            body.innerHTML = items.map((row) =>
+                `<tr class="border-t border-gray-700"><td class="p-2">${fmt(row.id)}</td><td class="p-2">${fmt(row.title)}</td><td class="p-2">${fmt(row.origin_file)}</td><td class="p-2">${fmt(row.file_ext)}</td><td class="p-2">${fmt(row.doc_category)}</td><td class="p-2">${fmt(row.indexed_at)}</td><td class="p-2">${fmt(row.text_preview)}</td></tr>`
+            ).join("") || '<tr><td class="p-2" colspan="7">데이터 없음</td></tr>';
+        }
+
+        async function loadLogs() {
+            const res = await fetch(`${API}/search-logs?skip=0&limit=100`);
+            const data = await res.json();
+            const items = data.items || [];
+            const body = document.getElementById("logsBody");
+            body.innerHTML = items.map((row) =>
+                `<tr class="border-t border-gray-700"><td class="p-2">${fmt(row.id)}</td><td class="p-2">${fmt(row.user_id)}</td><td class="p-2">${fmt(row.query)}</td><td class="p-2">${fmt(row.total_hits)}</td><td class="p-2">${yesNo(row.is_failed)}</td><td class="p-2">${fmt(row.created_at)}</td></tr>`
+            ).join("") || '<tr><td class="p-2" colspan="6">데이터 없음</td></tr>';
+        }
+
+        async function loadRecent() {
+            const userId = document.getElementById("recentUserId").value.trim();
+            const query = userId ? `?skip=0&limit=100&user_id=${encodeURIComponent(userId)}` : "?skip=0&limit=100";
+            const res = await fetch(`${API}/recent-searches${query}`);
+            const data = await res.json();
+            const items = data.items || [];
+            const body = document.getElementById("recentBody");
+            body.innerHTML = items.map((row) =>
+                `<tr class="border-t border-gray-700"><td class="p-2">${fmt(row.id)}</td><td class="p-2">${fmt(row.user_id)}</td><td class="p-2">${fmt(row.query)}</td><td class="p-2">${fmt(row.created_at)}</td></tr>`
+            ).join("") || '<tr><td class="p-2" colspan="4">데이터 없음</td></tr>';
+        }
+
+        async function loadFailed() {
+            const days = document.getElementById("failedDays").value || 7;
+            const res = await fetch(`${API}/failed-keywords?days=${days}&limit=50`);
+            const data = await res.json();
+            const body = document.getElementById("failedBody");
+            body.innerHTML = (data || []).map((row, i) =>
+                `<tr class="border-t border-gray-700"><td class="p-2">${i + 1}</td><td class="p-2">${fmt(row.keyword)}</td><td class="p-2">${fmt(row.count)}</td></tr>`
+            ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
+        }
+
+        function setupTabs() {
+            const tabs = document.querySelectorAll(".tab");
+            const panels = document.querySelectorAll(".panel");
+            tabs.forEach((tab) => {
+                tab.addEventListener("click", () => {
+                    tabs.forEach((x) => x.classList.remove("active"));
+                    tab.classList.add("active");
+                    const name = tab.dataset.tab;
+                    panels.forEach((p) => p.classList.add("hidden"));
+                    document.getElementById(`panel-${name}`).classList.remove("hidden");
+                });
+            });
+        }
+
+        setupTabs();
+        loadPopular();
+        loadDocs();
+        loadLogs();
+        loadRecent();
+        loadFailed();
+    </script>
+</body>
+</html>

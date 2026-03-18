@@ -11,6 +11,21 @@
 version: '3.8'
 
 services:
+  # 0. 업무 데이터 저장용 PostgreSQL
+  postgres:
+    image: postgres:16
+    container_name: cleversearch-postgres
+    environment:
+      - POSTGRES_DB=cleversearch
+      - POSTGRES_USER=cleversearch
+      - POSTGRES_PASSWORD=cleversearch123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - cleversearch-net
+
   # 1. 메인 검색 엔진 (OpenSearch)
   opensearch:
     build:
@@ -88,11 +103,16 @@ services:
       - "8000:8000"
     environment:
       - OPENSEARCH_URL=https://cleversearch-os:9200
+      - DATABASE_URL=postgresql+psycopg2://cleversearch:cleversearch123@cleversearch-postgres:5432/cleversearch
     depends_on:
       - opensearch
+      - postgres
     networks:
       - cleversearch-net
 
 networks:
   cleversearch-net:
     driver: bridge
+
+volumes:
+  postgres_data:

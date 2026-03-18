@@ -37,5 +37,8 @@ class Settings:
     # 검색 엔에서 사용할 메인 인덱스 명칭 (file.py, index.py와 통일)
     OPENSEARCH_INDEX = os.getenv("OPENSEARCH_INDEX", "cleversearch-docs")
 
+    # 애플리케이션 업무 데이터 저장용 DB URL
+    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./cleversearch_app.db")
+
 # 전역에서 import하여 사용할 수 있도록 인스턴스 생성
 settings = Settings()

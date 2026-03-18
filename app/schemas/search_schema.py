@@ -89,3 +89,18 @@ class SearchRequest(BaseModel):
         ge=1, 
         le=100
     )
+
+    # 8. 페이지 번호 (1-base)
+    page: int = Field(
+        default=1,
+        title="페이지",
+        description="검색 결과 페이지 번호(1부터 시작)",
+        ge=1,
+    )
+
+    # 9. 사용자 식별자 (최근/추천 검색어 용도)
+    user_id: Optional[str] = Field(
+        default="anonymous",
+        title="사용자 ID",
+        description="최근 검색어, 추천 검색어 집계용 사용자 식별자"
+    )
