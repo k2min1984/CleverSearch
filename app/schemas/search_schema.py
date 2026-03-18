@@ -19,25 +19,28 @@ class SearchRequest(BaseModel):
     프론트엔드에서 전달되는 검색 조건들을 정의하고 검증합니다.
     """
     
-    # 1. 필수 검색어
+    # 1. 필수 검색어 (최대 200자 제한 - 과도한 쿼리 방지)
     query: str = Field(
         ..., 
         title="검색어",
         description="사용자가 입력한 메인 검색 키워드", 
-        example="인공지능"
+        example="인공지능",
+        max_length=200
     )
 
-    # 2. 상세 필터링 (포함/제외 키워드)
+    # 2. 상세 필터링 (포함/제외 키워드, 최대 10개/각 100자)  
     include_keywords: Optional[List[str]] = Field(
         default=[], 
         title="포함 키워드",
-        description="검색 결과에 반드시 포함되어야 할 추가 키워드 (AND 조건)"
+        description="검색 결과에 반드시 포함되어야 할 추가 키워드 (AND 조건, 최대 10개)",
+        max_length=10
     )
     
     exclude_keywords: Optional[List[str]] = Field(
         default=[], 
         title="제외 키워드",
-        description="검색 결과에서 제외할 키워드 (NOT 조건)"
+        description="검색 결과에서 제외할 키워드 (NOT 조건, 최대 10개)",
+        max_length=10
     )
 
     # 3. 날짜 범위 필터

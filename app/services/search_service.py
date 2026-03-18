@@ -78,13 +78,15 @@ class SearchService:
     
     # --- [3순위] 검색 실패 추적을 위한 로그 기록 함수 ---
     @staticmethod
-    async def log_search_event(query: str, total_hits: int, user_id: str = "anonymous"):
+    async def log_search_event(query: str, total_hits: int, user_id: str = "anonymous", is_failed: bool = None):
         log_index = "search_logs"
+        # is_failed를 명시적으로 전달받으면 우선 사용, 없으면 total_hits 기준 판정
+        failed_flag = is_failed if is_failed is not None else (total_hits == 0)
         log_doc = {
             "query": query,
             "query_keyword": query.strip(), # 분석용 키워드
             "total_hits": total_hits,
-            "is_failed": total_hits == 0,
+            "is_failed": failed_flag,
             "timestamp": datetime.now().isoformat(),
             "type": "manual_search", # 자동완성과 구분하기 위함
             "user_id": user_id,
@@ -96,7 +98,7 @@ class SearchService:
 
         # 운영 리포트/추천용으로는 앱 DB를 기준 데이터로 사용합니다.
         try:
-            DBService.save_search_log(user_id=user_id, query=query.strip(), total_hits=total_hits)
+            DBService.save_search_log(user_id=user_id, query=query.strip(), total_hits=total_hits, is_failed=failed_flag)
             DBService.save_recent_search(user_id=user_id, query=query.strip())
         except Exception as e:
             print(f"앱 DB 로그 저장 실패: {e}")
@@ -230,16 +232,32 @@ class SearchService:
             for keyword in req.include_keywords:
                 safe_kw = DocumentUtils.sanitize_text(keyword)
                 if safe_kw:
-                    filters.append({"match_phrase": {"all_text": safe_kw}})
+                    # Title 또는 본문 중 하나라도 포함하면 통과 (제목 검색 누락 방지)
+                    filters.append({
+                        "bool": {
+                            "should": [
+                                {"match_phrase": {"all_text": safe_kw}},
+                                {"match_phrase": {"Title": safe_kw}},
+                            ],
+                            "minimum_should_match": 1,
+                        }
+                    })
 
         if req.exclude_keywords:
-            must_not = []
+            must_not = query_body["query"]["bool"].setdefault("must_not", [])
             for keyword in req.exclude_keywords:
                 safe_kw = DocumentUtils.sanitize_text(keyword)
                 if safe_kw:
-                    must_not.append({"match_phrase": {"all_text": safe_kw}})
-            if must_not:
-                query_body["query"]["bool"]["must_not"] = must_not
+                    # Title 또는 본문 중 하나라도 포함하면 제외
+                    must_not.append({
+                        "bool": {
+                            "should": [
+                                {"match_phrase": {"all_text": safe_kw}},
+                                {"match_phrase": {"Title": safe_kw}},
+                            ],
+                            "minimum_should_match": 1,
+                        }
+                    })
         
         # 신규 추가: 작성자 필터링
         if hasattr(req, 'author') and req.author:
@@ -259,7 +277,26 @@ class SearchService:
                 print(f"👉 [점수 확인] '{req.query}' 검색 ➡️ 최고 점수: {response['hits']['hits'][0]['_score']}")            
 
             # --- [3순위] 검색 실패 및 통계 추적 로그 남기기 ---
-            await SearchService.log_search_event(clean_query, total_hits, req.user_id or "anonymous")
+            # 벡터 단독 매칭을 제외하고, 정확 구문(제목/본문) 기준으로 실패 여부를 엄격 판정
+            try:
+                strict_phrase_query = {
+                    "bool": {
+                        "should": [
+                            {"match_phrase": {"Title": clean_query}},
+                            {"match_phrase": {"all_text": clean_query}},
+                        ],
+                        "minimum_should_match": 1,
+                    }
+                }
+                strict_count_resp = client.count(
+                    index=index_name, body={"query": strict_phrase_query}
+                )
+                strict_hits = strict_count_resp.get("count", 0)
+            except Exception:
+                strict_hits = 0
+            is_failed_flag = (strict_hits == 0)
+
+            await SearchService.log_search_event(clean_query, total_hits, req.user_id or "anonymous", is_failed=is_failed_flag)
             
             # 카테고리 통계 추출
             buckets = response.get('aggregations', {}).get('group_by_category', {}).get('buckets', [])

@@ -25,6 +25,9 @@ INDEX_NAME = "cleversearch-docs"
 # 허용된 확장자 목록 (doc, ppt는 라이브러리 미지원으로 제외)
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'hwp', 'hwpx', 'pdf', 'docx', 'pptx', 'jpg', 'jpeg', 'png'}
 
+# 업로드 파일 최대 크기 (100MB) - DoS 공격 방지
+MAX_UPLOAD_SIZE = 100 * 1024 * 1024
+
 def ensure_index():
     """인덱스가 없을 경우 초기 설정(Settings/Mappings)과 함께 생성"""
     if not client.indices.exists(index=INDEX_NAME):
@@ -94,8 +97,11 @@ async def upload_file(file: UploadFile = File(...)):
     
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"지원하지 않는 확장자입니다: {ext}")
-        
+
     content = await file.read()
+    # 파일 크기 검증 (100MB 초과 시 거부) - 메모리 폭발 방지
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail=f"파일 크기 초과: 최대 100MB 허용 (현재 {len(content)//1024//1024}MB)")
     text_content = ""
 
     try:
@@ -110,6 +116,23 @@ async def upload_file(file: UploadFile = File(...)):
             with pdfplumber.open(io.BytesIO(content)) as pdf_file:
                 pages = [f"[[Page {i+1}]]\n{p.extract_text()}" for i, p in enumerate(pdf_file.pages) if p.extract_text()]
                 text_content = "\n\n".join(pages)
+            # 텍스트가 없으면 이미지형(스캔) PDF로 간주 → PyMuPDF로 렌더링 후 OCR 폴백
+            if not text_content.strip():
+                try:
+                    import fitz  # PyMuPDF
+                    pdf_doc = fitz.open(stream=content, filetype="pdf")
+                    ocr_pages = []
+                    for page_num, page in enumerate(pdf_doc):
+                        pix = page.get_pixmap(dpi=150)
+                        img_bytes = pix.tobytes("png")
+                        page_text = image._extract_text(img_bytes)
+                        if page_text and page_text.strip():
+                            ocr_pages.append(f"[[Page {page_num+1}]]\n{page_text}")
+                    text_content = "\n\n".join(ocr_pages)
+                    if ocr_pages:
+                        print(f"[이미지PDF OCR] {filename}: {len(ocr_pages)}페이지 추출")
+                except Exception as e:
+                    print(f"이미지형 PDF OCR 폴백 실패: {e}")
                 
         elif ext == 'docx':
             doc = Document(io.BytesIO(content))

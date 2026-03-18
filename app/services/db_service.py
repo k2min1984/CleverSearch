@@ -14,7 +14,7 @@ class DBService:
         return {tok for tok in re.split(r"\s+", (text or "").strip().lower()) if len(tok) >= 2}
 
     @staticmethod
-    def save_search_log(user_id: str, query: str, total_hits: int, search_type: str = "manual_search") -> None:
+    def save_search_log(user_id: str, query: str, total_hits: int, search_type: str = "manual_search", is_failed: bool = None) -> None:
         # 인기검색/실패검색/추천검색의 기준이 되는 원본 로그를 적재합니다.
         with get_db_session() as db:
             db.add(
@@ -22,7 +22,7 @@ class DBService:
                     user_id=user_id or "anonymous",
                     query=query,
                     total_hits=total_hits,
-                    is_failed=total_hits == 0,
+                    is_failed=is_failed if is_failed is not None else (total_hits == 0),
                     search_type=search_type,
                 )
             )
