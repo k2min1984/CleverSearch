@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.services.db_service import DBService
+from app.core.security import require_role
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("viewer"))])
 
 
 @router.get("/popular-keywords", summary="인기 검색어 카운팅 목록")

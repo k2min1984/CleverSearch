@@ -1,7 +1,10 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import hashlib
+import hmac
+import os
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, create_engine
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.core.config import settings
@@ -55,9 +58,175 @@ class IndexedDocument(Base):
     indexed_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
 
 
+class SmbSource(Base):
+    # SMB 경로별 동기화 설정과 상태를 저장합니다.
+    __tablename__ = "smb_sources"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), nullable=False, unique=True, index=True)
+    share_path = Column(String(400), nullable=False)
+    username = Column(String(200), nullable=True)
+    password = Column(String(200), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    last_error = Column(String(500), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class DbSource(Base):
+    # 다중 DB 수집 대상(Oracle/MySQL/PostgreSQL 등) 연결 정보를 저장합니다.
+    __tablename__ = "db_sources"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), nullable=False, unique=True, index=True)
+    db_type = Column(String(40), nullable=False, index=True)
+    connection_url = Column(String(600), nullable=False)
+    query_text = Column(Text, nullable=False)
+    title_column = Column(String(120), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    chunk_size = Column(Integer, nullable=False, default=500)
+    last_synced_at = Column(DateTime, nullable=True)
+    last_error = Column(String(500), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class DictionaryEntry(Base):
+    # 동의어/불용어/사용자 사전 항목을 저장합니다.
+    __tablename__ = "dictionary_entries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    dict_type = Column(String(40), nullable=False, index=True)  # synonym|stopword|user
+    term = Column(String(300), nullable=False, index=True)
+    replacement = Column(String(300), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class CertificateStatus(Base):
+    # 인증서 만료 추적용 상태를 저장합니다.
+    __tablename__ = "certificate_status"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cert_name = Column(String(260), nullable=False, unique=True, index=True)
+    cert_path = Column(String(500), nullable=False)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    days_left = Column(Integer, nullable=True, index=True)
+    health_status = Column(String(40), nullable=False, default="unknown", index=True)
+    last_checked_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    message = Column(String(500), nullable=True)
+
+
+class AuthRole(Base):
+    # 역할 권한 정의 테이블
+    __tablename__ = "auth_roles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), nullable=False, unique=True, index=True)
+    description = Column(String(200), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class AuthUser(Base):
+    # 사용자 계정 및 권한 매핑 테이블
+    __tablename__ = "auth_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(120), nullable=False, unique=True, index=True)
+    password_hash = Column(String(400), nullable=False)
+    role_id = Column(Integer, ForeignKey("auth_roles.id"), nullable=False, index=True)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class RevokedAccessToken(Base):
+    # Access token 블랙리스트 테이블
+    __tablename__ = "revoked_access_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    jti = Column(String(120), nullable=False, unique=True, index=True)
+    subject = Column(String(120), nullable=True, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class RevokedRefreshToken(Base):
+    # Refresh token 블랙리스트 테이블
+    __tablename__ = "revoked_refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    jti = Column(String(120), nullable=False, unique=True, index=True)
+    subject = Column(String(120), nullable=True, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+def hash_password(raw_password: str) -> str:
+    # PBKDF2(SHA-256) 해시 문자열 생성
+    salt = os.urandom(16).hex()
+    iterations = 200_000
+    digest = hashlib.pbkdf2_hmac("sha256", (raw_password or "").encode("utf-8"), salt.encode("utf-8"), iterations).hex()
+    return f"pbkdf2_sha256${iterations}${salt}${digest}"
+
+
+def verify_password(raw_password: str, stored_hash: str) -> bool:
+    try:
+        algo, iter_text, salt, digest = (stored_hash or "").split("$", 3)
+        if algo != "pbkdf2_sha256":
+            return False
+        calc = hashlib.pbkdf2_hmac("sha256", (raw_password or "").encode("utf-8"), salt.encode("utf-8"), int(iter_text)).hex()
+        return hmac.compare_digest(calc, digest)
+    except Exception:
+        return False
+
+
+def _bootstrap_auth_seed() -> None:
+    # 초기 역할/계정 자동 등록
+    with get_db_session() as db:
+        role_map = {}
+        role_specs = [
+            ("viewer", "조회 전용"),
+            ("operator", "운영 작업"),
+            ("admin", "관리자 전체 권한"),
+        ]
+        now = datetime.now(timezone.utc)
+
+        for role_name, desc in role_specs:
+            row = db.query(AuthRole).filter(AuthRole.name == role_name).first()
+            if not row:
+                row = AuthRole(name=role_name, description=desc, is_active=True, created_at=now)
+                db.add(row)
+                db.flush()
+            role_map[role_name] = row.id
+
+        user_specs = [
+            ("viewer", "viewer123!", "viewer"),
+            ("operator", "operator123!", "operator"),
+            ("admin", "admin123!", "admin"),
+        ]
+        for username, password, role_name in user_specs:
+            row = db.query(AuthUser).filter(AuthUser.username == username).first()
+            if not row:
+                db.add(
+                    AuthUser(
+                        username=username,
+                        password_hash=hash_password(password),
+                        role_id=role_map[role_name],
+                        is_active=True,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+
+
 def init_database() -> None:
     # 로컬 개발 환경에서는 마이그레이션 전에도 최소 테이블이 자동 생성되도록 유지합니다.
     Base.metadata.create_all(bind=engine)
+    _bootstrap_auth_seed()
 
 
 @contextmanager

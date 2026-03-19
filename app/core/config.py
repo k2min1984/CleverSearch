@@ -40,5 +40,22 @@ class Settings:
     # 애플리케이션 업무 데이터 저장용 DB URL
     DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./cleversearch_app.db")
 
+    # 스케줄러 기본 동작 주기(초)
+    INGEST_SCHEDULER_INTERVAL_SECONDS = int(os.getenv("INGEST_SCHEDULER_INTERVAL_SECONDS", "120"))
+    AUTO_START_INGEST_SCHEDULER = os.getenv("AUTO_START_INGEST_SCHEDULER", "false").lower() == "true"
+
+    # 인증서 상태 확인 기본 경로
+    CERT_DIR = os.getenv("CERT_DIR", "cert")
+
+    # 선택 설정: 다중 DB/SMB 사전 등록 JSON 문자열
+    DB_SOURCES_JSON = os.getenv("DB_SOURCES_JSON", "")
+    SMB_SOURCES_JSON = os.getenv("SMB_SOURCES_JSON", "")
+
+    # JWT 인증 설정
+    JWT_SECRET = os.getenv("JWT_SECRET", "change-this-in-production-at-least-32-chars")
+    JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
+    JWT_REFRESH_EXPIRE_MINUTES = int(os.getenv("JWT_REFRESH_EXPIRE_MINUTES", "4320"))
+
 # 전역에서 import하여 사용할 수 있도록 인스턴스 생성
 settings = Settings()

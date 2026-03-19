@@ -22,8 +22,12 @@ from app.api.v1 import search
 from app.api.v1 import index
 from app.api.v1 import file
 from app.api.v1 import admin
+from app.api.v1 import system
+from app.api.v1 import auth
 from app.core.setup import create_index # 인덱스 초기화 함수
+from app.core.config import settings
 from app.core.database import init_database
+from app.services.system_service import IngestionSchedulerService, bootstrap_sources_from_env
 
 # --- [경로 설정] 프로젝트 루트 디렉터리 및 정적 파일 경로 확정 ---
 # os.path.abspath(__file__) -> .../app/main.py
@@ -43,15 +47,26 @@ async def lifespan(app: FastAPI):
         init_database()
         print("✅ [System] 업무 DB 테이블 초기화 완료")
 
+        bootstrap_summary = bootstrap_sources_from_env(
+            db_sources_json=settings.DB_SOURCES_JSON,
+            smb_sources_json=settings.SMB_SOURCES_JSON,
+        )
+        print(f"✅ [System] 소스 부트스트랩 완료: {bootstrap_summary}")
+
         # [주의] setup.py의 create_index도 DocumentUtils의 매핑을 따르도록 수정되어야 함
         create_index() 
         print("✅ [System] 인덱스 설정 및 확인 완료")
+
+        if settings.AUTO_START_INGEST_SCHEDULER:
+            IngestionSchedulerService.start(settings.INGEST_SCHEDULER_INTERVAL_SECONDS)
+            print("✅ [System] 자동 색인 스케줄러 시작 완료")
     except Exception as e:
         print(f"❌ [System] 인덱스 초기화 실패: {e}")
     
     yield  # 서버 가동 중 (API 요청 처리)
     
     # 2. 서버 종료 시
+    IngestionSchedulerService.stop()
     print("👋 [System] CleverSearch 엔진 종료")
 
 # --- FastAPI 인스턴스 설정 ---
@@ -83,6 +98,8 @@ app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
 app.include_router(index.router, prefix="/api/v1/index", tags=["Index"])
 app.include_router(file.router, prefix="/api/v1/file", tags=["File"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
+app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
 
 # --- 루트 경로: index.html 반환 ---
 @app.get("/", summary="메인 페이지", include_in_schema=False)

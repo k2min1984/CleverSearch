@@ -7,3 +7,14 @@ python-multipart
 sqlalchemy
 psycopg2-binary
 alembic
+pandas
+openpyxl
+pdfplumber
+python-docx
+python-pptx
+pypdf
+olefile
+Pillow
+pytesseract
+py-hanspell
+PyJWT
