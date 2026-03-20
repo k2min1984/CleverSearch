@@ -317,17 +317,16 @@ class DashboardService:
     @staticmethod
     def trend(days: int = 14) -> list[dict[str, Any]]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        buckets: dict[str, dict[str, int]] = {}
         with get_db_session() as db:
             rows = db.query(SearchLog).filter(SearchLog.created_at >= cutoff).all()
-
-        buckets: dict[str, dict[str, int]] = {}
-        for row in rows:
-            key = row.created_at.strftime("%Y-%m-%d") if row.created_at else "unknown"
-            if key not in buckets:
-                buckets[key] = {"total": 0, "failed": 0}
-            buckets[key]["total"] += 1
-            if row.is_failed:
-                buckets[key]["failed"] += 1
+            for row in rows:
+                key = row.created_at.strftime("%Y-%m-%d") if row.created_at else "unknown"
+                if key not in buckets:
+                    buckets[key] = {"total": 0, "failed": 0}
+                buckets[key]["total"] += 1
+                if row.is_failed:
+                    buckets[key]["failed"] += 1
 
         return [
             {
@@ -395,6 +394,11 @@ class DashboardService:
                 .all()
             )
 
+            last_total = len(last_rows)
+            prev_total = len(prev_rows)
+            last_fail_count = sum(1 for row in last_rows if row.is_failed)
+            prev_fail_count = sum(1 for row in prev_rows if row.is_failed)
+
         scheduler_running = IngestionSchedulerService.status().get("running", False)
         if not scheduler_running:
             badges.append({"code": "scheduler_stopped", "severity": "critical", "message": "자동 색인 스케줄러 중지"})
@@ -412,10 +416,8 @@ class DashboardService:
                 "message": f"{cert_warn_days}일 내 만료 인증서 {cert_warn_count}건",
             })
 
-        last_total = len(last_rows)
-        prev_total = len(prev_rows)
-        last_fail_rate = (sum(1 for row in last_rows if row.is_failed) / last_total) if last_total else 0.0
-        prev_fail_rate = (sum(1 for row in prev_rows if row.is_failed) / prev_total) if prev_total else 0.0
+        last_fail_rate = (last_fail_count / last_total) if last_total else 0.0
+        prev_fail_rate = (prev_fail_count / prev_total) if prev_total else 0.0
 
         # 기준 데이터가 있는 경우에만 급등 판정
         if prev_total >= 10 and last_total >= 5 and prev_fail_rate > 0:

@@ -34,8 +34,10 @@ class DictionaryService:
     def upsert_entry(dict_type: str, term: str, replacement: str | None = None, is_active: bool = True) -> dict[str, Any]:
         t = (term or "").strip()
         d = (dict_type or "").strip().lower()
+        _aliases = {"user_dict": "user", "userdict": "user"}
+        d = _aliases.get(d, d)
         if not t or d not in {"synonym", "stopword", "user"}:
-            raise ValueError("dict_type은 synonym/stopword/user 중 하나이고 term은 필수")
+            raise ValueError("dict_type은 synonym/stopword/user/user_dict 중 하나이고 term은 필수")
 
         with get_db_session() as db:
             row = (

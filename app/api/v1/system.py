@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from app.core.security import require_role
@@ -121,7 +121,10 @@ async def upload_dictionary_excel(file: UploadFile = File(...)):
 
 @router.post("/dictionary/entry", dependencies=[Depends(require_role("operator"))], summary="사전 단건 업서트")
 async def upsert_dictionary_entry(dict_type: str, term: str, replacement: str | None = None, is_active: bool = True):
-    return DictionaryService.upsert_entry(dict_type=dict_type, term=term, replacement=replacement, is_active=is_active)
+    try:
+        return DictionaryService.upsert_entry(dict_type=dict_type, term=term, replacement=replacement, is_active=is_active)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/dictionary/entries", dependencies=[Depends(require_role("viewer"))], summary="사전 조회")

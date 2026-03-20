@@ -21,55 +21,41 @@ def create_index():
     client = get_client()
     index_name = settings.OPENSEARCH_INDEX  # "cleversearch-docs"
 
-    # [인덱스 설정 정의]
+    # [인덱스 설정 정의] — IndexingService.ensure_index()와 동일한 매핑 사용
     body = {
         "settings": {
             "index": {
+                "knn": True,
                 "analysis": {
-                    # 1. 토크나이저 설정 (Nori Custom)
-                    "tokenizer": {
-                        "nori_token_mixed": {
-                            "type": "nori_tokenizer",
-                            # decompound_mode: mixed
-                            # "가공식품" -> "가공식품", "가공", "식품" 모두 토큰화 (재현율 향상)
-                            "decompound_mode": "mixed" 
+                    "analyzer": {
+                        "korean_analyzer": {
+                            "type": "custom",
+                            "tokenizer": "nori_tokenizer",
+                            "filter": ["lowercase", "nori_readingform", "my_stop_filter"],
                         }
                     },
-                    # 2. 분석기 설정 (Tokenizer + Filter)
-                    "analyzer": {
-                        "clever_korean_analyzer": {
-                            "type": "custom",
-                            "tokenizer": "nori_token_mixed",
-                            "filter": [
-                                "lowercase",          # 영문 소문자 변환
-                                "nori_part_of_speech" # 불용어(조사, 어미 등) 제거 필터
-                            ]
+                    "filter": {
+                        "my_stop_filter": {
+                            "type": "stop",
+                            "stopwords": ["에", "대해서", "해주세요", "알려주세요", "의", "를", "은", "는"],
                         }
-                    }
-                }
+                    },
+                },
             }
         },
         "mappings": {
             "properties": {
-                # [메타데이터] 정확한 매칭을 위해 keyword 타입 사용
+                "Title": {"type": "text", "analyzer": "korean_analyzer"},
+                "all_text": {"type": "text", "analyzer": "korean_analyzer"},
+                "doc_category": {"type": "keyword"},
+                "chosung_text": {"type": "text", "analyzer": "whitespace"},
                 "origin_file": {"type": "keyword"},
-                "origin_sheet": {"type": "keyword"},
-                
-                # [검색 대상] 형태소 분석기가 적용된 핵심 텍스트 필드
-                # file.py에서 'all_text'로 합쳐서 넣기로 한 필드입니다.
-                "all_text": {
-                    "type": "text", 
-                    "analyzer": "clever_korean_analyzer",       # 색인 시 사용
-                    "search_analyzer": "clever_korean_analyzer" # 검색 시 사용
-                },
-                
-                # [날짜/숫자] 범위 검색용
+                "file_ext": {"type": "keyword"},
+                "content_hash": {"type": "keyword"},
                 "indexed_at": {"type": "date"},
-                
-                # [통계/정렬]
-                "search_count": {"type": "integer"} 
+                "text_vector": {"type": "knn_vector", "dimension": 768},
             }
-        }
+        },
     }
 
     try:

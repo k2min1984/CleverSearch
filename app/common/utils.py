@@ -1,4 +1,5 @@
 import re
+import hashlib
 from datetime import datetime
 from opensearchpy import helpers
 
@@ -19,10 +20,10 @@ class DocumentUtils:
 
     @staticmethod
     def generate_content_digest(text: str, filename: str) -> str:
-        """[지문] 중복 확인용 고유 데이터 지문 생성"""
+        """[지문] 중복 확인용 SHA256 해시 생성"""
         clean = re.sub(r'[^가-힣a-zA-Z0-9]', '', text[:500]).strip()
-        # 본문이 비었을 경우 파일명으로 대체하여 'None' 에러 방지
-        return clean if clean else re.sub(r'[^가-힣a-zA-Z0-9]', '', filename)
+        payload = clean if clean else re.sub(r'[^가-힣a-zA-Z0-9]', '', filename)
+        return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
     @staticmethod
     def map_category(filename: str) -> str:
