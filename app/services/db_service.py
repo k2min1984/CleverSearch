@@ -302,3 +302,23 @@ class DBService:
                     }
                 )
             return {"total": total, "items": items}
+
+    @staticmethod
+    def delete_indexed_document(doc_id: int):
+        """개별 문서를 업무 DB에서 삭제하고 os_doc_id를 반환합니다."""
+        with get_db_session() as db:
+            row = db.query(IndexedDocument).filter(IndexedDocument.id == doc_id).first()
+            if not row:
+                return None
+            os_doc_id = row.os_doc_id
+            db.delete(row)
+            return os_doc_id
+
+    @staticmethod
+    def clear_all_db_data() -> dict:
+        """indexed_documents, search_logs, recent_searches 테이블을 전부 비웁니다."""
+        with get_db_session() as db:
+            docs = db.query(IndexedDocument).delete(synchronize_session=False)
+            logs = db.query(SearchLog).delete(synchronize_session=False)
+            recent = db.query(RecentSearch).delete(synchronize_session=False)
+            return {"deleted_documents": docs, "deleted_logs": logs, "deleted_recent": recent}

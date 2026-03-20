@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CleverSearch 관리자 목록</title>
+    <title>CleverSearch 관리자</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -19,309 +19,446 @@
         .badge.info { background: #1f2937; color: #93c5fd; border: 1px solid #374151; }
         .badge.warning { background: #3f2a03; color: #fbbf24; border: 1px solid #92400e; }
         .badge.critical { background: #450a0a; color: #fca5a5; border: 1px solid #b91c1c; }
+        .drop-zone { border: 2px dashed #374151; border-radius: 0.75rem; padding: 2rem; text-align: center; transition: all 0.2s; }
+        .drop-zone.dragover { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
+        .btn-del { cursor:pointer; color:#ef4444; }
+        .btn-del:hover { color:#f87171; text-decoration:underline; }
     </style>
 </head>
 <body class="min-h-screen">
-    <div class="max-w-7xl mx-auto px-4 py-8">
-        <div class="flex items-center justify-between mb-6">
-            <h1 class="text-2xl font-bold">CleverSearch 관리자 리스트</h1>
-            <div class="flex items-center gap-2">
-                <input id="loginUser" value="admin" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-28" />
-                <input id="loginPass" value="admin123!" type="password" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-36" />
-                <button onclick="loginJwt()" class="px-3 py-1 rounded bg-green-700 hover:bg-green-600 text-sm">JWT 로그인</button>
-                <button onclick="refreshJwt()" class="px-3 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-sm">토큰 갱신</button>
-                <button onclick="logoutJwt()" class="px-3 py-1 rounded bg-red-700 hover:bg-red-600 text-sm">로그아웃</button>
-                <select id="roleSelect" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
-                    <option value="viewer">viewer</option>
-                    <option value="operator">operator</option>
-                    <option value="admin" selected>admin</option>
-                </select>
-                <span class="pill" id="authStatus">X-Role 모드</span>
-                <a href="/" class="px-3 py-2 rounded bg-gray-700 hover:bg-gray-600 text-sm">검색 페이지로</a>
+
+    <!-- ===== 로그인 화면 (비인증 시 표시) ===== -->
+    <div id="loginSection" class="flex items-center justify-center min-h-screen">
+        <div class="bg-gray-800 border border-gray-700 rounded-xl p-8 w-full max-w-md shadow-2xl">
+            <h1 class="text-2xl font-bold text-center mb-2">CleverSearch</h1>
+            <p class="text-gray-400 text-center mb-6 text-sm">관리자 로그인</p>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">아이디</label>
+                    <input id="loginUser" value="admin" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">비밀번호</label>
+                    <input id="loginPass" value="admin123!" type="password" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
+                </div>
+                <div id="loginError" class="hidden text-red-400 text-sm text-center"></div>
+                <button onclick="loginJwt()" class="w-full px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium transition">로그인</button>
+            </div>
+            <div class="mt-4 text-center">
+                <a href="/" class="text-xs text-gray-500 hover:text-gray-300">검색 페이지로 이동</a>
             </div>
         </div>
+    </div>
 
-        <div class="flex flex-wrap gap-2 mb-4">
-            <button class="tab active px-3 py-2 rounded bg-gray-700 text-sm" data-tab="popular">인기검색 카운트</button>
-            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="docs">업무DB 문서 목록</button>
-            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="logs">검색 로그</button>
-            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="recent">최근 검색어</button>
-            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="failed">실패 검색어</button>
-            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="dashboard">대시보드 지표</button>
-            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="dictionary">사전 관리</button>
-            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="smb">SMB 색인</button>
-            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="dbsources">DB 색인</button>
-            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="scheduler">자동 스케줄러</button>
-            <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="ssl">볼륨/SSL</button>
-        </div>
+    <!-- ===== 메인 관리자 콘텐츠 (인증 후 표시) ===== -->
+    <div id="mainContent" class="hidden">
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="flex items-center justify-between mb-6">
+                <h1 class="text-2xl font-bold">CleverSearch 관리자</h1>
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-gray-400" id="loggedInUser"></span>
+                    <span class="pill" id="authStatus">JWT</span>
+                    <button onclick="logoutJwt()" class="px-3 py-1 rounded bg-red-700 hover:bg-red-600 text-sm">로그아웃</button>
+                    <a href="/" class="px-3 py-2 rounded bg-gray-700 hover:bg-gray-600 text-sm">검색 페이지</a>
+                </div>
+            </div>
 
-        <div id="panel-popular" class="panel">
-            <div class="flex gap-2 mb-3">
-                <input id="popularDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
-                <button onclick="loadPopular()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+            <div class="flex flex-wrap gap-2 mb-4">
+                <button class="tab active px-3 py-2 rounded bg-gray-700 text-sm" data-tab="upload">파일 업로드</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="docs">문서 목록</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="popular">인기검색</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="logs">검색 로그</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="recent">최근 검색어</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="failed">실패 검색어</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="dashboard">대시보드</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="dictionary">사전 관리</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="smb">SMB 색인</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="dbsources">DB 색인</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="scheduler">스케줄러</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="ssl">볼륨/SSL</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="reset">초기화</button>
             </div>
-            <div class="overflow-auto border border-gray-700 rounded">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-800"><tr><th class="p-2 text-left">순위</th><th class="p-2 text-left">키워드</th><th class="p-2 text-left">카운트</th></tr></thead>
-                    <tbody id="popularBody"></tbody>
-                </table>
-            </div>
-        </div>
 
-        <div id="panel-docs" class="panel hidden">
-            <div class="flex gap-2 mb-3">
-                <button onclick="loadDocs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+            <!-- 파일 업로드 탭 -->
+            <div id="panel-upload" class="panel">
+                <div class="drop-zone mb-4" id="dropZone">
+                    <p class="text-gray-400 mb-2">파일을 여기에 드래그하거나 클릭하여 선택</p>
+                    <p class="text-xs text-gray-500">지원 형식: hwp, pdf, docx, pptx, xlsx, xls, hwpx, jpg, jpeg, png (최대 100MB)</p>
+                    <input type="file" id="fileInput" multiple accept=".hwp,.hwpx,.pdf,.docx,.pptx,.xlsx,.xls,.jpg,.jpeg,.png" class="hidden" />
+                </div>
+                <div id="uploadQueue" class="space-y-2 mb-4"></div>
+                <div id="uploadResults" class="space-y-1"></div>
             </div>
-            <div class="overflow-auto border border-gray-700 rounded">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">제목</th><th class="p-2 text-left">파일명</th><th class="p-2 text-left">확장자</th><th class="p-2 text-left">카테고리</th><th class="p-2 text-left">등록일시</th><th class="p-2 text-left">본문 미리보기</th></tr></thead>
-                    <tbody id="docsBody"></tbody>
-                </table>
-            </div>
-        </div>
 
-        <div id="panel-logs" class="panel hidden">
-            <div class="flex gap-2 mb-3">
-                <button onclick="loadLogs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+            <!-- 문서 목록 탭 -->
+            <div id="panel-docs" class="panel hidden">
+                <div class="flex gap-2 mb-3">
+                    <button onclick="loadDocs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+                    <span id="docTotal" class="text-sm text-gray-400 self-center"></span>
+                </div>
+                <div class="overflow-auto border border-gray-700 rounded">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">제목</th><th class="p-2 text-left">파일명</th><th class="p-2 text-left">확장자</th><th class="p-2 text-left">카테고리</th><th class="p-2 text-left">등록일시</th><th class="p-2 text-left">미리보기</th><th class="p-2 text-left">삭제</th></tr></thead>
+                        <tbody id="docsBody"></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="overflow-auto border border-gray-700 rounded">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">사용자</th><th class="p-2 text-left">검색어</th><th class="p-2 text-left">결과수</th><th class="p-2 text-left">실패여부</th><th class="p-2 text-left">시각</th></tr></thead>
-                    <tbody id="logsBody"></tbody>
-                </table>
-            </div>
-        </div>
 
-        <div id="panel-recent" class="panel hidden">
-            <div class="flex gap-2 mb-3">
-                <input id="recentUserId" type="text" placeholder="user_id (선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-48" />
-                <button onclick="loadRecent()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+            <!-- 인기검색 탭 -->
+            <div id="panel-popular" class="panel hidden">
+                <div class="flex gap-2 mb-3">
+                    <input id="popularDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+                    <button onclick="loadPopular()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+                </div>
+                <div class="overflow-auto border border-gray-700 rounded">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-800"><tr><th class="p-2 text-left">순위</th><th class="p-2 text-left">키워드</th><th class="p-2 text-left">카운트</th></tr></thead>
+                        <tbody id="popularBody"></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="overflow-auto border border-gray-700 rounded">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">사용자</th><th class="p-2 text-left">검색어</th><th class="p-2 text-left">시각</th></tr></thead>
-                    <tbody id="recentBody"></tbody>
-                </table>
-            </div>
-        </div>
 
-        <div id="panel-failed" class="panel hidden">
-            <div class="flex gap-2 mb-3">
-                <input id="failedDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
-                <button onclick="loadFailed()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+            <!-- 검색 로그 탭 -->
+            <div id="panel-logs" class="panel hidden">
+                <div class="flex gap-2 mb-3">
+                    <button onclick="loadLogs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+                </div>
+                <div class="overflow-auto border border-gray-700 rounded">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">사용자</th><th class="p-2 text-left">검색어</th><th class="p-2 text-left">결과수</th><th class="p-2 text-left">실패</th><th class="p-2 text-left">시각</th></tr></thead>
+                        <tbody id="logsBody"></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="overflow-auto border border-gray-700 rounded">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-800"><tr><th class="p-2 text-left">순위</th><th class="p-2 text-left">키워드</th><th class="p-2 text-left">카운트</th></tr></thead>
-                    <tbody id="failedBody"></tbody>
-                </table>
-            </div>
-        </div>
 
-        <div id="panel-dashboard" class="panel hidden">
-            <div class="flex gap-2 mb-3">
-                <input id="dashboardDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
-                <button onclick="loadDashboard()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
-                <button onclick="runSmokeFromUI()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">스모크 실행</button>
-                <button onclick="toggleDashboardDebug()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">디버그 토글</button>
+            <!-- 최근 검색어 탭 -->
+            <div id="panel-recent" class="panel hidden">
+                <div class="flex gap-2 mb-3">
+                    <input id="recentUserId" type="text" placeholder="user_id (선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-48" />
+                    <button onclick="loadRecent()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+                </div>
+                <div class="overflow-auto border border-gray-700 rounded">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">사용자</th><th class="p-2 text-left">검색어</th><th class="p-2 text-left">시각</th></tr></thead>
+                        <tbody id="recentBody"></tbody>
+                    </table>
+                </div>
             </div>
-            <div id="alertBadges" class="flex flex-wrap gap-2 mb-3"></div>
-            <div class="grid md:grid-cols-4 gap-3 mb-3">
-                <div class="metric"><div class="metric-label">전체 로그</div><div class="metric-value" id="mTotalLogs">0</div></div>
-                <div class="metric"><div class="metric-label">실패 로그</div><div class="metric-value" id="mFailedLogs">0</div></div>
-                <div class="metric"><div class="metric-label">실패율</div><div class="metric-value" id="mFailureRate">0%</div></div>
-                <div class="metric"><div class="metric-label">스케줄러</div><div class="metric-value" id="mScheduler">stopped</div></div>
-            </div>
-            <div class="grid md:grid-cols-2 gap-3 mb-3">
-                <canvas id="trendChart" height="130"></canvas>
-                <canvas id="keywordChart" height="130"></canvas>
-            </div>
-            <pre id="dashboardHealth" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mb-3"></pre>
-            <pre id="dashboardSummary" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
-            <pre id="dashboardTrend" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mt-3"></pre>
-            <pre id="smokeOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mt-3"></pre>
-        </div>
 
-        <div id="panel-dictionary" class="panel hidden">
-            <div class="grid md:grid-cols-4 gap-2 mb-3">
-                <select id="dictType" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
-                    <option value="synonym">synonym</option>
-                    <option value="stopword">stopword</option>
-                    <option value="user">user</option>
-                </select>
-                <input id="dictTerm" placeholder="term" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="dictReplacement" placeholder="replacement" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <button onclick="upsertDictionaryEntry()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">단건 저장</button>
+            <!-- 실패 검색어 탭 -->
+            <div id="panel-failed" class="panel hidden">
+                <div class="flex gap-2 mb-3">
+                    <input id="failedDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+                    <button onclick="loadFailed()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+                </div>
+                <div class="overflow-auto border border-gray-700 rounded">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-800"><tr><th class="p-2 text-left">순위</th><th class="p-2 text-left">키워드</th><th class="p-2 text-left">카운트</th></tr></thead>
+                        <tbody id="failedBody"></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="flex gap-2 mb-3">
-                <button onclick="loadDictionaryEntries()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">목록 조회</button>
-            </div>
-            <pre id="dictionaryOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
-        </div>
 
-        <div id="panel-smb" class="panel hidden">
-            <div class="grid md:grid-cols-5 gap-2 mb-3">
-                <input id="smbName" placeholder="name" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="smbPath" placeholder="share_path" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="smbUser" placeholder="username" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="smbPass" placeholder="password" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <button onclick="upsertSmbSource()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
+            <!-- 대시보드 탭 -->
+            <div id="panel-dashboard" class="panel hidden">
+                <div class="flex gap-2 mb-3">
+                    <input id="dashboardDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+                    <button onclick="loadDashboard()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+                    <button onclick="runSmokeFromUI()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">스모크 실행</button>
+                    <button onclick="toggleDashboardDebug()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">디버그 토글</button>
+                </div>
+                <div id="alertBadges" class="flex flex-wrap gap-2 mb-3"></div>
+                <div class="grid md:grid-cols-4 gap-3 mb-3">
+                    <div class="metric"><div class="metric-label">전체 로그</div><div class="metric-value" id="mTotalLogs">0</div></div>
+                    <div class="metric"><div class="metric-label">실패 로그</div><div class="metric-value" id="mFailedLogs">0</div></div>
+                    <div class="metric"><div class="metric-label">실패율</div><div class="metric-value" id="mFailureRate">0%</div></div>
+                    <div class="metric"><div class="metric-label">스케줄러</div><div class="metric-value" id="mScheduler">stopped</div></div>
+                </div>
+                <div class="grid md:grid-cols-2 gap-3 mb-3">
+                    <canvas id="trendChart" height="130"></canvas>
+                    <canvas id="keywordChart" height="130"></canvas>
+                </div>
+                <pre id="dashboardHealth" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mb-3"></pre>
+                <pre id="dashboardSummary" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
+                <pre id="dashboardTrend" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mt-3"></pre>
+                <pre id="smokeOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mt-3"></pre>
             </div>
-            <div class="flex gap-2 mb-3">
-                <input id="smbSyncId" placeholder="source_id" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-32" />
-                <button onclick="syncSmbSource()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
-                <button onclick="loadSmbSources()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">목록 조회</button>
-            </div>
-            <pre id="smbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
-        </div>
 
-        <div id="panel-dbsources" class="panel hidden">
-            <div class="grid md:grid-cols-2 gap-2 mb-2">
-                <input id="dbName" placeholder="name" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="dbType" placeholder="db_type (mysql|oracle|postgresql|sqlite)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="dbConn" placeholder="connection_url" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="dbTitleCol" placeholder="title_column (optional)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="dbChunk" placeholder="chunk_size" value="500" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="dbSyncId" placeholder="source_id" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+            <!-- 사전 관리 탭 -->
+            <div id="panel-dictionary" class="panel hidden">
+                <div class="grid md:grid-cols-4 gap-2 mb-3">
+                    <select id="dictType" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
+                        <option value="synonym">synonym</option>
+                        <option value="stopword">stopword</option>
+                        <option value="user">user</option>
+                    </select>
+                    <input id="dictTerm" placeholder="term" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="dictReplacement" placeholder="replacement" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <button onclick="upsertDictionaryEntry()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">단건 저장</button>
+                </div>
+                <div class="flex gap-2 mb-3">
+                    <button onclick="loadDictionaryEntries()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">목록 조회</button>
+                </div>
+                <pre id="dictionaryOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
             </div>
-            <textarea id="dbQuery" rows="3" placeholder="query_text" class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm mb-3"></textarea>
-            <div class="flex gap-2 mb-3">
-                <button onclick="upsertDbSource()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
-                <button onclick="syncDbSource()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
-                <button onclick="loadDbSources()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">목록 조회</button>
-            </div>
-            <pre id="dbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
-        </div>
 
-        <div id="panel-scheduler" class="panel hidden">
-            <div class="flex gap-2 mb-3">
-                <input id="schedulerInterval" type="number" min="10" value="120" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-32" />
-                <button onclick="startScheduler()" class="px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
-                <button onclick="stopScheduler()" class="px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">중지</button>
-                <button onclick="loadSchedulerStatus()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">상태 조회</button>
+            <!-- SMB 색인 탭 -->
+            <div id="panel-smb" class="panel hidden">
+                <div class="grid md:grid-cols-5 gap-2 mb-3">
+                    <input id="smbName" placeholder="name" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="smbPath" placeholder="share_path" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="smbUser" placeholder="username" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="smbPass" placeholder="password" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <button onclick="upsertSmbSource()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
+                </div>
+                <div class="flex gap-2 mb-3">
+                    <input id="smbSyncId" placeholder="source_id" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-32" />
+                    <button onclick="syncSmbSource()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
+                    <button onclick="loadSmbSources()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">목록 조회</button>
+                </div>
+                <pre id="smbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
             </div>
-            <pre id="schedulerOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
-        </div>
 
-        <div id="panel-ssl" class="panel hidden">
-            <div class="grid md:grid-cols-4 gap-2 mb-3">
-                <input id="volumeName" placeholder="index_name" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="sslWarnDays" type="number" min="1" value="30" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="renewPath" value="scripts/renew_certs.ps1" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-                <input id="renewRunPath" value="scripts/renew_certs.ps1" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+            <!-- DB 색인 탭 -->
+            <div id="panel-dbsources" class="panel hidden">
+                <div class="grid md:grid-cols-2 gap-2 mb-2">
+                    <input id="dbName" placeholder="name" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="dbType" placeholder="db_type (mysql|oracle|postgresql|sqlite)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="dbConn" placeholder="connection_url" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="dbTitleCol" placeholder="title_column (optional)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="dbChunk" placeholder="chunk_size" value="500" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="dbSyncId" placeholder="source_id" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                </div>
+                <textarea id="dbQuery" rows="3" placeholder="query_text" class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm mb-3"></textarea>
+                <div class="flex gap-2 mb-3">
+                    <button onclick="upsertDbSource()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
+                    <button onclick="syncDbSource()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
+                    <button onclick="loadDbSources()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">목록 조회</button>
+                </div>
+                <pre id="dbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
             </div>
-            <div class="flex gap-2 mb-3 flex-wrap">
-                <button onclick="createVolume()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">볼륨 생성</button>
-                <button onclick="scanCertificates()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">인증서 상태</button>
-                <button onclick="generateRenewScript()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 생성</button>
-                <button onclick="runRenewScript()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 실행</button>
+
+            <!-- 스케줄러 탭 -->
+            <div id="panel-scheduler" class="panel hidden">
+                <div class="flex gap-2 mb-3">
+                    <input id="schedulerInterval" type="number" min="10" value="120" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-32" />
+                    <button onclick="startScheduler()" class="px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
+                    <button onclick="stopScheduler()" class="px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">중지</button>
+                    <button onclick="loadSchedulerStatus()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">상태 조회</button>
+                </div>
+                <pre id="schedulerOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
             </div>
-            <pre id="sslOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
+
+            <!-- 볼륨/SSL 탭 -->
+            <div id="panel-ssl" class="panel hidden">
+                <div class="grid md:grid-cols-4 gap-2 mb-3">
+                    <input id="volumeName" placeholder="index_name" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="sslWarnDays" type="number" min="1" value="30" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="renewPath" value="scripts/renew_certs.ps1" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                    <input id="renewRunPath" value="scripts/renew_certs.ps1" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+                </div>
+                <div class="flex gap-2 mb-3 flex-wrap">
+                    <button onclick="createVolume()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">볼륨 생성</button>
+                    <button onclick="scanCertificates()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">인증서 상태</button>
+                    <button onclick="generateRenewScript()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 생성</button>
+                    <button onclick="runRenewScript()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 실행</button>
+                </div>
+                <pre id="sslOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
+            </div>
+
+            <!-- 초기화 탭 -->
+            <div id="panel-reset" class="panel hidden">
+                <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 max-w-lg">
+                    <h2 class="text-lg font-bold mb-4 text-red-400">데이터 초기화</h2>
+                    <p class="text-sm text-gray-400 mb-4">OpenSearch 인덱스의 모든 문서와 업무 DB(문서목록, 검색로그, 최근검색어)를 <strong class="text-red-300">모두 삭제</strong>합니다. 이 작업은 되돌릴 수 없습니다.</p>
+                    <div class="space-y-3">
+                        <button onclick="resetAllData()" class="w-full px-4 py-2 rounded bg-red-700 hover:bg-red-600 text-white font-medium">전체 데이터 초기화 (OpenSearch + DB)</button>
+                        <button onclick="resetIndex()" class="w-full px-4 py-2 rounded bg-red-900 hover:bg-red-800 text-white font-medium">인덱스 완전 삭제 + DB 초기화</button>
+                    </div>
+                    <pre id="resetOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mt-4"></pre>
+                </div>
+            </div>
+
         </div>
     </div>
 
     <script>
         const API = "https://127.0.0.1:8000/api/v1/admin";
+        const FILE_API = "https://127.0.0.1:8000/api/v1/file";
         const SYS_API = "https://127.0.0.1:8000/api/v1/system";
         const AUTH_API = "https://127.0.0.1:8000/api/v1/auth";
 
         let accessToken = localStorage.getItem("cleversearch_admin_token") || "";
         let refreshToken = localStorage.getItem("cleversearch_admin_refresh_token") || "";
+        let loggedInUsername = localStorage.getItem("cleversearch_admin_username") || "";
         let trendChart = null;
         let keywordChart = null;
 
-        function getRole() {
-            return document.getElementById("roleSelect").value || "viewer";
+        /* ===== 인증 상태 UI 전환 ===== */
+        function showApp() {
+            document.getElementById("loginSection").classList.add("hidden");
+            document.getElementById("mainContent").classList.remove("hidden");
+            document.getElementById("loggedInUser").textContent = loggedInUsername || "admin";
+            loadAllTabs();
         }
 
-        function updateAuthStatus() {
-            const status = document.getElementById("authStatus");
-            if (accessToken) {
-                status.textContent = "JWT 모드";
-                status.className = "pill";
-            } else {
-                status.textContent = "X-Role 모드";
-                status.className = "pill";
-            }
+        function showLogin() {
+            document.getElementById("loginSection").classList.remove("hidden");
+            document.getElementById("mainContent").classList.add("hidden");
         }
 
+        /* ===== 로그인 ===== */
         async function loginJwt() {
             const username = document.getElementById("loginUser").value;
             const password = document.getElementById("loginPass").value;
-            const res = await fetch(`${AUTH_API}/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ username, password })
-            });
-            const payload = await res.json();
-            if (res.ok && payload.access_token) {
-                accessToken = payload.access_token;
-                refreshToken = payload.refresh_token || "";
-                localStorage.setItem("cleversearch_admin_token", accessToken);
-                if (refreshToken) {
-                    localStorage.setItem("cleversearch_admin_refresh_token", refreshToken);
-                }
-                updateAuthStatus();
-                await loadDashboard();
-            } else {
-                alert("JWT 로그인 실패");
-            }
-        }
-
-        async function refreshJwt() {
-            if (!refreshToken) {
-                alert("refresh token 없음");
-                return;
-            }
-            const res = await fetch(`${AUTH_API}/refresh`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ refresh_token: refreshToken })
-            });
-            const payload = await res.json();
-            if (res.ok && payload.access_token) {
-                accessToken = payload.access_token;
-                refreshToken = payload.refresh_token || refreshToken;
-                localStorage.setItem("cleversearch_admin_token", accessToken);
-                localStorage.setItem("cleversearch_admin_refresh_token", refreshToken);
-                updateAuthStatus();
-            } else {
-                alert("토큰 갱신 실패");
-            }
-        }
-
-        async function logoutJwt() {
-            if (accessToken) {
-                await fetch(`${AUTH_API}/logout`, {
+            const errEl = document.getElementById("loginError");
+            errEl.classList.add("hidden");
+            try {
+                const res = await fetch(`${AUTH_API}/login`, {
                     method: "POST",
-                    headers: { "Authorization": `Bearer ${accessToken}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ refresh_token: refreshToken || null })
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password })
                 });
+                const payload = await res.json();
+                if (res.ok && payload.access_token) {
+                    accessToken = payload.access_token;
+                    refreshToken = payload.refresh_token || "";
+                    loggedInUsername = payload.username || username;
+                    localStorage.setItem("cleversearch_admin_token", accessToken);
+                    localStorage.setItem("cleversearch_admin_refresh_token", refreshToken);
+                    localStorage.setItem("cleversearch_admin_username", loggedInUsername);
+                    showApp();
+                } else {
+                    errEl.textContent = payload.detail || "로그인 실패: 아이디 또는 비밀번호를 확인하세요";
+                    errEl.classList.remove("hidden");
+                }
+            } catch (e) {
+                errEl.textContent = "서버에 연결할 수 없습니다";
+                errEl.classList.remove("hidden");
             }
+        }
+
+        /* ===== 로그아웃 ===== */
+        async function logoutJwt() {
+            try {
+                if (accessToken) {
+                    await fetch(`${AUTH_API}/logout`, {
+                        method: "POST",
+                        headers: { "Authorization": `Bearer ${accessToken}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ refresh_token: refreshToken || null })
+                    });
+                }
+            } catch (e) { /* ignore */ }
             accessToken = "";
             refreshToken = "";
+            loggedInUsername = "";
             localStorage.removeItem("cleversearch_admin_token");
             localStorage.removeItem("cleversearch_admin_refresh_token");
-            updateAuthStatus();
+            localStorage.removeItem("cleversearch_admin_username");
+            showLogin();
         }
 
+        /* ===== API 요청 헬퍼 ===== */
         async function apiFetch(url, options = {}) {
-            const headers = {
-                "Content-Type": "application/json",
-                "X-Role": getRole(),
-                ...(options.headers || {})
-            };
+            const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
             if (accessToken) {
                 headers["Authorization"] = `Bearer ${accessToken}`;
             }
-            const res = await fetch(url, { ...options, headers });
-            const data = await res.json().catch(() => ({ raw: "json parse fail" }));
-            return { ok: res.ok, status: res.status, data };
+            try {
+                const res = await fetch(url, { ...options, headers });
+                if (res.status === 401) {
+                    logoutJwt();
+                    return { ok: false, status: 401, data: { detail: "세션 만료" } };
+                }
+                const data = await res.json().catch(() => ({ raw: "json parse fail" }));
+                return { ok: res.ok, status: res.status, data };
+            } catch (e) {
+                return { ok: false, status: 0, data: { detail: "서버 연결 실패" } };
+            }
         }
 
         function fmt(v) { return (v === null || v === undefined || v === "") ? "-" : v; }
         function yesNo(v) { return v ? "Y" : "N"; }
 
+        /* ===== 파일 업로드 ===== */
+        function setupUpload() {
+            const dropZone = document.getElementById("dropZone");
+            const fileInput = document.getElementById("fileInput");
+
+            dropZone.addEventListener("click", () => fileInput.click());
+            dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("dragover"); });
+            dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+            dropZone.addEventListener("drop", (e) => {
+                e.preventDefault();
+                dropZone.classList.remove("dragover");
+                handleFiles(e.dataTransfer.files);
+            });
+            fileInput.addEventListener("change", () => { handleFiles(fileInput.files); fileInput.value = ""; });
+        }
+
+        async function handleFiles(fileList) {
+            const queue = document.getElementById("uploadQueue");
+            const results = document.getElementById("uploadResults");
+
+            for (const file of fileList) {
+                const row = document.createElement("div");
+                row.className = "flex items-center gap-2 bg-gray-800 rounded px-3 py-2 text-sm";
+                row.innerHTML = `<span class="flex-1">${file.name}</span><span class="text-yellow-400">업로드 중...</span>`;
+                queue.appendChild(row);
+
+                try {
+                    const formData = new FormData();
+                    formData.append("file", file);
+                    const headers = {};
+                    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+                    const res = await fetch(`${FILE_API}/upload`, { method: "POST", headers, body: formData });
+                    const data = await res.json();
+
+                    const statusText = data.status || (res.ok ? "success" : "fail");
+                    const color = statusText === "success" ? "text-green-400" : statusText === "skipped" ? "text-blue-400" : "text-red-400";
+                    row.innerHTML = `<span class="flex-1">${file.name}</span><span class="${color}">${statusText}</span><span class="text-gray-500 text-xs">${data.message || data.detail || ""}</span>`;
+                } catch (e) {
+                    row.innerHTML = `<span class="flex-1">${file.name}</span><span class="text-red-400">네트워크 오류</span>`;
+                }
+            }
+        }
+
+        /* ===== 문서 목록 (삭제 포함) ===== */
+        async function loadDocs() {
+            const result = await apiFetch(`${API}/indexed-documents?skip=0&limit=200`, { method: "GET" });
+            const data = result.data;
+            const items = data.items || [];
+            document.getElementById("docTotal").textContent = `총 ${data.total || 0}건`;
+            const body = document.getElementById("docsBody");
+            body.innerHTML = items.map((row) =>
+                `<tr class="border-t border-gray-700">
+                    <td class="p-2">${fmt(row.id)}</td>
+                    <td class="p-2">${fmt(row.title)}</td>
+                    <td class="p-2">${fmt(row.origin_file)}</td>
+                    <td class="p-2">${fmt(row.file_ext)}</td>
+                    <td class="p-2">${fmt(row.doc_category)}</td>
+                    <td class="p-2">${fmt(row.indexed_at)}</td>
+                    <td class="p-2 max-w-xs truncate">${fmt(row.text_preview)}</td>
+                    <td class="p-2"><span class="btn-del" onclick="deleteDoc(${row.id})">삭제</span></td>
+                </tr>`
+            ).join("") || '<tr><td class="p-2" colspan="8">데이터 없음</td></tr>';
+        }
+
+        async function deleteDoc(docId) {
+            if (!confirm(`문서 ID ${docId}를 삭제하시겠습니까?`)) return;
+            const headers = {};
+            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+            try {
+                const res = await fetch(`${FILE_API}/document/${docId}`, { method: "DELETE", headers });
+                const data = await res.json();
+                alert(data.message || "삭제 완료");
+                loadDocs();
+            } catch (e) {
+                alert("삭제 실패: 네트워크 오류");
+            }
+        }
+
+        /* ===== 인기검색 ===== */
         async function loadPopular() {
             const days = document.getElementById("popularDays").value || 7;
             const result = await apiFetch(`${API}/popular-keywords?days=${days}&limit=50`, { method: "GET" });
@@ -332,16 +469,7 @@
             ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
         }
 
-        async function loadDocs() {
-            const result = await apiFetch(`${API}/indexed-documents?skip=0&limit=100`, { method: "GET" });
-            const data = result.data;
-            const items = data.items || [];
-            const body = document.getElementById("docsBody");
-            body.innerHTML = items.map((row) =>
-                `<tr class="border-t border-gray-700"><td class="p-2">${fmt(row.id)}</td><td class="p-2">${fmt(row.title)}</td><td class="p-2">${fmt(row.origin_file)}</td><td class="p-2">${fmt(row.file_ext)}</td><td class="p-2">${fmt(row.doc_category)}</td><td class="p-2">${fmt(row.indexed_at)}</td><td class="p-2">${fmt(row.text_preview)}</td></tr>`
-            ).join("") || '<tr><td class="p-2" colspan="7">데이터 없음</td></tr>';
-        }
-
+        /* ===== 검색 로그 ===== */
         async function loadLogs() {
             const result = await apiFetch(`${API}/search-logs?skip=0&limit=100`, { method: "GET" });
             const data = result.data;
@@ -352,6 +480,7 @@
             ).join("") || '<tr><td class="p-2" colspan="6">데이터 없음</td></tr>';
         }
 
+        /* ===== 최근 검색어 ===== */
         async function loadRecent() {
             const userId = document.getElementById("recentUserId").value.trim();
             const query = userId ? `?skip=0&limit=100&user_id=${encodeURIComponent(userId)}` : "?skip=0&limit=100";
@@ -364,6 +493,7 @@
             ).join("") || '<tr><td class="p-2" colspan="4">데이터 없음</td></tr>';
         }
 
+        /* ===== 실패 검색어 ===== */
         async function loadFailed() {
             const days = document.getElementById("failedDays").value || 7;
             const result = await apiFetch(`${API}/failed-keywords?days=${days}&limit=50`, { method: "GET" });
@@ -374,6 +504,7 @@
             ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
         }
 
+        /* ===== 탭 전환 ===== */
         function setupTabs() {
             const tabs = document.querySelectorAll(".tab");
             const panels = document.querySelectorAll(".panel");
@@ -416,13 +547,10 @@
             if (trendChart) trendChart.destroy();
             trendChart = new Chart(ctx, {
                 type: "bar",
-                data: {
-                    labels,
-                    datasets: [
-                        { label: "성공", data: success, backgroundColor: "rgba(34,197,94,0.7)" },
-                        { label: "실패", data: failed, backgroundColor: "rgba(239,68,68,0.7)" }
-                    ]
-                },
+                data: { labels, datasets: [
+                    { label: "성공", data: success, backgroundColor: "rgba(34,197,94,0.7)" },
+                    { label: "실패", data: failed, backgroundColor: "rgba(239,68,68,0.7)" }
+                ]},
                 options: { responsive: true, plugins: { legend: { labels: { color: "#e5e7eb" } } }, scales: { x: { ticks: { color: "#9ca3af" } }, y: { ticks: { color: "#9ca3af" } } } }
             });
         }
@@ -440,6 +568,7 @@
             });
         }
 
+        /* ===== 대시보드 ===== */
         async function loadDashboard() {
             const days = document.getElementById("dashboardDays").value || 7;
             const health = await apiFetch(`${SYS_API}/health/overview`, { method: "GET" });
@@ -450,12 +579,10 @@
             writeJson("dashboardSummary", summary.data);
             writeJson("dashboardTrend", trend.data);
             renderAlertBadges(alerts.data || []);
-
             document.getElementById("mTotalLogs").innerText = String(summary.data?.total_logs || 0);
             document.getElementById("mFailedLogs").innerText = String(summary.data?.failed_logs || 0);
             document.getElementById("mFailureRate").innerText = `${((summary.data?.failure_rate || 0) * 100).toFixed(1)}%`;
             document.getElementById("mScheduler").innerText = (health.data?.scheduler?.running ? "running" : "stopped");
-
             drawTrendChart(trend.data || []);
             drawKeywordChart(summary.data || {});
         }
@@ -465,13 +592,12 @@
             writeJson("smokeOutput", result.data || result);
         }
 
+        /* ===== 사전 관리 ===== */
         async function upsertDictionaryEntry() {
             const dictType = document.getElementById("dictType").value;
             const term = document.getElementById("dictTerm").value;
             const replacement = document.getElementById("dictReplacement").value;
-            const result = await apiFetch(`${SYS_API}/dictionary/entry?dict_type=${encodeURIComponent(dictType)}&term=${encodeURIComponent(term)}&replacement=${encodeURIComponent(replacement)}`, {
-                method: "POST"
-            });
+            const result = await apiFetch(`${SYS_API}/dictionary/entry?dict_type=${encodeURIComponent(dictType)}&term=${encodeURIComponent(term)}&replacement=${encodeURIComponent(replacement)}`, { method: "POST" });
             writeJson("dictionaryOutput", result);
         }
 
@@ -480,6 +606,7 @@
             writeJson("dictionaryOutput", result.data);
         }
 
+        /* ===== SMB ===== */
         async function upsertSmbSource() {
             const payload = {
                 name: document.getElementById("smbName").value,
@@ -503,6 +630,7 @@
             writeJson("smbOutput", result);
         }
 
+        /* ===== DB 소스 ===== */
         async function upsertDbSource() {
             const payload = {
                 name: document.getElementById("dbName").value,
@@ -528,6 +656,7 @@
             writeJson("dbOutput", result);
         }
 
+        /* ===== 스케줄러 ===== */
         async function startScheduler() {
             const interval = Number(document.getElementById("schedulerInterval").value || 120);
             const result = await apiFetch(`${SYS_API}/scheduler/start?interval_seconds=${interval}`, { method: "POST" });
@@ -544,6 +673,7 @@
             writeJson("schedulerOutput", result.data);
         }
 
+        /* ===== 볼륨/SSL ===== */
         async function createVolume() {
             const indexName = document.getElementById("volumeName").value || "cleversearch-volume-ui";
             const payload = { index_name: indexName, shards: 1, replicas: 1 };
@@ -569,19 +699,68 @@
             writeJson("sslOutput", result);
         }
 
+        /* ===== 초기화 ===== */
+        async function resetAllData() {
+            if (!confirm("모든 데이터(OpenSearch + DB)를 초기화합니다. 계속하시겠습니까?")) return;
+            const headers = {};
+            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+            try {
+                const res = await fetch(`${FILE_API}/clear-all-data`, { method: "DELETE", headers });
+                const data = await res.json();
+                writeJson("resetOutput", data);
+                alert("전체 데이터 초기화 완료");
+                loadDocs();
+            } catch (e) {
+                writeJson("resetOutput", { error: "네트워크 오류" });
+            }
+        }
+
+        async function resetIndex() {
+            if (!confirm("인덱스 구조까지 완전 삭제 + DB 초기화합니다. 계속하시겠습니까?")) return;
+            const headers = {};
+            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+            try {
+                const res = await fetch(`${FILE_API}/delete-index`, { method: "DELETE", headers });
+                const data = await res.json();
+                writeJson("resetOutput", data);
+                alert("인덱스 삭제 + DB 초기화 완료");
+                loadDocs();
+            } catch (e) {
+                writeJson("resetOutput", { error: "네트워크 오류" });
+            }
+        }
+
+        /* ===== 데이터 로드 ===== */
+        function loadAllTabs() {
+            loadDocs();
+            loadPopular();
+            loadLogs();
+            loadRecent();
+            loadFailed();
+            loadDashboard();
+            loadDictionaryEntries();
+            loadSmbSources();
+            loadDbSources();
+            loadSchedulerStatus();
+            scanCertificates();
+        }
+
+        /* ===== 엔터 키 로그인 ===== */
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !document.getElementById("loginSection").classList.contains("hidden")) {
+                loginJwt();
+            }
+        });
+
+        /* ===== 초기화 ===== */
         setupTabs();
-        updateAuthStatus();
-        loadDashboard();
-        loadDictionaryEntries();
-        loadSmbSources();
-        loadDbSources();
-        loadSchedulerStatus();
-        scanCertificates();
-        loadPopular();
-        loadDocs();
-        loadLogs();
-        loadRecent();
-        loadFailed();
+        setupUpload();
+        // 토큰이 있으면 자동 로그인 시도, 없으면 로그인 화면
+        if (accessToken) {
+            showApp();
+        } else {
+            showLogin();
+        }
     </script>
 </body>
 </html>

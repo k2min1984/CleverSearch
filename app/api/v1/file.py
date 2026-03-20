@@ -1,13 +1,14 @@
 import re
 
 # FastAPI 관련 항목들을 한 줄로 통합
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query 
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Path
 
 # 프로젝트 내부 모듈
 from app.core.opensearch import get_client
 from app.common.utils import DocumentUtils
 from app.common.embedding import embedder  #[추가] AI 벡터 변환기 가져오기
 from app.services.indexing_service import IndexingService
+from app.services.db_service import DBService
 
 router = APIRouter()
 client = get_client()
@@ -65,14 +66,37 @@ async def upload_file(file: UploadFile = File(...)):
 # --- 관리용 API ---
 @router.delete("/clear-all-data")
 async def clear_all_data():
-    client.delete_by_query(index=INDEX_NAME, body={"query": {"match_all": {}}}, refresh=True)
-    return {"message": "전체 삭제 완료"}
+    """OpenSearch 전체 문서 삭제 + 업무 DB(indexed_documents, search_logs, recent_searches) 초기화"""
+    os_result = {}
+    try:
+        if client.indices.exists(index=INDEX_NAME):
+            os_result = client.delete_by_query(index=INDEX_NAME, body={"query": {"match_all": {}}}, refresh=True)
+    except Exception as e:
+        os_result = {"error": str(e)}
+    db_result = DBService.clear_all_db_data()
+    return {"message": "전체 초기화 완료 (OpenSearch + DB)", "opensearch": os_result, "db": db_result}
 
 @router.delete("/delete-index")
 async def delete_index():
+    """인덱스 자체를 완전 삭제 + 업무 DB 초기화"""
     if client.indices.exists(index=INDEX_NAME):
         client.indices.delete(index=INDEX_NAME)
-    return {"message": "인덱스 완전 삭제 완료"}
+    db_result = DBService.clear_all_db_data()
+    return {"message": "인덱스 완전 삭제 + DB 초기화 완료", "db": db_result}
+
+@router.delete("/document/{doc_id}")
+async def delete_document(doc_id: int = Path(..., ge=1)):
+    """개별 문서를 DB와 OpenSearch에서 모두 삭제"""
+    os_doc_id = DBService.delete_indexed_document(doc_id)
+    if os_doc_id is None:
+        raise HTTPException(status_code=404, detail="해당 문서를 찾을 수 없습니다")
+    # OpenSearch에서도 삭제
+    try:
+        if os_doc_id and client.indices.exists(index=INDEX_NAME):
+            client.delete(index=INDEX_NAME, id=os_doc_id, refresh=True)
+    except Exception:
+        pass
+    return {"message": f"문서 {doc_id} 삭제 완료", "os_doc_id": os_doc_id}
 
 @router.get("/search")
 async def search_documents(keyword: str = Query(...)):
