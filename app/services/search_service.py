@@ -103,6 +103,9 @@ def normalize_common_typos(query: str) -> str:
         ("계휙", "계획"),
         ("게휙", "계획"),
         ("개휙", "계획"),
+        ("산엽", "산업"),
+        ("산엡", "산업"),
+        ("삼엽", "산업"),
     ]
     for src, dst in replacements:
         q = q.replace(src, dst)
@@ -461,10 +464,10 @@ class SearchService:
         
     # 
     @staticmethod
-    async def get_popular_keywords():
+    async def get_popular_keywords(limit: int = 10):
         """앱 DB에서 최근 검색 로그를 기준으로 인기 검색어를 반환"""
         try:
-            return DBService.get_popular_keywords(days=7, limit=10)
+            return DBService.get_popular_keywords(days=7, limit=limit)
         except Exception as e:
             print(f"인기 검색어 추출 에러: {e}")
             return []

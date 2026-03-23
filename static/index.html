@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HanSeek - 프리미엄 통합검색</title>
+    <title>CleverSearch</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -24,7 +24,7 @@
                 <a href="/admin" class="text-xs text-gray-400 hover:text-white">관리자 리스트</a>
             </div>
             <h1 class="text-5xl font-bold mb-8 cursor-pointer tracking-tight" onclick="location.reload()">
-                <span class="text-blue-500">Han</span><span class="text-white">Seek</span>
+                <span class="text-blue-500">Clever</span><span class="text-white">Search</span>
             </h1>
             
             <div class="relative w-full max-w-2xl mx-auto group">
@@ -51,7 +51,7 @@
             <button onclick="filterCategory('RULE')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-RULE">사내규정 <span class="text-xs opacity-60" id="count-RULE"></span></button>
         </div>
 
-        <div id="filterArea" class="hidden max-w-3xl mx-auto mb-6 flex flex-wrap gap-3 border-b border-gray-700 pb-4">
+        <div id="filterArea" class="hidden max-w-3xl mx-auto mb-6 flex flex-wrap gap-3 border-b border-gray-700 pb-4 items-center">
             <select id="dateFilter" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none">
                 <option value="all">전체 기간</option>
                 <option value="1d">최근 24시간</option>
@@ -64,11 +64,14 @@
                 <option value="docx">Word 문서</option>
                 <option value="hwp">한글(HWP)</option>
             </select>
+            <input id="includeFilter" placeholder="포함 키워드" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none w-36" />
+            <input id="excludeFilter" placeholder="제외 키워드" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none w-36" />
         </div>
 
         <div id="resultCount" class="mb-4 text-gray-400 text-sm hidden max-w-3xl mx-auto text-left">
             약 <span id="countNumber" class="text-blue-400 font-bold">0</span>개의 결과가 검색되었습니다.
         </div>
+        <div id="correctionNotice" class="hidden mb-4 max-w-3xl mx-auto text-left text-sm text-amber-300 bg-amber-900/30 border border-amber-700 rounded px-3 py-2"></div>
         <div id="resultList" class="space-y-6 max-w-3xl mx-auto pb-20 text-left"></div>
         <div id="paginationArea" class="hidden max-w-3xl mx-auto pb-10 flex items-center justify-center gap-3">
             <button id="prevPageBtn" class="px-4 py-2 rounded border border-gray-600 text-sm hover:bg-gray-800">이전</button>
@@ -118,6 +121,42 @@
         const resultCount = document.getElementById('resultCount');
         const filterArea = document.getElementById('filterArea');
 
+        function renderSuggestionList(items, iconClass = 'fa-history') {
+            if (!items || items.length === 0) {
+                autocompleteList.classList.add('hidden');
+                autocompleteList.innerHTML = '';
+                return;
+            }
+
+            autocompleteList.innerHTML = items.map(item => `
+                <div class="px-5 py-3 hover:bg-[#3c4043] cursor-pointer text-gray-200" onclick="selectSuggestion('${item.replace(/'/g, "\\'")}')">
+                    <i class="fas ${iconClass} text-gray-500 mr-3 text-xs"></i><span>${item}</span>
+                </div>
+            `).join('');
+            autocompleteList.classList.remove('hidden');
+        }
+
+        async function loadRecommendedSuggestions() {
+            try {
+                const userId = getUserId();
+                const response = await fetch(`${API_BASE}/recommend?user_id=${encodeURIComponent(userId)}&limit=10`);
+                const keywords = await response.json();
+                const recommendList = Array.isArray(keywords) ? keywords : [];
+                if (recommendList.length > 0) {
+                    renderSuggestionList(recommendList, 'fa-lightbulb');
+                    return;
+                }
+
+                // 개인 추천 이력이 없으면 인기 검색어를 대체 제안으로 표시
+                const popularRes = await fetch(`${API_BASE}/popular`);
+                const popularList = await popularRes.json();
+                renderSuggestionList(Array.isArray(popularList) ? popularList : [], 'fa-fire');
+            } catch (error) {
+                console.error('추천 검색어 로드 실패:', error);
+                autocompleteList.classList.add('hidden');
+            }
+        }
+
         // [추가] 카테고리 상태 관리 변수
         let currentCategory = 'all';
         let currentPage = 1;
@@ -126,19 +165,22 @@
         // [기능 1] 자동완성
         searchInput.addEventListener('input', async (e) => {
             const query = e.target.value.trim();
-            if (query.length < 1) { autocompleteList.classList.add('hidden'); return; }
+            if (query.length < 1) {
+                await loadRecommendedSuggestions();
+                return;
+            }
             try {
                 const response = await fetch(`${API_BASE}/autocomplete?q=${encodeURIComponent(query)}`);
                 const suggestions = await response.json();
-                if (suggestions.length > 0) {
-                    autocompleteList.innerHTML = suggestions.map(item => `
-                        <div class="px-5 py-3 hover:bg-[#3c4043] cursor-pointer text-gray-200" onclick="selectSuggestion('${item}')">
-                            <i class="fas fa-history text-gray-500 mr-3 text-xs"></i><span>${item}</span>
-                        </div>
-                    `).join('');
-                    autocompleteList.classList.remove('hidden');
-                } else { autocompleteList.classList.add('hidden'); }
+                renderSuggestionList(suggestions, 'fa-history');
             } catch (error) { console.error(error); }
+        });
+
+        // 검색창 클릭/포커스 시, 입력값이 비어 있으면 추천 검색어를 보여줍니다.
+        searchInput.addEventListener('focus', async () => {
+            if (!searchInput.value.trim()) {
+                await loadRecommendedSuggestions();
+            }
         });
 
         function selectSuggestion(text) {
@@ -191,14 +233,19 @@
             filterArea.classList.remove('hidden');
             resultList.innerHTML = '<div class="text-center py-20 text-blue-400 animate-pulse">필터를 적용하여 분석 중...</div>';
 
+            const includeVal = document.getElementById('includeFilter').value.trim();
+            const excludeVal = document.getElementById('excludeFilter').value.trim();
+            const includeKw = includeVal ? includeVal.split(/[,\s]+/).filter(Boolean) : [];
+            const excludeKw = excludeVal ? excludeVal.split(/[,\s]+/).filter(Boolean) : [];
+
             try {
                 const response = await fetch(`${API_BASE}/query`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         query: query,
-                        include_keywords: [],
-                        exclude_keywords: [],
+                        include_keywords: includeKw,
+                        exclude_keywords: excludeKw,
                         start_date: startDate,
                         file_ext: fileExt === 'all' ? null : fileExt,
                         doc_category: currentCategory === 'all' ? null : currentCategory, // [카테고리 전송]
@@ -209,6 +256,17 @@
                 });
 
                 const data = await response.json();
+
+                // 오타 교정이 적용되면 사용자에게 명확히 보여줍니다.
+                const correctionNotice = document.getElementById('correctionNotice');
+                if (data.is_typo_corrected && data.original_query && data.corrected_query) {
+                    correctionNotice.innerHTML = `입력어 <b>${data.original_query}</b> 를 <b>${data.corrected_query}</b> 로 교정하여 검색했습니다.`;
+                    correctionNotice.classList.remove('hidden');
+                    searchInput.value = data.corrected_query;
+                } else {
+                    correctionNotice.classList.add('hidden');
+                    correctionNotice.innerHTML = '';
+                }
 
                 // [카테고리 탭 노출 및 통계 업데이트]
                 document.getElementById('categoryTabs').classList.remove('hidden');
@@ -305,6 +363,14 @@
             currentPage = 1;
             performSearch(1);
         });
+        document.getElementById('includeFilter').addEventListener('change', () => {
+            currentPage = 1;
+            performSearch(1);
+        });
+        document.getElementById('excludeFilter').addEventListener('change', () => {
+            currentPage = 1;
+            performSearch(1);
+        });
         document.getElementById('prevPageBtn').addEventListener('click', () => {
             if (currentPage > 1) performSearch(currentPage - 1);
         });
@@ -315,7 +381,10 @@
         // 엔터키 처리 및 외부 클릭 제어
         searchInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') { currentPage = 1; performSearch(1); } });
         document.addEventListener('click', (e) => {
-            if (!e.target.closest('.group')) autocompleteList.classList.add('hidden');
+            const searchWrapper = document.querySelector('#headerArea .group');
+            if (searchWrapper && !searchWrapper.contains(e.target)) {
+                autocompleteList.classList.add('hidden');
+            }
         });
     </script>
 </body>
