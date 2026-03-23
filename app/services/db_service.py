@@ -102,6 +102,7 @@ class DBService:
 
     @staticmethod
     def get_popular_keywords(days: int = 7, limit: int = 10) -> List[str]:
+        """최근 N일간 검색 빈도 순으로 인기 검색어 목록 반환 (키워드만)"""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         with get_db_session() as db:
             rows = (
@@ -116,6 +117,7 @@ class DBService:
 
     @staticmethod
     def get_popular_keyword_stats(days: int = 7, limit: int = 20):
+        """인기 검색어 + 건수를 함께 반환 (관리자 대시보드 도넛 차트용)"""
         # 관리자 화면에서는 집계 결과와 카운트를 함께 보여주기 위해 별도 메서드를 둡니다.
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         with get_db_session() as db:
@@ -131,6 +133,7 @@ class DBService:
 
     @staticmethod
     def get_failed_keywords(days: int = 7, limit: int = 10):
+        """최근 N일간 검색 결과 0건(is_failed=True)인 실패 검색어 빈도순 반환"""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         with get_db_session() as db:
             rows = (
@@ -145,6 +148,12 @@ class DBService:
 
     @staticmethod
     def get_related_keywords(query: str, days: int = 30, limit: int = 10) -> List[str]:
+        """
+        연관 검색어 산출 (토큰 자카드 유사도 + 검색 빈도 기반)
+        - 입력 쿼리를 토큰화하여 검색 로그 내 다른 쿼리와 유사도 계산
+        - Jaccard 유사도 * 100 + min(빈도, 50) 점수 산출
+        - 점수 내림차순으로 limit건 반환
+        """
         needle = (query or "").strip()
         if not needle:
             return []
@@ -189,6 +198,11 @@ class DBService:
 
     @staticmethod
     def get_recommended_keywords(user_id: str, limit: int = 10) -> List[str]:
+        """
+        사용자 맞춤형 추천 검색어 제안
+        - 사용자 최근 검색어 + 전체 인기 검색어를 병합하여 중복 제거 후 반환
+        - 최근 검색어가 우선, 인기 검색어로 보충
+        """
         recent = DBService.get_recent_searches(user_id, limit=limit)
         popular = DBService.get_popular_keywords(days=14, limit=limit)
         merged = []

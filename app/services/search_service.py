@@ -2,8 +2,18 @@
 ########################################################
 # Description
 # OpenSearch 검색 비즈니스 로직 서비스
-# - [1순위] 상세 필터(작성자, 최소점수) 기능 강화
-# - [3순위] 검색 로그 기록 및 실패(0건) 추적 로직 통합
+# - 하이브리드 검색 엔진 (키워드 Bool + 벡터 KNN 결합)
+# - 검색어 전처리: 불용어 제거, 오타 자동 교정(hanspell), 초성 변환
+# - 상세 필터: 포함/제외 키워드, 파일 형식, 기간/작성자 범위 검색
+# - 항목별 가중치 부여: 제목 20배, 본문 5배 등 동적 Scoring
+# - 검색 로그 기록 및 실패(0건) 추적 로직 통합
+# - 자동완성: 초성+키워드 기반 문서명 후보 제시
+# - 추천/연관 검색어, 인기 검색어, 최근 검색어 API 연동
+#
+# Modified History
+# 강광묵 / 2026-03-17 / 최초생성
+# 강광민 / 2026-03-18 / 상세 필터(작성자, 최소점수) 기능 강화
+# 강광민 / 2026-03-23 / 동적 Scoring 가중치 연동 (ScoringConfigService)
 ########################################################
 """
 
@@ -151,6 +161,23 @@ class SearchService:
 
     @staticmethod
     async def execute_search(req: SearchRequest):
+        """
+        하이브리드 검색 실행 (키워드 Bool + 벡터 KNN 결합)
+
+        처리 흐름:
+          1) 검색어 방역(sanitize) 및 오타 자동 교정 (hanspell)
+          2) 동의어/사전 기반 잓워드 확장
+          3) 초성 여부 판별 → 초성이면 wildcard, 아니면 복합 Bool
+          4) 768차원 AI 벡터 변환 → KNN 보조 신호 추가
+          5) 상세 필터 적용 (포함/제외 키워드, 파일형식, 기간, 작성자)
+          6) ScoringConfigService 동적 가중치 적용
+          7) 검색 로그 기록 (OpenSearch + 앱 DB)
+
+        Args:
+            req: SearchRequest DTO (쿼리, 페이지, 필터 등)
+        Returns:
+            dict: total, items, category_stats, page, corrected_query 등
+        """
         index_name = settings.OPENSEARCH_INDEX
         
         # 1. 검색어 방역 및 오타 교정
@@ -191,6 +218,12 @@ class SearchService:
                 print(f"AI 벡터 변환 실패 (일반 검색으로 진행): {e}")
 
         def build_weighted_query(keyword):
+            """
+            키워드 하나에 대한 가중치 적용 Bool 쿼리 생성
+            - 초성 검색: wildcard 매칭 (chosung_text 필드)
+            - 일반 검색: 제목 phrase(20배) > 제목 AND(10배) > 본문 phrase(5배) > 본문 AND(1배)
+            - 가중치는 ScoringConfigService에서 동적으로 로드
+            """
             w = ScoringConfigService.get_weights()
             if is_chosung:
                 return { "wildcard": { "chosung_text": { "value": f"*{keyword}*", "boost": w["chosung"] } } }
@@ -449,6 +482,12 @@ class SearchService:
 
     @staticmethod
     async def get_autocomplete(q: str):
+        """
+        초성+키워드 자동완성 후보 제시
+        - 초성만 입력 시: chosung_text 필드에 wildcard 매칭
+        - 일반 텍스트 입력 시: Title 필드에 match_phrase_prefix 매칭
+        - 최대 5건의 문서명을 중복 제거 후 반환
+        """
         index_name = settings.OPENSEARCH_INDEX
         safe_q = DocumentUtils.sanitize_text(q)
         if not safe_q: return []
@@ -485,6 +524,7 @@ class SearchService:
 
     @staticmethod
     async def get_recent_keywords(user_id: str = "anonymous", limit: int = 10):
+        """사용자별 최근 검색어 목록 조회 (앱 DB 기준, 최신순)"""
         try:
             return DBService.get_recent_searches(user_id=user_id, limit=limit)
         except Exception:
@@ -511,6 +551,7 @@ class SearchService:
 
     @staticmethod
     async def get_recommended_keywords(user_id: str = "anonymous", limit: int = 10):
+        """사용자 맞춤형 추천 검색어 제안 (최근 검색어 + 인기 검색어 병합)"""
         try:
             return DBService.get_recommended_keywords(user_id=user_id, limit=limit)
         except Exception:
@@ -518,6 +559,7 @@ class SearchService:
 
     @staticmethod
     async def get_related_keywords(query: str, days: int = 30, limit: int = 10):
+        """연관 검색어 추천 (토큰 자카드 유사도 + 빈도 기반 산출)"""
         try:
             return DBService.get_related_keywords(query=query, days=days, limit=limit)
         except Exception:
@@ -525,6 +567,7 @@ class SearchService:
 
     @staticmethod
     async def get_document_detail(doc_id: str):
+        """OpenSearch 문서 ID로 전문 조회 (text_vector 제외하지 않은 전체 _source 반환)"""
         index_name = settings.OPENSEARCH_INDEX
         res = client.get(index=index_name, id=doc_id)
         return res.get("_source", {})

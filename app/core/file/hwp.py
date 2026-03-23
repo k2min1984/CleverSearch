@@ -34,6 +34,13 @@ def _extract_text(content: bytes, ext: str) -> str:
 
 # [한글파일] HWP
 def _extract_text_hwp(content: bytes) -> str:
+    """
+    HWP(OLE 형식) 문서에서 텍스트 추출
+    - OLE 파일의 BodyText/SectionN 스트림을 순서대로 읽음
+    - zlib 압축 해제 후 바이너리 레코드 파싱 (tag_id=67: 문단 텍스트)
+    - 손상된 파일에 대한 안전장치 (헤더 부족/길이 초과 시 중단)
+    - 제어문자 정제 후 텍스트 반환
+    """
     try:
         f = io.BytesIO(content)
         if not olefile.isOleFile(f):
@@ -107,6 +114,12 @@ def _extract_text_hwp(content: bytes) -> str:
 
 # [한글파일] 추출 HWPX 
 def _extract_text_hwpx(content: bytes) -> str:
+    """
+    HWPX(ZIP+XML 형식) 문서에서 텍스트 추출
+    - ZIP 내부 Contents/sectionN.xml 파일을 순서대로 읽음
+    - XML 태그 내 텍스트 노드를 재귀적으로 추출
+    - 제어문자 정제 후 텍스트 반환
+    """
     try:
         f = io.BytesIO(content)
         # 여기서 ZIP이 아니면 바로 리턴 -> 메인 함수가 받아서 HWP로 재시도함

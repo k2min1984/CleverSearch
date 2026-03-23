@@ -36,8 +36,15 @@ from app.services.indexing_service import ALLOWED_EXTENSIONS, IndexingService
 
 
 class SMBService:
+    """
+    SMB/CIFS 외부 공유 폴더 데이터 수집 서비스
+    - Windows net use 명령으로 SMB 경로 접속 및 자동 재연결
+    - 파일 탐색 → 허용 확장자 필터 → IndexingService로 색인
+    - DB에 소스 정보 저장 (SmbSource 테이블)
+    """
     @staticmethod
     def list_sources(active_only: bool = False) -> list[dict[str, Any]]:
+        """등록된 SMB 소스 목록 조회 (active_only=True이면 활성 소스만)"""
         with get_db_session() as db:
             query = db.query(SmbSource)
             if active_only:
@@ -58,6 +65,10 @@ class SMBService:
 
     @staticmethod
     def upsert_source(name: str, share_path: str, username: str | None, password: str | None, is_active: bool = True) -> dict[str, Any]:
+        """
+        SMB 소스 등록/수정 (Upsert)
+        - name 기준으로 기존 소스가 있으면 UPDATE, 없으면 INSERT
+        """
         with get_db_session() as db:
             row = db.query(SmbSource).filter(SmbSource.name == name).first()
             now = datetime.now(timezone.utc)
@@ -83,6 +94,11 @@ class SMBService:
 
     @staticmethod
     def _try_reconnect(source: SmbSource) -> None:
+        """
+        네트워크 단절 시 자동 재연결 로직 (Windows 환경 전용)
+        - net use 명령으로 SMB 경로 재접속 시도
+        - 사용자명/암호 제공 시 자동 인증
+        """
         # Windows 환경에서는 net use로 SMB 재연결을 시도합니다.
         if os.name != "nt":
             return
@@ -96,6 +112,12 @@ class SMBService:
 
     @staticmethod
     def sync_source(source_id: int, max_files: int = 200) -> dict[str, Any]:
+        """
+        SMB 소스 동기화 실행
+        - 지정된 SMB 경로의 파일을 탐색하여 색인
+        - 경로 접근 실패 시 _try_reconnect()로 자동 재연결 시도
+        - max_files 제한으로 대량 파일 시 부하 방지
+        """
         with get_db_session() as db:
             source = db.query(SmbSource).filter(SmbSource.id == source_id).first()
             if not source:
@@ -150,8 +172,15 @@ class SMBService:
 
 
 class DBIngestionService:
+    """
+    외부 DB 데이터 수집 서비스
+    - SQLAlchemy engine으로 다양한 DB 타입(postgres/mysql/mssql 등) 접속
+    - 대용량 DB 조회 시 fetchmany 스트리밍으로 부하 방지 (분할 수집)
+    - 조회 결과를 텍스트로 변환하여 IndexingService로 색인
+    """
     @staticmethod
     def list_sources(active_only: bool = False) -> list[dict[str, Any]]:
+        """등록된 DB 소스 목록 조회 (active_only=True이면 활성 소스만)"""
         with get_db_session() as db:
             query = db.query(DbSource)
             if active_only:
@@ -180,6 +209,11 @@ class DBIngestionService:
         chunk_size: int = 500,
         is_active: bool = True,
     ) -> dict[str, Any]:
+        """
+        DB 소스 등록/수정 (Upsert)
+        - name 기준 기존 소스 있으면 UPDATE, 없으면 INSERT
+        - chunk_size: 한 번에 가져올 로우 수 (분할 수집 단위)
+        """
         with get_db_session() as db:
             row = db.query(DbSource).filter(DbSource.name == name).first()
             now = datetime.now(timezone.utc)
@@ -209,6 +243,12 @@ class DBIngestionService:
 
     @staticmethod
     def sync_source(source_id: int, max_rows: int = 5000) -> dict[str, Any]:
+        """
+        DB 소스 동기화 실행 (분할 수집)
+        - stream_results=True로 메모리 최소화
+        - fetchmany(chunk_size)로 나눠서 색인 → 대용량 테이블도 안정적 처리
+        - max_rows 제한으로 무한 수집 방지
+        """
         with get_db_session() as db:
             source = db.query(DbSource).filter(DbSource.id == source_id).first()
             if not source:
@@ -264,6 +304,12 @@ class DBIngestionService:
 
 
 class IngestionSchedulerService:
+    """
+    자동 색인 스케줄러 (백그라운드 주기적 동기화)
+    - daemon 스레드로 실행되어 서버 종료 시 자동 정리
+    - 지정된 간격(interval_seconds)마다 모든 활성 SMB/DB 소스 동기화
+    - start/stop/status API로 관리자 화면에서 제어
+    """
     _thread: threading.Thread | None = None
     _stop_event: threading.Event | None = None
     _interval_seconds: int = 120
@@ -272,6 +318,7 @@ class IngestionSchedulerService:
 
     @classmethod
     def _loop(cls) -> None:
+        """백그라운드 루프: 활성 SMB/DB 소스 전체 sync → 간격만큼 대기 → 반복"""
         while cls._stop_event and not cls._stop_event.is_set():
             cls._last_run_at = datetime.now(timezone.utc)
             smb_results = [SMBService.sync_source(row["id"]) for row in SMBService.list_sources(active_only=True)]
@@ -285,6 +332,7 @@ class IngestionSchedulerService:
 
     @classmethod
     def start(cls, interval_seconds: int = 120) -> dict[str, Any]:
+        """스케줄러 시작 (이미 실행 중이면 already-running 반환)"""
         if cls._thread and cls._thread.is_alive():
             return {"status": "already-running", "interval_seconds": cls._interval_seconds}
 
@@ -296,6 +344,7 @@ class IngestionSchedulerService:
 
     @classmethod
     def stop(cls) -> dict[str, Any]:
+        """스케줄러 정지 (실행 중이 아니면 already-stopped 반환)"""
         if not cls._thread or not cls._thread.is_alive() or not cls._stop_event:
             return {"status": "already-stopped"}
         cls._stop_event.set()
@@ -304,6 +353,7 @@ class IngestionSchedulerService:
 
     @classmethod
     def status(cls) -> dict[str, Any]:
+        """스케줄러 현재 상태 조회 (running, interval, last_run_at, last_summary)"""
         return {
             "running": bool(cls._thread and cls._thread.is_alive()),
             "interval_seconds": cls._interval_seconds,
@@ -313,8 +363,16 @@ class IngestionSchedulerService:
 
 
 class DashboardService:
+    """
+    검색 트렌드 및 통계 시각화 대시보드 서비스
+    - summary: 전체/실패 로그 수, 실패률, 인기/실패 키워드 TOP 10
+    - trend: 날짜별 성공/실패 건수 버킷팅 (트렌드 차트용)
+    - health_overview: 운영 상태 요약 (SMB/DB/스케줄러/인증서)
+    - alert_badges: 위험 신호 배지 (인증서 만료, 실패률 급등, 스케줄러 중지)
+    """
     @staticmethod
     def summary(days: int = 7) -> dict[str, Any]:
+        """검색 통계 요약 (최근 N일 기준, 전체/실패 로그 수 + 인기/실패 TOP 10)"""
         popular = DBService.get_popular_keyword_stats(days=days, limit=10)
         failed = DBService.get_failed_keywords(days=days, limit=10)
         with get_db_session() as db:
@@ -332,6 +390,7 @@ class DashboardService:
 
     @staticmethod
     def trend(days: int = 14) -> list[dict[str, Any]]:
+        """날짜별 검색 성공/실패 건수 버킷팅 (트렌드 차트 데이터)"""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         buckets: dict[str, dict[str, int]] = {}
         with get_db_session() as db:
@@ -356,6 +415,7 @@ class DashboardService:
 
     @staticmethod
     def health_overview() -> dict[str, Any]:
+        """운영 상태 요약 (스케줄러/SMB/DB 소스 수/인증서 현황)"""
         # 관리자 화면에서 한 번에 볼 수 있는 운영 상태 요약
         with get_db_session() as db:
             smb_total = db.query(SmbSource).count()
@@ -379,6 +439,13 @@ class DashboardService:
 
     @staticmethod
     def alert_badges(cert_warn_days: int = 7, spike_ratio: float = 1.5) -> list[dict[str, Any]]:
+        """
+        운영 위험 신호 배지 반환
+        - 스케줄러 중지 → critical
+        - 인증서 만료/임박 → critical/warning
+        - 실패률 급등 (spike_ratio 배 초과) → warning
+        - 모두 정상이면 healthy info 반환
+        """
         # 운영 위험 신호를 배지 형태로 반환
         badges: list[dict[str, Any]] = []
         now = datetime.now(timezone.utc)
@@ -456,8 +523,15 @@ class DashboardService:
 
 
 class VolumeSSLService:
+    """
+    볼륨(인덱스) 생성 및 SSL 인증서 관리 서비스
+    - OpenSearch 인덱스 생성 (샤드/레플리카 설정)
+    - cert 폴더 PEM 파일 스캔 → 만료일/남은 일수/상태 판정
+    - PowerShell 기반 인증서 갱신 스크립트 동적 생성/실행
+    """
     @staticmethod
     def create_search_volume(index_name: str, shards: int = 1, replicas: int = 1) -> dict[str, Any]:
+        """검색 볼륨(인덱스) 생성 — 이미 존재하면 exists 반환"""
         client = get_client()
         if client.indices.exists(index=index_name):
             return {"status": "exists", "index": index_name}
@@ -474,6 +548,12 @@ class VolumeSSLService:
 
     @staticmethod
     def scan_certificates(cert_dir: str = "cert", warn_days: int = 30) -> list[dict[str, Any]]:
+        """
+        cert 폴더의 PEM 인증서 스캔
+        - ssl._ssl._test_decode_cert로 만료일 추출
+        - healthy/warning/expired/invalid 상태 판정
+        - CertificateStatus DB 테이블에 동기화
+        """
         target = Path(cert_dir)
         if not target.exists():
             return []
@@ -539,6 +619,7 @@ class VolumeSSLService:
 
     @staticmethod
     def generate_renew_script(cert_dir: str = "cert", output_path: str = "scripts/renew_certs.ps1") -> dict[str, Any]:
+        """인증서 갱신용 PowerShell 스크립트 동적 생성 (OpenSSL 기반)"""
         script = """param(
     [string]$OpenSslExe = \"openssl\",
     [string]$OutDir = \"cert\"
@@ -562,6 +643,7 @@ Write-Output \"인증서 생성 완료: $certPath\"
 
     @staticmethod
     def execute_renew_script(script_path: str) -> dict[str, Any]:
+        """생성된 갱신 스크립트 실행 (Windows PowerShell 환경 전용)"""
         if os.name != "nt":
             return {"status": "fail", "message": "Windows PowerShell 환경에서만 자동 실행 지원"}
 
@@ -596,10 +678,16 @@ _DEFAULT_WEIGHTS = {
 
 
 class ScoringConfigService:
-    """JSON 파일 기반 검색 가중치 저장/조회"""
+    """
+    검색 가중치 동적 관리 서비스 (JSON 파일 기반)
+    - scoring_weights.json에 가중치 저장/조회/초기화
+    - 기본값: title_phrase=20, title_and=10, content_phrase=5, content_and=1, vector=1.0, chosung=10, min_score=0.0058
+    - search_service.py의 build_weighted_query()에서 실시간 참조
+    """
 
     @staticmethod
     def get_weights() -> dict:
+        """현재 가중치 조회 (JSON 파일 없으면 기본값 반환, 있으면 기본값+파일 병합)"""
         if _SCORING_CONFIG_PATH.exists():
             try:
                 data = json.loads(_SCORING_CONFIG_PATH.read_text(encoding="utf-8"))
@@ -611,6 +699,7 @@ class ScoringConfigService:
 
     @staticmethod
     def update_weights(new_weights: dict) -> dict:
+        """가중치 부분 업데이트 (전달된 키만 덤어쓰기, 나머지는 유지)"""
         current = ScoringConfigService.get_weights()
         for key in _DEFAULT_WEIGHTS:
             if key in new_weights:
@@ -623,6 +712,7 @@ class ScoringConfigService:
 
     @staticmethod
     def reset_weights() -> dict:
+        """가중치 초기화 (JSON 파일 삭제 → 기본값 복원)"""
         if _SCORING_CONFIG_PATH.exists():
             _SCORING_CONFIG_PATH.unlink()
         return dict(_DEFAULT_WEIGHTS)

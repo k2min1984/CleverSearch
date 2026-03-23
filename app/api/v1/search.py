@@ -64,21 +64,25 @@ async def get_popular(limit: int = Query(10, ge=1, le=50)):
 
 @router.get("/recent", summary="사용자 최근 검색어 조회")
 async def get_recent(user_id: str = Query("anonymous"), limit: int = Query(10, ge=1, le=30)):
+    """사용자별 최근 검색어 목록 조회 (최신순, 앱 DB 기준)"""
     return await SearchService.get_recent_keywords(user_id=user_id, limit=limit)
 
 
 @router.delete("/recent", summary="사용자 최근 검색어 전체 삭제")
 async def clear_recent(user_id: str = Query("anonymous")):
+    """해당 사용자의 최근 검색어 전체 삭제"""
     return await SearchService.clear_recent_keywords(user_id=user_id)
 
 
 @router.delete("/recent/item", summary="사용자 최근 검색어 단건 삭제")
 async def delete_recent_item(user_id: str = Query("anonymous"), q: str = Query(..., min_length=1)):
+    """사용자의 특정 최근 검색어 1건 삭제"""
     return await SearchService.remove_recent_keyword(user_id=user_id, query=q)
 
 
 @router.get("/recommend", summary="사용자 맞춤 추천 검색어")
 async def get_recommend(user_id: str = Query("anonymous"), limit: int = Query(10, ge=1, le=30)):
+    """사용자 최근 검색어 + 전체 인기 검색어를 병합한 추천 검색어 제안"""
     return await SearchService.get_recommended_keywords(user_id=user_id, limit=limit)
 
 
@@ -88,6 +92,7 @@ async def get_related(
     days: int = Query(30, ge=1, le=365),
     limit: int = Query(10, ge=1, le=30),
 ):
+    """입력 쿼리와 토큰 유사도+빈도 기반으로 산출된 연관 검색어 반환"""
     return await SearchService.get_related_keywords(query=q, days=days, limit=limit)
 
 @router.get("/read/{doc_id}", summary="문서 상세 조회")

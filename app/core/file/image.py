@@ -91,8 +91,14 @@ def _extract_text(content: bytes) -> str:
     except Exception as e:
         return f"OCR 처리 중 오류 발생: {str(e)}"
 
-# [이미지] OCR
+# [이미지] OCR (레거시 파이프라인)
 def _extract_text_old(content: bytes) -> str:
+    """
+    이전 버전 OCR 파이프라인 (백업용 보존)
+    - 그레이스케일 변환 → 어두운 배경 반전 → 대비 강조 → 해상도 확대
+    - 노이즈 제거(SMOOTH_MORE) → 이진화(Threshold 140) → 여백 추가
+    - image_to_string으로 전체 텍스트 추출 (신뢰도 필터링 없음)
+    """
     try:
         # 1. 이미지 로드
         image = Image.open(io.BytesIO(content))
