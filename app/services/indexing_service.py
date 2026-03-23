@@ -1,3 +1,20 @@
+"""
+########################################################
+# Description
+# 색인 서비스 (IndexingService)
+# 파일 파싱 → 텍스트 추출 → 청크 분할 → AI 임베딩 → OpenSearch 색인
+# - PDF/HWP/HWPX/DOCX/PPTX/XLSX/이미지 파싱 통합
+# - 텍스트 청크 분할 (chunk_size 단위)
+# - 초성 텍스트 변환 (chosung_text 필드 생성)
+# - 768차원 벡터 임베딩 (ko-sroberta-multitask)
+# - OpenSearch 벨크 색인
+#
+# Modified History
+# 강광묵 / 2026-01-20 / 최초생성
+# 강광민 / 2026-02-13 / 파서 통합 및 임베딩 고도화
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 import io
 import json
 import re

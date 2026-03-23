@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
 # --- FastAPI 인스턴스 설정 ---
 app = FastAPI(
     title="CleverSearch API",
-    description="OpenSearch 기반의 엔터프라이즈 통합 검색 'HanSeek' API",
+    description="OpenSearch 기반의 엔터프라이즈 통합 검색 'CleverSearch' API",
     version="1.0.0",
     lifespan=lifespan
 )

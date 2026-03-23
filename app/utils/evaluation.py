@@ -1,3 +1,17 @@
+"""
+########################################################
+# Description
+# 검색 품질 평가 유틸리티
+# 정보 검색(IR) 평가 지표 계산
+# - DCG / nDCG@k (Normalized Discounted Cumulative Gain)
+# - MRR@k (Mean Reciprocal Rank)
+# - Precision@k / Recall@k
+#
+# Modified History
+# 강광민 / 2026-03-17 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 from typing import Iterable, Sequence
 import math
 

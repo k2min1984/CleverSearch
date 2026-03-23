@@ -1,3 +1,17 @@
+"""
+########################################################
+# Description
+# 인증 API 라우터
+# JWT 기반 로그인/로그아웃 및 토큰 관리
+# - 로그인 (아이디/비밀번호 → Access + Refresh 토큰 발급)
+# - 토큰 갱신 (Refresh → 새 Access 토큰)
+# - 로그아웃 (토큰 폐기)
+#
+# Modified History
+# 강광민 / 2026-03-18 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
 

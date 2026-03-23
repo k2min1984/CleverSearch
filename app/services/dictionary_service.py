@@ -1,3 +1,18 @@
+"""
+########################################################
+# Description
+# 사전 서비스 (DictionaryService)
+# 동의어/불용어/사용자사전 CRUD 로직
+# - 사전 목록 조회 (dict_type별 필터)
+# - 단건 등록/수정 (upsert)
+# - 엑셀 일괄 업로드
+# - 사전 항목 삭제
+#
+# Modified History
+# 강광민 / 2026-03-18 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone

@@ -1,3 +1,17 @@
+"""
+########################################################
+# Description
+# 관리자 API 라우터
+# 인기 검색어, 문서 목록, 검색 로그 등 관리 기능 제공
+# - 인기 검색어 통계 조회
+# - 색인 문서 목록 조회
+# - viewer 이상 권한 필요
+#
+# Modified History
+# 강광민 / 2026-03-15 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 from fastapi import APIRouter, Depends, Query
 
 from app.services.db_service import DBService

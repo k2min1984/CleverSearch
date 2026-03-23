@@ -1,3 +1,14 @@
+"""
+########################################################
+# Description
+# 평가 지표 단위 테스트
+# nDCG@k, MRR@k 계산 결과 정확성 검증
+#
+# Modified History
+# 강광민 / 2026-03-17 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 import unittest
 
 from app.utils.evaluation import evaluate_queries, mrr_at_k, ndcg_at_k

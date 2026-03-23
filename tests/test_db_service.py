@@ -1,3 +1,14 @@
+"""
+########################################################
+# Description
+# DB 서비스 단위 테스트
+# 검색 로그, 최근 검색어, 인기 검색어 집계 등 DB 로직 테스트
+#
+# Modified History
+# 강광민 / 2026-03-17 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 import unittest
 
 from app.core.database import RecentSearch, SearchLog, SessionLocal, init_database

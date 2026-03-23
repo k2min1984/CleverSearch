@@ -1,3 +1,18 @@
+"""
+########################################################
+# Description
+# 보안 모듈 (JWT + RBAC)
+# 인증/인가 전체 로직 담당
+# - JWT Access/Refresh 토큰 발급 및 검증
+# - PBKDF2-SHA256 비밀번호 해싱/검증
+# - RBAC 역할 기반 접근 제어 (admin > operator > viewer)
+# - 토큰 폐기 (Revoke) 처리
+#
+# Modified History
+# 강광민 / 2026-03-18 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 import uuid
 from datetime import datetime, timedelta, timezone
 

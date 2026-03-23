@@ -1,3 +1,16 @@
+"""
+########################################################
+# Description
+# 한글(HWP/HWPX) 파일 파서
+# 한글 문서에서 본문 텍스트를 추출
+# - HWP: OLE 켨테이너 → BodyText 스트림 → zlib 압축 해제
+# - HWPX: ZIP/XML 포맷 → Contents/section XML 파싱
+#
+# Modified History
+# 강광묵 / 2026-01-20 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 import io
 import zlib
 import struct

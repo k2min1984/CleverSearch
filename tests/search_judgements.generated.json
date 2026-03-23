@@ -1,0 +1,19 @@
+{
+  "queries": [
+    {
+      "query": "산업기술혁신사업",
+      "relevant_titles": ["(산업부)_2026년도_산업기술혁신사업_통합_시행계획_공고문.hwp"],
+      "user_id": "eval-user"
+    },
+    {
+      "query": "연구개발계획서",
+      "relevant_titles": ["1. 연구개발계획서 양식_울산지방청.pdf", "연구개발계획서_작성중.docx"],
+      "user_id": "eval-user"
+    },
+    {
+      "query": "AI개발진행",
+      "relevant_titles": ["AI개발진행-20251201.pptx"],
+      "user_id": "eval-user"
+    }
+  ]
+}

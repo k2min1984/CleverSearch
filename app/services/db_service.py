@@ -1,3 +1,20 @@
+"""
+########################################################
+# Description
+# DB 서비스 (DBService)
+# 검색 관련 데이터베이스 비즈니스 로직
+# - 검색 로그 기록 (search_logs INSERT)
+# - 인기 검색어 집계 (keyword 문자열 GROUP BY)
+# - 최근 검색어 저장/조회/삭제
+# - 연관 검색어 추천
+# - 실패 검색어 분석
+# - 색인 문서 CRUD
+#
+# Modified History
+# 강광민 / 2026-03-15 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 from datetime import datetime, timedelta, timezone
 from typing import List
 import re

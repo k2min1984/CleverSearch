@@ -1,3 +1,16 @@
+"""
+########################################################
+# Description
+# Office 파일 파서 (Word / PowerPoint)
+# DOCX, PPTX 문서에서 본문 텍스트 추출
+# - Word: python-docx → 문단(paragraph) 추출
+# - PowerPoint: python-pptx → 슬라이드/셀 텍스트 추출
+#
+# Modified History
+# 강광묵 / 2026-01-20 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 import io
 from docx import Document
 from pptx import Presentation

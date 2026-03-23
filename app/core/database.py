@@ -1,3 +1,19 @@
+"""
+########################################################
+# Description
+# 데이터베이스 설정 및 ORM 모델 정의
+# SQLAlchemy 엔진/세션 생성 및 테이블 스키마 정의
+# - 사용자 테이블 (auth_users, auth_roles)
+# - 문서 목록 테이블 (indexed_documents)
+# - 검색 로그 테이블 (search_logs)
+# - 사전 테이블 (dictionary_entries)
+# - 토큰 블랙리스트 (revoked_access/refresh_tokens)
+#
+# Modified History
+# 강광민 / 2026-03-17 / 최초생성
+# 강광민 / 2026-03-23 / 헤더 주석 추가
+########################################################
+"""
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
