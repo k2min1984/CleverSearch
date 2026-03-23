@@ -32,6 +32,12 @@
         /* 탭 스크롤바 숨기기 */
         #categoryTabs::-webkit-scrollbar { display: none; }
         #categoryTabs { -ms-overflow-style: none; scrollbar-width: none; }
+        /* 문서 미리보기 팝업 */
+        .preview-popup { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; background: #1e1e2e; border: 1px solid #3b82f6; border-radius: 0.5rem; padding: 0.75rem; font-size: 0.8rem; color: #d1d5db; max-height: 200px; overflow-y: auto; display: none; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+        .result-card:hover .preview-popup { display: block; }
+        .result-card { position: relative; }
+        /* 인기검색어 가로 배치 */
+        #popularTags { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
     </style>
 </head>
 <body class="bg-[#202124] text-gray-100 min-h-screen">
@@ -101,6 +107,7 @@
     <script>
         const API_BASE = "https://127.0.0.1:8000/api/v1/search";
         const FILE_BASE = "https://127.0.0.1:8000/api/v1/file";
+        const SEARCH_API = "https://127.0.0.1:8000/api/v1/search";
 
         function getUserId() {
             let userId = localStorage.getItem('hanseek_user_id');
@@ -329,9 +336,16 @@
             totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.size || 20)));
             const pageInfo = document.getElementById('pageInfo');
             pageInfo.innerText = `${currentPage} / ${totalPages}`;
-            document.getElementById('paginationArea').classList.remove('hidden');
-            document.getElementById('prevPageBtn').disabled = currentPage <= 1;
-            document.getElementById('nextPageBtn').disabled = currentPage >= totalPages;
+
+            /* 페이징: 결과가 없거나 1페이지만 있으면 숨김 */
+            const paginationArea = document.getElementById('paginationArea');
+            if (!data.items || data.items.length === 0 || totalPages <= 1) {
+                paginationArea.classList.add('hidden');
+            } else {
+                paginationArea.classList.remove('hidden');
+                document.getElementById('prevPageBtn').disabled = currentPage <= 1;
+                document.getElementById('nextPageBtn').disabled = currentPage >= totalPages;
+            }
 
             if (!data.items || data.items.length === 0) {
                 resultList.innerHTML = '<div class="text-center py-20 text-gray-500 font-light text-xl">일치하는 문서를 찾지 못했습니다.</div>';
@@ -340,12 +354,9 @@
 
             data.items.forEach(item => {
                 const card = document.createElement('div');
-                card.className = 'group bg-[#303134] p-6 rounded-xl border border-[#5f6368] hover:border-blue-500 transition-all shadow-md mb-4';
+                card.className = 'result-card group bg-[#303134] p-6 rounded-xl border border-[#5f6368] hover:border-blue-500 transition-all shadow-md mb-4';
                 
-                card.onclick = () => {
-                    const fileId = item.id;
-                    window.open(`${FILE_BASE}/download/${fileId}`, '_blank');
-                };
+                const previewText = (item.summary || '').substring(0, 300) + ((item.summary || '').length > 300 ? '...' : '');
 
                 card.innerHTML = `
                     <div class="flex justify-between items-start mb-2">
@@ -367,7 +378,17 @@
                         <span><i class="far fa-calendar-alt mr-1"></i> ${item.indexed_at ? item.indexed_at.substring(0,10) : '2026.01.20'}</span>
                         <span class="ml-auto bg-gray-800 px-2 py-0.5 rounded italic">Score: ${item.score.toFixed(2)}</span>
                     </div>
+                    <div class="preview-popup">
+                        <div class="text-xs text-blue-400 font-bold mb-1">📄 본문 미리보기</div>
+                        <div class="text-gray-300 whitespace-pre-wrap">${previewText || '미리보기 데이터 없음'}</div>
+                    </div>
                 `;
+                
+                card.onclick = () => {
+                    const osDocId = item.id;
+                    window.open(`${SEARCH_API}/read/${osDocId}`, '_blank');
+                };
+
                 resultList.appendChild(card);
             });
         }

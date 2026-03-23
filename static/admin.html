@@ -126,13 +126,16 @@
 
             <!-- 인기검색 탭 -->
             <div id="panel-popular" class="panel hidden">
-                <div class="flex gap-2 mb-3 items-center">
+                <div class="flex gap-2 mb-3 items-center flex-wrap">
                     <label class="text-sm text-gray-400">기간(일):</label>
                     <input id="popularDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" />
                     <label class="text-sm text-gray-400">표시 개수:</label>
                     <input id="popularLimit" type="number" min="1" max="50" value="10" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" />
+                    <button onclick="loadPopular()" class="px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm font-medium">적용</button>
                     <button onclick="loadPopular()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+                    <button onclick="loadRecommendKeywords()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">추천 키워드</button>
                 </div>
+                <div id="recommendResult" class="hidden mb-3 bg-indigo-900/30 border border-indigo-700 rounded-lg p-3 text-sm text-indigo-200"></div>
                 <div class="overflow-auto border border-gray-700 rounded">
                     <table class="w-full text-sm">
                         <thead class="bg-gray-800"><tr><th class="p-2 text-left">순위</th><th class="p-2 text-left">키워드</th><th class="p-2 text-left">카운트</th></tr></thead>
@@ -197,9 +200,26 @@
                     <div class="metric"><div class="metric-label">실패율</div><div class="metric-value" id="mFailureRate">0%</div></div>
                     <div class="metric"><div class="metric-label">스케줄러</div><div class="metric-value" id="mScheduler">stopped</div></div>
                 </div>
+                <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-3 text-sm text-blue-200">
+                    <b>📊 대시보드란?</b> 검색 서비스의 운영 현황을 한눈에 파악할 수 있는 모니터링 화면입니다.<br>
+                    • <b>전체 로그</b>: 설정 기간 내 총 검색 횟수<br>
+                    • <b>실패 로그</b>: 검색 결과가 0건인 검색 횟수<br>
+                    • <b>실패율</b>: 전체 대비 실패 비율 (%)<br>
+                    • <b>스케줄러</b>: 자동 색인 스케줄러 실행 상태<br>
+                    • <b>트렌드 차트</b>: 일별 성공/실패 검색 횟수 막대 그래프<br>
+                    • <b>인기 키워드 차트</b>: 검색 빈도 상위 5개 키워드 도넛 차트<br>
+                    • <b>스모크 실행</b>: 주요 API 엔드포인트가 정상 응답하는지 자동 테스트<br>
+                    • <b>디버그 토글</b>: 원본 JSON 데이터(Health/Summary/Trend)를 표시/숨김
+                </div>
                 <div class="grid md:grid-cols-2 gap-3 mb-3">
-                    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:280px"><canvas id="trendChart" height="130"></canvas></div>
-                    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:280px"><canvas id="keywordChart" height="130"></canvas></div>
+                    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:280px">
+                        <h4 class="text-sm font-bold text-gray-300 mb-1">📈 일별 검색 트렌드 (성공/실패)</h4>
+                        <canvas id="trendChart" height="130"></canvas>
+                    </div>
+                    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:280px">
+                        <h4 class="text-sm font-bold text-gray-300 mb-1">🍩 인기 키워드 TOP 5</h4>
+                        <canvas id="keywordChart" height="130"></canvas>
+                    </div>
                 </div>
                 <pre id="dashboardHealth" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mb-3"></pre>
                 <pre id="dashboardSummary" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
@@ -486,7 +506,8 @@
                     localStorage.setItem("cleversearch_admin_refresh_token", refreshToken);
                     localStorage.setItem("cleversearch_admin_username", loggedInUsername);
                     localStorage.setItem("cleversearch_admin_role", loggedInRole);
-                    showApp();
+                    /* 역할 변경 시 버튼 상태를 정확히 반영하기 위해 페이지 새로고침 */
+                    location.reload();
                 } else {
                     errEl.textContent = payload.detail || "로그인 실패: 아이디 또는 비밀번호를 확인하세요";
                     errEl.classList.remove("hidden");
@@ -629,6 +650,26 @@
             body.innerHTML = (data || []).map((row, i) =>
                 `<tr class="border-t border-gray-700"><td class="p-2">${i + 1}</td><td class="p-2">${fmt(row.keyword)}</td><td class="p-2">${fmt(row.count)}</td></tr>`
             ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
+        }
+
+        /* ===== 추천 키워드 ===== */
+        async function loadRecommendKeywords() {
+            const container = document.getElementById("recommendResult");
+            container.classList.remove("hidden");
+            container.innerHTML = "<span class='text-indigo-300'>추천 키워드 조회 중...</span>";
+            try {
+                const res = await fetch(`${API.replace('/admin','/search')}/recommend?user_id=admin&limit=10`, {
+                    headers: accessToken ? { "Authorization": `Bearer ${accessToken}` } : {}
+                });
+                const data = await res.json();
+                if (Array.isArray(data) && data.length > 0) {
+                    container.innerHTML = "<b>💡 추천 키워드:</b> " + data.map(k => `<span class='inline-block bg-indigo-800 text-indigo-200 px-2 py-1 rounded-full text-xs mr-1 mb-1'>${k}</span>`).join("");
+                } else {
+                    container.innerHTML = "<span class='text-gray-400'>추천 키워드가 없습니다. 검색 이력이 축적되면 자동으로 생성됩니다.</span>";
+                }
+            } catch (e) {
+                container.innerHTML = `<span class='text-red-400'>추천 키워드 조회 실패: ${e.message}</span>`;
+            }
         }
 
         /* ===== 검색 로그 ===== */
