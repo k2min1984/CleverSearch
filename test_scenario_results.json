@@ -1,0 +1,129 @@
+{
+  "timestamp": "2026-03-23 12:57:01",
+  "total": 24,
+  "passed": 24,
+  "failed": 0,
+  "pass_rate": "100.0%",
+  "details": {
+    "1": {
+      "name": "관리자 로그인/로그아웃",
+      "status": "PASS",
+      "details": "wrong=True, login=True, logout=True"
+    },
+    "2": {
+      "name": "전체 초기화",
+      "status": "PASS",
+      "details": "status=200"
+    },
+    "3": {
+      "name": "파일 업로드 (5종+중복)",
+      "status": "PASS",
+      "details": "uploaded=5, dup_skipped=True"
+    },
+    "4": {
+      "name": "기본 검색",
+      "status": "PASS",
+      "details": ""
+    },
+    "5": {
+      "name": "상세 검색 (필터)",
+      "status": "PASS",
+      "details": "include=True, exclude=True, ext=True, date=True"
+    },
+    "6": {
+      "name": "오타 교정 검색",
+      "status": "PASS",
+      "details": "corrected=True, corrected_to=계획서"
+    },
+    "7": {
+      "name": "초성 검색",
+      "status": "PASS",
+      "details": "ㅇㄱㄱㅂㄱㅎㅅ=2건, ㅂㅇ=2건"
+    },
+    "8": {
+      "name": "자동완성",
+      "status": "PASS",
+      "details": "후보 2건: ['연구개발계획서작성중.docx', '1. 연구개발계획서 양식울산지방청.pdf']"
+    },
+    "9": {
+      "name": "인기/최근/실패 검색어",
+      "status": "PASS",
+      "details": "popular=7, recent=0, failed_ok=True"
+    },
+    "10": {
+      "name": "문서 개별 삭제",
+      "status": "PASS",
+      "details": "before=5, after=4"
+    },
+    "11": {
+      "name": "대시보드",
+      "status": "PASS",
+      "details": "summary=True(total_logs=12), trend=True, badges=True"
+    },
+    "12": {
+      "name": "사전 관리",
+      "status": "PASS",
+      "details": "synonym=True, stopword=True, list=True"
+    },
+    "13": {
+      "name": "SMB/DB 소스 관리",
+      "status": "PASS",
+      "details": "smb=True, db=True"
+    },
+    "14": {
+      "name": "스케줄러",
+      "status": "PASS",
+      "details": "status=True, start=True, running=True, stop=True"
+    },
+    "15": {
+      "name": "볼륨/SSL 인증서",
+      "status": "PASS",
+      "details": "인증서 2건"
+    },
+    "16": {
+      "name": "RBAC 권한 분리",
+      "status": "PASS",
+      "details": "viewer_login=True, sched_blocked=True, dict_blocked=True, read_ok=True"
+    },
+    "17": {
+      "name": "이름 검색 정밀도",
+      "status": "PASS",
+      "details": "비존재 이름 ≤1건 확인: 강광민=0, 홍길동=0, XYZNONEXIST99999=0"
+    },
+    "18": {
+      "name": "정적 페이지 접근",
+      "status": "PASS",
+      "details": "main=True, admin=True"
+    },
+    "19": {
+      "name": "OCR 이미지 텍스트",
+      "status": "PASS",
+      "details": "total=4, has_image_result=False"
+    },
+    "20": {
+      "name": "검색 품질 가중치",
+      "status": "PASS",
+      "details": "get=True, put=True, reset=True"
+    },
+    "21": {
+      "name": "추천/연관 검색어",
+      "status": "PASS",
+      "details": "recommend=True, related=True"
+    },
+    "22": {
+      "name": "사전 엑셀 업로드 (API 확인)",
+      "status": "PASS",
+      "details": "entries=list"
+    },
+    "23": {
+      "name": "인증서 갱신 스크립트",
+      "status": "PASS",
+      "details": "status=generated, path=scripts\\renew_certs.ps1"
+    },
+    "24": {
+      "name": "모바일 반응형/페이징",
+      "status": "PASS",
+      "details": "page1=True, page2=True, viewport=True"
+    }
+  }
+}
