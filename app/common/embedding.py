@@ -9,7 +9,6 @@
 #
 # Modified History
 # 강광묵 / 2026-01-20 / 최초생성
-# 강광민 / 2026-03-23 / 헤더 주석 추가
 ########################################################
 """
 from sentence_transformers import SentenceTransformer
