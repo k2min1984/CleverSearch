@@ -2,7 +2,7 @@
 ########################################################
 # Description
 # CleverSearch 관리자 페이지
-# 13개 탭 기반 운영 관리 프론트엔드
+# 14개 탭 기반 운영 관리 프론트엔드
 # - 파일 업로드 / 문서 목록 / 검색 로그
 # - 인기 검색어 / 최근 검색어 / 실패 검색어
 # - 대시보드 (트렌드 차트 + 키워드 도넛)
@@ -95,6 +95,7 @@
                 <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="dbsources">DB 색인</button>
                 <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="scheduler">스케줄러</button>
                 <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="ssl">볼륨/SSL</button>
+                <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="scoring">검색 품질</button>
                 <button class="tab px-3 py-2 rounded bg-gray-700 text-sm" data-tab="reset">초기화</button>
             </div>
 
@@ -329,6 +330,85 @@
                     <button onclick="runRenewScript()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 실행</button>
                 </div>
                 <pre id="sslOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
+            </div>
+
+            <!-- 검색 품질 탭 -->
+            <div id="panel-scoring" class="panel hidden">
+                <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+                    <b>📊 검색 품질 관리란?</b> 검색 결과의 순위(Scoring)를 결정하는 가중치를 실시간으로 조정하고, 검색 품질을 평가합니다.<br>
+                    • <b>제목 구문</b>: 검색어가 제목에 정확히 포함될 때 부여하는 점수 (기본 20)<br>
+                    • <b>제목 AND</b>: 검색어 단어가 제목에 모두 존재할 때 점수 (기본 10)<br>
+                    • <b>본문 구문</b>: 검색어가 본문에 정확히 포함될 때 점수 (기본 5)<br>
+                    • <b>본문 AND</b>: 검색어 단어가 본문에 모두 존재할 때 점수 (기본 1)<br>
+                    • <b>AI 벡터</b>: 의미 유사도 기반 벡터 검색 가중치 (기본 1.0)<br>
+                    • <b>초성</b>: 초성 검색 매칭 가중치 (기본 10)
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-4 mb-4">
+                    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                        <h3 class="text-sm font-bold mb-3 text-yellow-300">가중치 설정</h3>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex items-center gap-2">
+                                <label class="w-28 text-gray-300">제목 구문</label>
+                                <input id="w_title_phrase" type="number" min="0" max="100" step="1" value="20" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
+                                <input type="range" min="0" max="100" step="1" value="20" class="flex-1" oninput="document.getElementById('w_title_phrase').value=this.value" />
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="w-28 text-gray-300">제목 AND</label>
+                                <input id="w_title_and" type="number" min="0" max="100" step="1" value="10" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
+                                <input type="range" min="0" max="100" step="1" value="10" class="flex-1" oninput="document.getElementById('w_title_and').value=this.value" />
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="w-28 text-gray-300">본문 구문</label>
+                                <input id="w_content_phrase" type="number" min="0" max="100" step="1" value="5" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
+                                <input type="range" min="0" max="100" step="1" value="5" class="flex-1" oninput="document.getElementById('w_content_phrase').value=this.value" />
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="w-28 text-gray-300">본문 AND</label>
+                                <input id="w_content_and" type="number" min="0" max="100" step="1" value="1" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
+                                <input type="range" min="0" max="100" step="1" value="1" class="flex-1" oninput="document.getElementById('w_content_and').value=this.value" />
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="w-28 text-gray-300">AI 벡터</label>
+                                <input id="w_vector" type="number" min="0" max="50" step="0.1" value="1.0" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
+                                <input type="range" min="0" max="50" step="0.1" value="1.0" class="flex-1" oninput="document.getElementById('w_vector').value=this.value" />
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="w-28 text-gray-300">초성</label>
+                                <input id="w_chosung" type="number" min="0" max="100" step="1" value="10" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
+                                <input type="range" min="0" max="100" step="1" value="10" class="flex-1" oninput="document.getElementById('w_chosung').value=this.value" />
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="w-28 text-gray-300">최소 점수</label>
+                                <input id="w_min_score" type="number" min="0" max="10" step="0.0001" value="0.0058" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
+                            </div>
+                        </div>
+                        <div class="flex gap-2 mt-3">
+                            <button onclick="saveScoringWeights()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">저장</button>
+                            <button onclick="loadScoringWeights()" class="px-3 py-1 rounded bg-gray-600 hover:bg-gray-500 text-sm">새로고침</button>
+                            <button onclick="resetScoringWeights()" class="admin-write px-3 py-1 rounded bg-red-700 hover:bg-red-600 text-sm">초기값 복원</button>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+                        <h3 class="text-sm font-bold mb-3 text-green-300">검색 품질 평가</h3>
+                        <p class="text-xs text-gray-400 mb-2">검색어와 기대 결과를 입력하고 평가를 실행합니다.</p>
+                        <textarea id="scoringTestCases" rows="8" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-xs font-mono" placeholder='[
+  {"query": "연구개발계획서", "expected_title": "연구개발계획서"},
+  {"query": "보안", "expected_title": "보안"},
+  {"query": "AI개발", "expected_title": "AI개발진행"}
+]'>[
+  {"query": "연구개발계획서", "expected_title": "연구개발계획서"},
+  {"query": "보안", "expected_title": "보안"},
+  {"query": "AI개발", "expected_title": "AI개발진행"},
+  {"query": "통합검색", "expected_title": "통합검색솔루션"},
+  {"query": "운영지침", "expected_title": "운영지침"}
+]</textarea>
+                        <button onclick="runScoringEvaluation()" class="admin-write px-3 py-1 rounded bg-green-700 hover:bg-green-600 text-sm mt-2">평가 실행</button>
+                    </div>
+                </div>
+
+                <pre id="scoringOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
             </div>
 
             <!-- 초기화 탭 -->
@@ -784,6 +864,82 @@
             writeJson("sslOutput", result);
         }
 
+        /* ===== 검색 품질 (Scoring) ===== */
+        async function loadScoringWeights() {
+            const result = await apiFetch(`${SYS_API}/scoring/weights`, { method: "GET" });
+            if (result.data) {
+                const d = result.data;
+                document.getElementById("w_title_phrase").value = d.title_phrase ?? 20;
+                document.getElementById("w_title_and").value = d.title_and ?? 10;
+                document.getElementById("w_content_phrase").value = d.content_phrase ?? 5;
+                document.getElementById("w_content_and").value = d.content_and ?? 1;
+                document.getElementById("w_vector").value = d.vector ?? 1.0;
+                document.getElementById("w_chosung").value = d.chosung ?? 10;
+                document.getElementById("w_min_score").value = d.min_score ?? 0.0058;
+                /* 슬라이더 동기화 */
+                document.querySelectorAll("#panel-scoring input[type=range]").forEach(slider => {
+                    const numInput = slider.parentElement.querySelector("input[type=number]");
+                    if (numInput) slider.value = numInput.value;
+                });
+            }
+        }
+
+        async function saveScoringWeights() {
+            const payload = {
+                title_phrase: parseFloat(document.getElementById("w_title_phrase").value),
+                title_and: parseFloat(document.getElementById("w_title_and").value),
+                content_phrase: parseFloat(document.getElementById("w_content_phrase").value),
+                content_and: parseFloat(document.getElementById("w_content_and").value),
+                vector: parseFloat(document.getElementById("w_vector").value),
+                chosung: parseFloat(document.getElementById("w_chosung").value),
+                min_score: parseFloat(document.getElementById("w_min_score").value),
+            };
+            const result = await apiFetch(`${SYS_API}/scoring/weights`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            writeJson("scoringOutput", result.data || result);
+            if (result.ok) alert("가중치가 저장되었습니다.");
+        }
+
+        async function resetScoringWeights() {
+            if (!confirm("검색 가중치를 초기값으로 복원합니다. 계속하시겠습니까?")) return;
+            const result = await apiFetch(`${SYS_API}/scoring/reset`, { method: "POST" });
+            writeJson("scoringOutput", result.data || result);
+            loadScoringWeights();
+            alert("초기값으로 복원되었습니다.");
+        }
+
+        async function runScoringEvaluation() {
+            let testCases;
+            try {
+                testCases = JSON.parse(document.getElementById("scoringTestCases").value);
+            } catch (e) {
+                alert("JSON 형식이 올바르지 않습니다.");
+                return;
+            }
+            writeJson("scoringOutput", "평가 실행 중...");
+            const result = await apiFetch(`${SYS_API}/scoring/evaluate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ test_cases: testCases })
+            });
+            if (result.data) {
+                const d = result.data;
+                let html = `<b>📊 검색 품질 평가 결과</b>\n`;
+                html += `합계: ${d.total}건 | 통과: ${d.passed}건 | 실패: ${d.failed}건 | 통과율: ${d.pass_rate}%\n\n`;
+                (d.details || []).forEach((r, i) => {
+                    const icon = r.found ? "✅" : "❌";
+                    html += `${icon} [${i+1}] "${r.query}" → ${r.result_count}건, 최고점수: ${r.top_score}\n`;
+                    html += `   기대: "${r.expected}" | 상위결과: ${(r.top_titles||[]).join(", ")}\n`;
+                });
+                document.getElementById("scoringOutput").innerHTML = html;
+            } else {
+                writeJson("scoringOutput", result);
+            }
+        }
+
         /* ===== 초기화 ===== */
         async function resetAllData() {
             if (!confirm("모든 데이터(OpenSearch + DB)를 초기화합니다. 계속하시겠습니까?")) return;
@@ -867,6 +1023,7 @@
             loadDbSources();
             loadSchedulerStatus();
             scanCertificates();
+            loadScoringWeights();
         }
 
         /* ===== 엔터 키 로그인 ===== */

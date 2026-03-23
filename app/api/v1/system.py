@@ -31,6 +31,7 @@ from app.services.system_service import (
     DBIngestionService,
     DashboardService,
     IngestionSchedulerService,
+    ScoringConfigService,
     SMBService,
     VolumeSSLService,
 )
@@ -206,3 +207,43 @@ async def run_system_smoke_test():
         "stdout": proc.stdout,
         "stderr": proc.stderr,
     }
+
+
+# ────────── 검색 가중치 관리 ──────────
+
+class ScoringWeightsRequest(BaseModel):
+    title_phrase: float = Field(default=20, ge=0, le=100)
+    title_and: float = Field(default=10, ge=0, le=100)
+    content_phrase: float = Field(default=5, ge=0, le=100)
+    content_and: float = Field(default=1, ge=0, le=100)
+    vector: float = Field(default=1.0, ge=0, le=50)
+    chosung: float = Field(default=10, ge=0, le=100)
+    min_score: float = Field(default=0.0058, ge=0, le=10)
+
+
+class EvaluateRequest(BaseModel):
+    test_cases: list[dict] = Field(
+        ...,
+        min_length=1,
+        description="[{query, expected_title}]",
+    )
+
+
+@router.get("/scoring/weights", dependencies=[Depends(require_role("viewer"))], summary="검색 가중치 조회")
+async def get_scoring_weights():
+    return ScoringConfigService.get_weights()
+
+
+@router.put("/scoring/weights", dependencies=[Depends(require_role("operator"))], summary="검색 가중치 수정")
+async def update_scoring_weights(req: ScoringWeightsRequest):
+    return ScoringConfigService.update_weights(req.model_dump())
+
+
+@router.post("/scoring/reset", dependencies=[Depends(require_role("admin"))], summary="검색 가중치 초기화")
+async def reset_scoring_weights():
+    return ScoringConfigService.reset_weights()
+
+
+@router.post("/scoring/evaluate", dependencies=[Depends(require_role("operator"))], summary="검색 품질 평가")
+async def evaluate_search_quality(req: EvaluateRequest):
+    return await ScoringConfigService.evaluate_quality(req.test_cases)

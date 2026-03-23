@@ -579,6 +579,100 @@ Write-Output \"인증서 생성 완료: $certPath\"
         }
 
 
+# ────────────────────────────────────────────────────────
+# 검색 가중치 동적 관리 서비스
+# ────────────────────────────────────────────────────────
+_SCORING_CONFIG_PATH = Path("scoring_weights.json")
+
+_DEFAULT_WEIGHTS = {
+    "title_phrase": 20,
+    "title_and": 10,
+    "content_phrase": 5,
+    "content_and": 1,
+    "vector": 1.0,
+    "chosung": 10,
+    "min_score": 0.0058,
+}
+
+
+class ScoringConfigService:
+    """JSON 파일 기반 검색 가중치 저장/조회"""
+
+    @staticmethod
+    def get_weights() -> dict:
+        if _SCORING_CONFIG_PATH.exists():
+            try:
+                data = json.loads(_SCORING_CONFIG_PATH.read_text(encoding="utf-8"))
+                merged = {**_DEFAULT_WEIGHTS, **data}
+                return merged
+            except Exception:
+                pass
+        return dict(_DEFAULT_WEIGHTS)
+
+    @staticmethod
+    def update_weights(new_weights: dict) -> dict:
+        current = ScoringConfigService.get_weights()
+        for key in _DEFAULT_WEIGHTS:
+            if key in new_weights:
+                current[key] = float(new_weights[key])
+        _SCORING_CONFIG_PATH.write_text(
+            json.dumps(current, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return current
+
+    @staticmethod
+    def reset_weights() -> dict:
+        if _SCORING_CONFIG_PATH.exists():
+            _SCORING_CONFIG_PATH.unlink()
+        return dict(_DEFAULT_WEIGHTS)
+
+    @staticmethod
+    async def evaluate_quality(test_cases: list[dict]) -> dict:
+        """
+        검색 품질 평가 — 테스트 케이스별 기대 문서 포함 여부 확인
+        test_cases: [{"query": "연구개발계획서", "expected_title": "연구개발계획서"}]
+        """
+        from app.schemas.search_schema import SearchRequest
+        from app.services.search_service import SearchService
+
+        results = []
+        passed = 0
+        total = len(test_cases)
+
+        for tc in test_cases:
+            query = tc.get("query", "")
+            expected = tc.get("expected_title", "")
+            req = SearchRequest(query=query, size=10, page=1)
+
+            search_result = await SearchService.execute_search(req)
+
+            items = search_result.get("items", [])
+            titles = [item.get("content", {}).get("Title", "") for item in items]
+            top_score = items[0]["score"] if items else 0
+
+            found = any(expected.lower() in t.lower() for t in titles) if expected else (len(items) > 0)
+            if found:
+                passed += 1
+
+            results.append({
+                "query": query,
+                "expected": expected,
+                "found": found,
+                "top_score": round(top_score, 4),
+                "result_count": search_result.get("total", 0),
+                "top_titles": titles[:3],
+            })
+
+        return {
+            "total": total,
+            "passed": passed,
+            "failed": total - passed,
+            "pass_rate": round(passed / total * 100, 1) if total > 0 else 0,
+            "details": results,
+        }
+
+
 def bootstrap_sources_from_env(db_sources_json: str = "", smb_sources_json: str = "") -> dict[str, Any]:
     db_count = 0
     smb_count = 0

@@ -17,6 +17,7 @@ from hanspell import spell_checker
 from app.common.embedding import embedder
 from app.services.db_service import DBService
 from app.services.dictionary_service import DictionaryService
+from app.services.system_service import ScoringConfigService
 
 client = get_client()
 
@@ -190,15 +191,16 @@ class SearchService:
                 print(f"AI 벡터 변환 실패 (일반 검색으로 진행): {e}")
 
         def build_weighted_query(keyword):
+            w = ScoringConfigService.get_weights()
             if is_chosung:
-                return { "wildcard": { "chosung_text": { "value": f"*{keyword}*", "boost": 10 } } }
+                return { "wildcard": { "chosung_text": { "value": f"*{keyword}*", "boost": w["chosung"] } } }
             return {
                 "bool": {
                     "should": [
-                        { "match_phrase": { "Title": { "query": keyword, "boost": 20 } } }, 
-                        { "match": { "Title": { "query": keyword, "boost": 10, "operator": "and" } } },
-                        { "match_phrase": { "all_text": { "query": keyword, "boost": 5 } } },
-                        { "match": { "all_text": { "query": keyword, "boost": 1, "operator": "and" } } }
+                        { "match_phrase": { "Title": { "query": keyword, "boost": w["title_phrase"] } } }, 
+                        { "match": { "Title": { "query": keyword, "boost": w["title_and"], "operator": "and" } } },
+                        { "match_phrase": { "all_text": { "query": keyword, "boost": w["content_phrase"] } } },
+                        { "match": { "all_text": { "query": keyword, "boost": w["content_and"], "operator": "and" } } }
                     ]
                 }
             }
@@ -218,12 +220,13 @@ class SearchService:
 
         #  AI 문맥 검색 쿼리 추가 (하이브리드 결합)
         if query_vector:
+            _w = ScoringConfigService.get_weights()
             search_clauses.append({
                 "knn": {
                     "text_vector": {
                         "vector": query_vector,
                         "k": req.size if hasattr(req, 'size') and req.size else 10,
-                        "boost": 1.0 # AI 문맥 일치 가중치!
+                        "boost": _w["vector"]
                     }
                 }
             })
@@ -233,7 +236,7 @@ class SearchService:
         offset = (page - 1) * req.size
         query_body = {
             "from": offset, "size": req.size,
-            "min_score": 0.0058,
+            "min_score": ScoringConfigService.get_weights()["min_score"],
             "query": {
                 "bool": {
                     "should": search_clauses,
