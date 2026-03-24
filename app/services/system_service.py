@@ -11,7 +11,6 @@
 #
 # Modified History
 # 강광민 / 2026-03-18 / 최초생성
-# 강광민 / 2026-03-23 / 헤더 주석 추가
 ########################################################
 """
 from __future__ import annotations
@@ -659,6 +658,44 @@ Write-Output \"인증서 생성 완료: $certPath\"
             "stdout": proc.stdout,
             "stderr": proc.stderr,
         }
+
+
+# ────────────────────────────────────────────────────────
+# 인기검색 표시 설정 관리 서비스
+# ────────────────────────────────────────────────────────
+_POPULAR_CONFIG_PATH = Path("popular_settings.json")
+
+_DEFAULT_POPULAR = {
+    "days": 7,
+    "limit": 10,
+}
+
+
+class PopularConfigService:
+    """인기검색 표시 설정 (JSON 파일 기반) — 관리자가 저장한 days/limit을 유지"""
+
+    @staticmethod
+    def get_settings() -> dict:
+        if _POPULAR_CONFIG_PATH.exists():
+            try:
+                data = json.loads(_POPULAR_CONFIG_PATH.read_text(encoding="utf-8"))
+                return {**_DEFAULT_POPULAR, **data}
+            except Exception:
+                pass
+        return dict(_DEFAULT_POPULAR)
+
+    @staticmethod
+    def update_settings(new_settings: dict) -> dict:
+        current = PopularConfigService.get_settings()
+        if "days" in new_settings:
+            current["days"] = int(new_settings["days"])
+        if "limit" in new_settings:
+            current["limit"] = int(new_settings["limit"])
+        _POPULAR_CONFIG_PATH.write_text(
+            json.dumps(current, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return current
 
 
 # ────────────────────────────────────────────────────────

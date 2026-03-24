@@ -31,6 +31,7 @@ from app.services.system_service import (
     DBIngestionService,
     DashboardService,
     IngestionSchedulerService,
+    PopularConfigService,
     ScoringConfigService,
     SMBService,
     VolumeSSLService,
@@ -207,6 +208,23 @@ async def run_system_smoke_test():
         "stdout": proc.stdout,
         "stderr": proc.stderr,
     }
+
+
+# ────────── 인기검색 표시 설정 관리 ──────────
+
+class PopularSettingsRequest(BaseModel):
+    days: int = Field(default=7, ge=1, le=365)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+@router.get("/popular/settings", dependencies=[Depends(require_role("viewer"))], summary="인기검색 표시 설정 조회")
+async def get_popular_settings():
+    return PopularConfigService.get_settings()
+
+
+@router.put("/popular/settings", dependencies=[Depends(require_role("operator"))], summary="인기검색 표시 설정 저장")
+async def update_popular_settings(req: PopularSettingsRequest):
+    return PopularConfigService.update_settings(req.model_dump())
 
 
 # ────────── 검색 가중치 관리 ──────────

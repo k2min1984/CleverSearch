@@ -149,7 +149,7 @@
                     <input id="popularDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" />
                     <label class="text-sm text-gray-400">표시 개수:</label>
                     <input id="popularLimit" type="number" min="1" max="50" value="10" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" />
-                    <button onclick="loadPopular()" class="px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm font-medium">적용</button>
+                    <button onclick="saveAndLoadPopular()" class="px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm font-medium">적용</button>
                     <button onclick="loadPopular()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
                     <button onclick="loadRecommendKeywords()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">추천 키워드</button>
                 </div>
@@ -680,7 +680,27 @@
         }
 
         /* ===== 인기검색 ===== */
+        async function loadPopularSettings() {
+            try {
+                const result = await apiFetch(`${API.replace('/admin','/system')}/popular/settings`, { method: "GET" });
+                if (result.data) {
+                    document.getElementById("popularDays").value = result.data.days || 7;
+                    document.getElementById("popularLimit").value = result.data.limit || 10;
+                }
+            } catch(e) { /* 실패 시 기존값 유지 */ }
+        }
+        async function saveAndLoadPopular() {
+            const days = parseInt(document.getElementById("popularDays").value) || 7;
+            const limit = parseInt(document.getElementById("popularLimit").value) || 10;
+            await apiFetch(`${API.replace('/admin','/system')}/popular/settings`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ days, limit })
+            });
+            await loadPopular();
+        }
         async function loadPopular() {
+            await loadPopularSettings();
             const days = document.getElementById("popularDays").value || 7;
             const limit = document.getElementById("popularLimit").value || 10;
             const result = await apiFetch(`${API}/popular-keywords?days=${days}&limit=${limit}`, { method: "GET" });

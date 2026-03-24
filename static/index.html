@@ -55,7 +55,7 @@
                 <div class="search-container flex items-center bg-[#303134] rounded-full border border-[#5f6368] px-5 py-3 shadow-sm focus-within:shadow-lg transition-all">
                     <i class="fas fa-search text-gray-400 mr-3"></i>
                     <input type="text" id="searchInput" class="flex-1 bg-transparent border-none text-white focus:outline-none text-lg" placeholder="검색어 입력..." autocomplete="off">
-                    <button onclick="performSearch()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium ml-2 transition">검색</button>
+                    <button onclick="resetFiltersAndSearch()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium ml-2 transition">검색</button>
                 </div>
                 <div id="autocompleteList" class="absolute top-full left-0 w-full bg-[#303134] border border-[#5f6368] rounded-b-2xl shadow-xl z-50 hidden overflow-hidden mt-1 text-left"></div>
             </div>
@@ -234,6 +234,23 @@
             
             currentPage = 1;
             performSearch(); 
+        }
+
+        // 검색 버튼 클릭 시 필터 초기화 후 검색
+        function resetFiltersAndSearch() {
+            document.getElementById('dateFilter').value = 'all';
+            document.getElementById('extFilter').value = 'all';
+            document.getElementById('includeFilter').value = '';
+            document.getElementById('excludeFilter').value = '';
+            currentCategory = 'all';
+            document.querySelectorAll('.category-tab').forEach(tab => {
+                tab.classList.remove('border-blue-500', 'text-blue-500', 'font-bold');
+                tab.classList.add('border-transparent');
+            });
+            const allTab = document.getElementById('tab-all');
+            if (allTab) allTab.classList.add('border-blue-500', 'text-blue-500', 'font-bold');
+            currentPage = 1;
+            performSearch(1);
         }
 
         // [수정] 통합 검색 실행 (카테고리 필터 및 통계 연동)
@@ -460,7 +477,7 @@
         });
 
         // 엔터키 처리 및 외부 클릭 제어
-        searchInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') { currentPage = 1; performSearch(1); } });
+        searchInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') { resetFiltersAndSearch(); } });
         document.addEventListener('click', (e) => {
             const searchWrapper = document.querySelector('#headerArea .group');
             if (searchWrapper && !searchWrapper.contains(e.target)) {

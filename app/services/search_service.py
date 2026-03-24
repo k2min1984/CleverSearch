@@ -485,7 +485,10 @@ class SearchService:
     async def get_popular_keywords(limit: int = 10):
         """앱 DB에서 최근 검색 로그를 기준으로 인기 검색어를 반환"""
         try:
-            return DBService.get_popular_keywords(days=7, limit=limit)
+            from app.services.system_service import PopularConfigService
+            settings = PopularConfigService.get_settings()
+            days = settings["days"]
+            return DBService.get_popular_keywords(days=days, limit=limit)
         except Exception as e:
             print(f"인기 검색어 추출 에러: {e}")
             return []
