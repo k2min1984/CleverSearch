@@ -386,11 +386,53 @@
                 
                 card.onclick = () => {
                     const osDocId = item.id;
-                    window.open(`${SEARCH_API}/read/${osDocId}`, '_blank');
+                    openDocumentView(osDocId, item);
                 };
 
                 resultList.appendChild(card);
             });
+        }
+
+        // 문서 상세 보기 (포맷팅된 새 창)
+        async function openDocumentView(docId, item) {
+            try {
+                const res = await fetch(`${SEARCH_API}/read/${docId}`);
+                const data = await res.json();
+                const c = data.content || data._source || data;
+                const title = c.Title || c.origin_file || item.content?.origin_file || '문서';
+                const origin = c.origin_file || '';
+                const category = c.doc_category || '';
+                const ext = c.file_ext || '';
+                const text = c.all_text || c.text || item.summary || '';
+                const indexed = c.indexed_at || data.indexed_at || '';
+
+                const win = window.open('', '_blank');
+                win.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${title}</title>
+<style>
+  body { font-family: 'Malgun Gothic', sans-serif; background: #1e1e2e; color: #cdd6f4; margin: 0; padding: 2rem; line-height: 1.7; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { color: #89b4fa; font-size: 1.5rem; border-bottom: 2px solid #45475a; padding-bottom: 0.5rem; }
+  .meta { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; font-size: 0.85rem; color: #a6adc8; }
+  .meta span { background: #313244; padding: 4px 10px; border-radius: 6px; }
+  .content { background: #313244; border: 1px solid #45475a; border-radius: 8px; padding: 1.5rem; white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; max-height: 70vh; overflow-y: auto; }
+  .back { display: inline-block; margin-top: 1rem; color: #89b4fa; cursor: pointer; text-decoration: underline; }
+</style></head><body>
+<div class="container">
+  <h1>📄 ${title}</h1>
+  <div class="meta">
+    <span>📁 파일명: ${origin}</span>
+    <span>📂 카테고리: ${category}</span>
+    <span>📋 확장자: ${ext}</span>
+    <span>📅 색인일: ${indexed ? indexed.substring(0, 19) : '-'}</span>
+  </div>
+  <div class="content">${text || '본문 데이터 없음'}</div>
+  <span class="back" onclick="window.close()">← 닫기</span>
+</div></body></html>`);
+                win.document.close();
+            } catch (e) {
+                window.open(`${SEARCH_API}/read/${docId}`, '_blank');
+            }
         }
 
         // 필터 변경 감지 이벤트

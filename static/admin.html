@@ -101,6 +101,12 @@
 
             <!-- 파일 업로드 탭 -->
             <div id="panel-upload" class="panel">
+                <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+                    <b>📂 파일 업로드</b> — 문서 파일을 업로드하여 OpenSearch에 색인합니다.<br>
+                    • 아래 영역에 파일을 <b>드래그&드롭</b>하거나 클릭하여 선택합니다.<br>
+                    • 지원 형식: HWP, HWPX, PDF, DOCX, PPTX, XLSX, XLS, JPG, JPEG, PNG (최대 100MB)<br>
+                    • 동일 파일 재업로드 시 <b>Hash 중복 방지</b>로 자동 차단됩니다.
+                </div>
                 <div class="drop-zone mb-4" id="dropZone">
                     <p class="text-gray-400 mb-2">파일을 여기에 드래그하거나 클릭하여 선택</p>
                     <p class="text-xs text-gray-500">지원 형식: hwp, pdf, docx, pptx, xlsx, xls, hwpx, jpg, jpeg, png (최대 100MB)</p>
@@ -112,6 +118,11 @@
 
             <!-- 문서 목록 탭 -->
             <div id="panel-docs" class="panel hidden">
+                <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+                    <b>📝 문서 목록</b> — OpenSearch에 색인된 전체 문서를 조회합니다.<br>
+                    • 파일명, 확장자, 카테고리, 등록일시, 본문 미리보기를 확인할 수 있습니다.<br>
+                    • 각 문서의 <b>[삭제]</b> 버튼으로 OpenSearch + DB에서 동시 제거합니다.
+                </div>
                 <div class="flex gap-2 mb-3">
                     <button onclick="loadDocs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
                     <span id="docTotal" class="text-sm text-gray-400 self-center"></span>
@@ -126,6 +137,13 @@
 
             <!-- 인기검색 탭 -->
             <div id="panel-popular" class="panel hidden">
+                <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+                    <b>🔥 인기검색</b> — 설정 기간 내 가장 많이 검색된 키워드를 순위별로 표시합니다.<br>
+                    • <b>기간(일)</b>: 집계 기간 설정 (1~365일)<br>
+                    • <b>표시 개수</b>: 상위 N개만 표시 (1~50개)<br>
+                    • <b>[적용]</b>: 변경된 설정으로 새로고침<br>
+                    • <b>[추천 키워드]</b>: 검색 빈도 기반 추천 키워드 조회
+                </div>
                 <div class="flex gap-2 mb-3 items-center flex-wrap">
                     <label class="text-sm text-gray-400">기간(일):</label>
                     <input id="popularDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" />
@@ -146,6 +164,11 @@
 
             <!-- 검색 로그 탭 -->
             <div id="panel-logs" class="panel hidden">
+                <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+                    <b>📊 검색 로그</b> — 모든 검색 이력을 시간순으로 표시합니다.<br>
+                    • 검색어, 결과 수, 성공/실패 여부, 사용자 ID, 시각 등을 확인할 수 있습니다.<br>
+                    • 실패(is_failed=Y)는 결과가 0건인 검색을 의미합니다.
+                </div>
                 <div class="flex gap-2 mb-3">
                     <button onclick="loadLogs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
                 </div>
@@ -159,6 +182,11 @@
 
             <!-- 최근 검색어 탭 -->
             <div id="panel-recent" class="panel hidden">
+                <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+                    <b>🕐 최근 검색어</b> — 사용자별 최근 검색어 목록을 표시합니다.<br>
+                    • <b>user_id</b> 입력 시 해당 사용자의 검색어만 필터링됩니다.<br>
+                    • 비워두면 전체 사용자의 최근 검색어를 표시합니다.
+                </div>
                 <div class="flex gap-2 mb-3">
                     <input id="recentUserId" type="text" placeholder="user_id (선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-48" />
                     <button onclick="loadRecent()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
@@ -173,6 +201,11 @@
 
             <!-- 실패 검색어 탭 -->
             <div id="panel-failed" class="panel hidden">
+                <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+                    <b>❌ 실패 검색어</b> — 검색 결과가 0건인 키워드를 빈도순으로 표시합니다.<br>
+                    • <b>기간(일)</b>: 집계 기간 설정<br>
+                    • 실패 키워드 분석을 통해 사전 등록이나 동의어 추가를 검토할 수 있습니다.
+                </div>
                 <div class="flex gap-2 mb-3">
                     <input id="failedDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
                     <button onclick="loadFailed()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
@@ -433,6 +466,12 @@
 
             <!-- 초기화 탭 -->
             <div id="panel-reset" class="panel hidden">
+                <div class="bg-red-900/30 border border-red-700 rounded-lg p-3 mb-4 text-sm text-red-200">
+                    <b>⚠️ 데이터 초기화</b> — OpenSearch 인덱스와 DB의 데이터를 <b>모두 삭제</b>합니다.<br>
+                    • <b>[전체 데이터 초기화]</b>: 문서 + 검색로그 + 최근검색어를 모두 삭제합니다.<br>
+                    • <b>[인덱스 완전 삭제 + DB 초기화]</b>: OpenSearch 인덱스 자체를 삭제하고 DB도 초기화합니다.<br>
+                    • <b>이 작업은 되돌릴 수 없습니다.</b> 테스트 환경 초기화 용도로만 사용하세요.
+                </div>
                 <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 max-w-lg">
                     <h2 class="text-lg font-bold mb-4 text-red-400">데이터 초기화</h2>
                     <p class="text-sm text-gray-400 mb-4">OpenSearch 인덱스의 모든 문서와 업무 DB(문서목록, 검색로그, 최근검색어)를 <strong class="text-red-300">모두 삭제</strong>합니다. 이 작업은 되돌릴 수 없습니다.</p>
@@ -707,7 +746,24 @@
             ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
         }
 
-        /* ===== 탭 전환 ===== */
+        /* ===== 탭 전환 (클릭 시 자동 새로고침) ===== */
+        const tabRefreshMap = {
+            upload: null,
+            docs: loadDocs,
+            popular: loadPopular,
+            logs: loadLogs,
+            recent: loadRecent,
+            failed: loadFailed,
+            dashboard: loadDashboard,
+            dictionary: loadDictionaryEntries,
+            smb: loadSmbSources,
+            dbsources: loadDbSources,
+            scheduler: loadSchedulerStatus,
+            ssl: scanCertificates,
+            scoring: loadScoringWeights,
+            reset: null
+        };
+
         function setupTabs() {
             const tabs = document.querySelectorAll(".tab");
             const panels = document.querySelectorAll(".panel");
@@ -718,6 +774,9 @@
                     const name = tab.dataset.tab;
                     panels.forEach((p) => p.classList.add("hidden"));
                     document.getElementById(`panel-${name}`).classList.remove("hidden");
+                    /* 탭 클릭 시 해당 탭 데이터 자동 새로고침 */
+                    const refreshFn = tabRefreshMap[name];
+                    if (refreshFn) refreshFn();
                 });
             });
         }
