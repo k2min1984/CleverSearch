@@ -246,15 +246,12 @@ class SearchService:
             }
         }
 
-        # 이름형 검색어(공백 없는 한글)는 벡터 단독 매칭을 막고 렉시컬을 우선 강제합니다.
-        # 길이 고정값(예: 4자/8자)에 의존하지 않고 패턴+도메인 힌트로 판별합니다.
-        compact_query = clean_query.strip()
-        enforce_lexical_for_name_like_query = is_name_like_query(compact_query)
-
-        #  AI 문맥 검색 쿼리 추가 (하이브리드 결합)
+        # KNN 벡터 쿼리는 BM25와 분리하여 보조 점수(should)로만 사용
+        # → 키워드가 실제로 포함된 문서만 반환하되, 벡터 유사도로 순위 보정
+        knn_should = []
         if query_vector:
             _w = ScoringConfigService.get_weights()
-            search_clauses.append({
+            knn_should.append({
                 "knn": {
                     "text_vector": {
                         "vector": query_vector,
@@ -265,6 +262,7 @@ class SearchService:
             })
 
         # 4. 전체 검색 바디 구성 (하이브리드 엔진 적용)
+        # BM25 키워드 매칭 = must (필수), KNN 벡터 유사도 = should (보조 점수)
         page = req.page if req.page and req.page > 0 else 1
         offset = (page - 1) * req.size
         query_body = {
@@ -272,8 +270,8 @@ class SearchService:
             "min_score": ScoringConfigService.get_weights()["min_score"],
             "query": {
                 "bool": {
-                    "should": search_clauses,
-                    "minimum_should_match": 1,
+                    "must": [lexical_query],
+                    "should": knn_should,
                     "filter": []
                 }
             },
@@ -286,28 +284,6 @@ class SearchService:
                 }
             }
         }
-
-        if enforce_lexical_for_name_like_query:
-            knn_should = []
-            if query_vector:
-                # 짧은 검색어는 키워드 일치를 먼저 강제하고, 벡터 점수는 보조 신호로만 사용합니다.
-                knn_should.append({
-                    "knn": {
-                        "text_vector": {
-                            "vector": query_vector,
-                            "k": req.size if hasattr(req, 'size') and req.size else 10,
-                            "boost": 1.0
-                        }
-                    }
-                })
-
-            query_body["query"] = {
-                "bool": {
-                    "must": [lexical_query],
-                    "should": knn_should,
-                    "filter": []
-                }
-            }
 
         # --- [1순위] 상세 필터 로직 강화 ---
         filters = query_body["query"]["bool"]["filter"]
