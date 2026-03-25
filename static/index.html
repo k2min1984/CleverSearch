@@ -282,12 +282,13 @@
             const excludeKw = excludeVal ? excludeVal.split(/[,\s]+/).filter(Boolean) : [];
 
             try {
-                const _ctrl = new AbortController();
-                const _tid = setTimeout(() => _ctrl.abort(), 15000);
+                const slowNoticeTimer = setTimeout(() => {
+                    resultList.innerHTML = '<div class="text-center py-10 text-yellow-300">요청이 지연되고 있습니다. 잠시만 기다려 주세요.</div>';
+                }, 15000);
+
                 const response = await fetch(`${API_BASE}/query`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    signal: _ctrl.signal,
                     body: JSON.stringify({
                         query: query,
                         include_keywords: includeKw,
@@ -300,7 +301,7 @@
                         user_id: getUserId(),
                     })
                 });
-                clearTimeout(_tid);
+                clearTimeout(slowNoticeTimer);
 
                 const data = await response.json();
 
@@ -325,7 +326,7 @@
 
                 renderResults(data);
             } catch (error) {
-                const msg = error.name === 'AbortError' ? '서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.' : error.message;
+                const msg = error.message;
                 resultList.innerHTML = `<div class="text-center py-10 text-red-400">오류: ${msg}</div>`;
             }
         }

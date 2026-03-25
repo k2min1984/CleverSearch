@@ -1,0 +1,79 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 볼륨/SSL 관리 탭
+# OpenSearch 인덱스(볼륨) 생성 및 SSL 인증서 관리
+#
+# Modified History
+# 현승준 / 2026-03-25 / 최초생성
+########################################################
+-->
+
+<!-- 볼륨/SSL 탭 -->
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+    <b>🔐 볼륨/SSL 관리란?</b> OpenSearch 인덱스(볼륨) 생성 및 HTTPS 인증서의 만료 상태를 관리합니다.<br>
+    • <b>볼륨 생성</b>: 커스텀 OpenSearch 인덱스를 생성합니다.<br>
+    • <b>인증서 상태</b>: SSL 인증서의 만료일을 모니터링합니다.<br>
+    • <b>갱신 스크립트</b>: Let's Encrypt 또는 자체 서명 인증서를 갱신합니다.
+</div>
+<div class="grid md:grid-cols-4 gap-2 mb-3">
+    <input id="volumeName" placeholder="인덱스 이름 (index_name)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+    <input id="sslWarnDays" type="number" min="1" value="30" placeholder="경고 기준일" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+    <input id="renewPath" value="scripts/renew_certs.ps1" placeholder="스크립트 경로" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+    <input id="renewRunPath" value="scripts/renew_certs.ps1" placeholder="실행 스크립트 경로" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+</div>
+<div class="flex gap-2 mb-3 flex-wrap">
+    <button onclick="createVolume()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">볼륨 생성</button>
+    <button onclick="scanCertificates()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">인증서 상태</button>
+    <button onclick="generateRenewScript()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 생성</button>
+    <button onclick="runRenewScript()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 실행</button>
+    <button onclick="toggleSslView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+</div>
+<div id="sslList" class="hidden">
+    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">파일명</th><th class="p-2">발급대상</th><th class="p-2">만료일</th><th class="p-2">남은일수</th><th class="p-2">상태</th></tr></thead><tbody id="sslBody"></tbody></table>
+</div>
+<pre id="sslOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
+
+<script>
+async function createVolume() {
+    const indexName = document.getElementById("volumeName").value || "cleversearch-volume-ui";
+    const payload = { index_name: indexName, shards: 1, replicas: 1 };
+    const result = await apiFetch(`${SYS_API}/volume/create`, { method: "POST", body: JSON.stringify(payload) });
+    writeJson("sslOutput", result);
+}
+
+async function scanCertificates() {
+    const warnDays = Number(document.getElementById("sslWarnDays").value || 30);
+    const result = await apiFetch(`${SYS_API}/ssl/certificates?cert_dir=cert&warn_days=${warnDays}`, { method: "GET" });
+    writeJson("sslOutput", result.data);
+    populateSslList(result.data);
+}
+
+async function generateRenewScript() {
+    const path = document.getElementById("renewPath").value || "scripts/renew_certs.ps1";
+    const result = await apiFetch(`${SYS_API}/ssl/renew-script?output_path=${encodeURIComponent(path)}`, { method: "POST" });
+    writeJson("sslOutput", result);
+}
+
+async function runRenewScript() {
+    const path = document.getElementById("renewRunPath").value || "scripts/renew_certs.ps1";
+    const result = await apiFetch(`${SYS_API}/ssl/renew-run`, { method: "POST", body: JSON.stringify({ script_path: path }) });
+    writeJson("sslOutput", result);
+}
+
+function toggleSslView() {
+    document.getElementById("sslOutput").classList.toggle("hidden");
+    document.getElementById("sslList").classList.toggle("hidden");
+}
+
+function populateSslList(data) {
+    const body = document.getElementById("sslBody");
+    if (!body) return;
+    const certs = Array.isArray(data) ? data : (data?.certificates || []);
+    if (!certs.length) { body.innerHTML = '<tr><td class="p-2" colspan="5">인증서 데이터 없음</td></tr>'; return; }
+    body.innerHTML = certs.map(r => {
+        const statusColor = r.status === "healthy" ? "text-green-400" : r.status === "warning" ? "text-yellow-400" : "text-red-400";
+        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.file||r.filename)}</td><td class="p-2">${fmt(r.subject||r.cn||"-")}</td><td class="p-2">${fmt(r.expires||r.not_after||"-")}</td><td class="p-2">${fmt(r.days_left??"-")}</td><td class="p-2 ${statusColor} font-bold">${fmt(r.status||"-")}</td></tr>`;
+    }).join("");
+}
+</script>

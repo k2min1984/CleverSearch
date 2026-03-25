@@ -1,0 +1,39 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 실패 검색어 탭
+# 검색 결과가 0건인 키워드를 빈도순으로 표시
+#
+# Modified History
+# 현승준 / 2026-03-25 / 최초생성
+########################################################
+-->
+
+<!-- 실패 검색어 탭 -->
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+    <b>❌ 실패 검색어</b> — 검색 결과가 0건인 키워드를 빈도순으로 표시합니다.<br>
+    • <b>기간(일)</b>: 집계 기간 설정<br>
+    • 실패 키워드 분석을 통해 사전 등록이나 동의어 추가를 검토할 수 있습니다.
+</div>
+<div class="flex gap-2 mb-3">
+    <input id="failedDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+    <button onclick="loadFailed()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+</div>
+<div class="overflow-auto border border-gray-700 rounded">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-800"><tr><th class="p-2 text-left">순위</th><th class="p-2 text-left">키워드</th><th class="p-2 text-left">카운트</th></tr></thead>
+        <tbody id="failedBody"></tbody>
+    </table>
+</div>
+
+<script>
+async function loadFailed() {
+    const days = document.getElementById("failedDays").value || 7;
+    const result = await apiFetch(`${API}/failed-keywords?days=${days}&limit=50`, { method: "GET" });
+    const data = result.data;
+    const body = document.getElementById("failedBody");
+    body.innerHTML = (data || []).map((row, i) =>
+        `<tr class="border-t border-gray-700"><td class="p-2">${i + 1}</td><td class="p-2">${fmt(row.keyword)}</td><td class="p-2">${fmt(row.count)}</td></tr>`
+    ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
+}
+</script>

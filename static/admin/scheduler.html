@@ -1,0 +1,62 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 스케줄러 탭
+# SMB/DB 소스 자동 동기화 주기 관리
+#
+# Modified History
+# 현승준 / 2026-03-25 / 최초생성
+########################################################
+-->
+
+<!-- 스케줄러 탭 -->
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+    <b>⏰ 자동 색인 스케줄러란?</b> 설정한 주기(분)마다 SMB·DB 소스를 자동으로 동기화하여 최신 상태를 유지합니다.<br>
+    • <b>간격(분)</b>: 동기화 주기 (최소 10분, 기본 120분)<br>
+    • 시작 후 백그라운드에서 자동 실행되며, 별도 중지 전까지 계속됩니다.
+</div>
+<div class="flex gap-2 mb-3 items-center">
+    <label class="text-sm text-gray-400">간격(분):</label>
+    <input id="schedulerInterval" type="number" min="10" value="120" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-32" />
+    <button onclick="startScheduler()" class="admin-write px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
+    <button onclick="stopScheduler()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">중지</button>
+    <button onclick="loadSchedulerStatus()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">상태 조회</button>
+    <button onclick="toggleSchedulerView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+</div>
+<div id="schedulerList" class="hidden">
+    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">항목</th><th class="p-2">값</th></tr></thead><tbody id="schedulerBody"></tbody></table>
+</div>
+<pre id="schedulerOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
+
+<script>
+async function startScheduler() {
+    const interval = Number(document.getElementById("schedulerInterval").value || 120);
+    const result = await apiFetch(`${SYS_API}/scheduler/start?interval_seconds=${interval}`, { method: "POST" });
+    writeJson("schedulerOutput", result);
+}
+
+async function stopScheduler() {
+    const result = await apiFetch(`${SYS_API}/scheduler/stop`, { method: "POST" });
+    writeJson("schedulerOutput", result);
+}
+
+async function loadSchedulerStatus() {
+    const result = await apiFetch(`${SYS_API}/scheduler/status`, { method: "GET" });
+    writeJson("schedulerOutput", result.data);
+    populateSchedulerList(result.data);
+}
+
+function toggleSchedulerView() {
+    document.getElementById("schedulerOutput").classList.toggle("hidden");
+    document.getElementById("schedulerList").classList.toggle("hidden");
+}
+
+function populateSchedulerList(data) {
+    const body = document.getElementById("schedulerBody");
+    if (!body || !data) return;
+    const rows = Object.entries(data).map(([k, v]) =>
+        `<tr class="border-t border-gray-700"><td class="p-2 font-medium">${k}</td><td class="p-2">${JSON.stringify(v)}</td></tr>`
+    ).join("");
+    body.innerHTML = rows || '<tr><td class="p-2" colspan="2">데이터 없음</td></tr>';
+}
+</script>

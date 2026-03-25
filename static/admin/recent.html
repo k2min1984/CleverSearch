@@ -1,0 +1,41 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 최근 검색어 탭
+# 사용자별 최근 검색어 목록 표시
+#
+# Modified History
+# 현승준 / 2026-03-25 / 최초생성
+########################################################
+-->
+
+<!-- 최근 검색어 탭 -->
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+    <b>🕐 최근 검색어</b> — 사용자별 최근 검색어 목록을 표시합니다.<br>
+    • <b>user_id</b> 입력 시 해당 사용자의 검색어만 필터링됩니다.<br>
+    • 비워두면 전체 사용자의 최근 검색어를 표시합니다.
+</div>
+<div class="flex gap-2 mb-3">
+    <input id="recentUserId" type="text" placeholder="user_id (선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-48" />
+    <button onclick="loadRecent()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+</div>
+<div class="overflow-auto border border-gray-700 rounded">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">사용자</th><th class="p-2 text-left">검색어</th><th class="p-2 text-left">시각</th></tr></thead>
+        <tbody id="recentBody"></tbody>
+    </table>
+</div>
+
+<script>
+async function loadRecent() {
+    const userId = document.getElementById("recentUserId").value.trim();
+    const query = userId ? `?skip=0&limit=100&user_id=${encodeURIComponent(userId)}` : "?skip=0&limit=100";
+    const result = await apiFetch(`${API}/recent-searches${query}`, { method: "GET" });
+    const data = result.data;
+    const items = data.items || [];
+    const body = document.getElementById("recentBody");
+    body.innerHTML = items.map((row) =>
+        `<tr class="border-t border-gray-700"><td class="p-2">${fmt(row.id)}</td><td class="p-2">${fmt(row.user_id)}</td><td class="p-2">${fmt(row.query)}</td><td class="p-2">${fmt(row.created_at)}</td></tr>`
+    ).join("") || '<tr><td class="p-2" colspan="4">데이터 없음</td></tr>';
+}
+</script>

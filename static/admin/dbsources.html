@@ -1,0 +1,94 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - DB 색인 탭
+# 외부 데이터베이스 텍스트 데이터 SQL 추출 및 색인
+#
+# Modified History
+# 현승준 / 2026-03-25 / 최초생성
+########################################################
+-->
+
+<!-- DB 색인 탭 -->
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+    <b>🗄️ DB 색인이란?</b> 외부 데이터베이스에 저장된 텍스트 데이터를 SQL 쿼리로 추출하여 OpenSearch에 색인합니다.<br>
+    • <b>db_type</b>: mysql, oracle, postgresql, sqlite 중 선택<br>
+    • <b>connection_url</b>: DB 접속 문자열 (예: mysql+pymysql://user:pass@host/db)<br>
+    • <b>query_text</b>: 색인할 데이터를 추출하는 SELECT 쿼리<br>
+    • <b>chunk_size</b>: 텍스트를 분할하는 단위 (기본 500자)
+</div>
+<div class="grid md:grid-cols-2 gap-2 mb-2">
+    <input id="dbName" placeholder="이름 (name)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+    <input id="dbType" placeholder="DB 타입 (mysql|oracle|postgresql|sqlite)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+    <input id="dbConn" placeholder="접속 URL (connection_url)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+    <input id="dbTitleCol" placeholder="제목 컬럼 (title_column, 선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+    <input id="dbChunk" placeholder="청크 크기 (chunk_size)" value="500" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+    <input id="dbSyncId" placeholder="동기화할 source_id" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+</div>
+<textarea id="dbQuery" rows="3" placeholder="SELECT 쿼리 (query_text)" class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm mb-3"></textarea>
+<div class="flex gap-2 mb-3">
+    <button onclick="upsertDbSource()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
+    <button onclick="syncDbSource()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
+    <button onclick="loadDbSources()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">목록 조회</button>
+    <button onclick="toggleDbView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+</div>
+<div id="dbList" class="hidden">
+    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">이름</th><th class="p-2">DB타입</th><th class="p-2">활성</th><th class="p-2">최근 동기화</th><th class="p-2">관리</th></tr></thead><tbody id="dbBody"></tbody></table>
+</div>
+<pre id="dbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
+
+<script>
+async function upsertDbSource() {
+    const payload = {
+        name: document.getElementById("dbName").value,
+        db_type: document.getElementById("dbType").value,
+        connection_url: document.getElementById("dbConn").value,
+        query_text: document.getElementById("dbQuery").value,
+        title_column: document.getElementById("dbTitleCol").value || null,
+        chunk_size: Number(document.getElementById("dbChunk").value || 500),
+        is_active: true
+    };
+    const result = await apiFetch(`${SYS_API}/db/sources`, { method: "POST", body: JSON.stringify(payload) });
+    writeJson("dbOutput", result);
+}
+
+async function loadDbSources() {
+    const result = await apiFetch(`${SYS_API}/db/sources?active_only=false`, { method: "GET" });
+    writeJson("dbOutput", result.data);
+    populateDbList(result.data);
+}
+
+async function syncDbSource() {
+    const sourceId = document.getElementById("dbSyncId").value;
+    const result = await apiFetch(`${SYS_API}/db/sources/${sourceId}/sync?max_rows=1000`, { method: "POST" });
+    writeJson("dbOutput", result);
+}
+
+function toggleDbView() {
+    document.getElementById("dbOutput").classList.toggle("hidden");
+    document.getElementById("dbList").classList.toggle("hidden");
+}
+
+function populateDbList(data) {
+    const body = document.getElementById("dbBody");
+    if (!body || !Array.isArray(data)) return;
+    const isViewer = loggedInRole === "viewer";
+    body.innerHTML = data.map(r => {
+        const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editDbSource(${r.id},'${(r.name||'').replace(/'/g,"\\'")}','${(r.db_type||'').replace(/'/g,"\\'")}')">수정</span>`;
+        const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteDbSource(${r.id})">삭제</span>`;
+        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.db_type)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+    }).join("");
+}
+
+async function deleteDbSource(sourceId) {
+    if (!confirm(`DB 소스 ID ${sourceId}를 삭제하시겠습니까?`)) return;
+    const result = await apiFetch(`${SYS_API}/db/sources/${sourceId}`, { method: "DELETE" });
+    if (result.ok) { alert("삭제 완료"); loadDbSources(); }
+    else { alert("삭제 실패: " + (result.data?.detail || JSON.stringify(result.data))); }
+}
+function editDbSource(id, name, dbType) {
+    document.getElementById("dbName").value = name;
+    document.getElementById("dbType").value = dbType;
+    alert("입력란에 데이터를 불러왔습니다. 수정 후 [소스 저장]을 클릭하세요.");
+}
+</script>

@@ -1,0 +1,63 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 문서 목록 탭
+# OpenSearch에 색인된 전체 문서 조회 및 삭제
+#
+# Modified History
+# 현승준 / 2026-03-25 / 최초생성
+########################################################
+-->
+
+<!-- 문서 목록 탭 -->
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+    <b>📝 문서 목록</b> — OpenSearch에 색인된 전체 문서를 조회합니다.<br>
+    • 파일명, 확장자, 카테고리, 등록일시, 본문 미리보기를 확인할 수 있습니다.<br>
+    • 각 문서의 <b>[삭제]</b> 버튼으로 OpenSearch + DB에서 동시 제거합니다.
+</div>
+<div class="flex gap-2 mb-3">
+    <button onclick="loadDocs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+    <span id="docTotal" class="text-sm text-gray-400 self-center"></span>
+</div>
+<div class="overflow-auto border border-gray-700 rounded">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">제목</th><th class="p-2 text-left">파일명</th><th class="p-2 text-left">확장자</th><th class="p-2 text-left">카테고리</th><th class="p-2 text-left">등록일시</th><th class="p-2 text-left">미리보기</th><th class="p-2 text-left">삭제</th></tr></thead>
+        <tbody id="docsBody"></tbody>
+    </table>
+</div>
+
+<script>
+async function loadDocs() {
+    const result = await apiFetch(`${API}/indexed-documents?skip=0&limit=200`, { method: "GET" });
+    const data = result.data;
+    const items = data.items || [];
+    document.getElementById("docTotal").textContent = `총 ${data.total || 0}건`;
+    const body = document.getElementById("docsBody");
+    body.innerHTML = items.map((row) =>
+        `<tr class="border-t border-gray-700">
+            <td class="p-2">${fmt(row.id)}</td>
+            <td class="p-2">${fmt(row.title)}</td>
+            <td class="p-2">${fmt(row.origin_file)}</td>
+            <td class="p-2">${fmt(row.file_ext)}</td>
+            <td class="p-2">${fmt(row.doc_category)}</td>
+            <td class="p-2">${fmt(row.indexed_at)}</td>
+            <td class="p-2 max-w-xs truncate">${fmt(row.text_preview)}</td>
+            <td class="p-2">${loggedInRole === "viewer" ? '<span class="text-gray-600 opacity-40">삭제</span>' : '<span class="btn-del" onclick="deleteDoc(' + row.id + ')">삭제</span>'}</td>
+        </tr>`
+    ).join("") || '<tr><td class="p-2" colspan="8">데이터 없음</td></tr>';
+}
+
+async function deleteDoc(docId) {
+    if (!confirm(`문서 ID ${docId}를 삭제하시겠습니까?`)) return;
+    const headers = {};
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+    try {
+        const res = await fetch(`${FILE_API}/document/${docId}`, { method: "DELETE", headers });
+        const data = await res.json();
+        alert(data.message || "삭제 완료");
+        loadDocs();
+    } catch (e) {
+        alert("삭제 실패: 네트워크 오류");
+    }
+}
+</script>

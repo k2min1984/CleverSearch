@@ -12,7 +12,7 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
@@ -131,10 +131,22 @@ async def root():
 @app.get("/admin", summary="관리자 페이지", include_in_schema=False)
 async def admin_page():
     """관리자 페이지를 반환합니다."""
-    # 새 경로 우선, 없으면 기존 경로 폴백
-    new_path = os.path.join(STATIC_DIR, "admin", "index.html")
-    legacy_path = os.path.join(STATIC_DIR, "admin.html")
-    for p in [new_path, legacy_path]:
-        if os.path.exists(p):
-            return FileResponse(p)
+    admin_path = os.path.join(STATIC_DIR, "admin", "index.html")
+    if os.path.exists(admin_path):
+        return FileResponse(admin_path)
     return {"status": "error", "message": "관리자 페이지 파일을 찾을 수 없습니다."}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """브라우저 자동 favicon 요청 처리 (404 로그 방지)."""
+    favicon_path = os.path.join(STATIC_DIR, "favicon.ico")
+    if os.path.exists(favicon_path):
+        return FileResponse(favicon_path)
+    return Response(status_code=204)
+
+
+@app.get("/.well-known/appspecific/com.chrome.devtools.json", include_in_schema=False)
+async def chrome_devtools_probe():
+    """Chrome DevTools의 자동 probe 요청을 무응답(204) 처리."""
+    return Response(status_code=204)

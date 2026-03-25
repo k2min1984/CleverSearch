@@ -1,0 +1,124 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 대시보드 탭
+# 검색 서비스 운영 현황 모니터링 화면
+# 트렌드 차트, 인기 키워드 도넛 차트, 스모크 테스트
+#
+# Modified History
+# 현승준 / 2026-03-25 / 최초생성
+########################################################
+-->
+
+<!-- 대시보드 탭 -->
+<div class="flex gap-2 mb-3">
+    <input id="dashboardDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+    <button onclick="loadDashboard()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+    <button onclick="runSmokeFromUI()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">스모크 실행</button>
+    <button onclick="toggleDashboardDebug()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">디버그 토글</button>
+</div>
+<div id="alertBadges" class="flex flex-wrap gap-2 mb-3"></div>
+<div class="grid md:grid-cols-4 gap-3 mb-3">
+    <div class="metric"><div class="metric-label">전체 로그</div><div class="metric-value" id="mTotalLogs">0</div></div>
+    <div class="metric"><div class="metric-label">실패 로그</div><div class="metric-value" id="mFailedLogs">0</div></div>
+    <div class="metric"><div class="metric-label">실패율</div><div class="metric-value" id="mFailureRate">0%</div></div>
+    <div class="metric"><div class="metric-label">스케줄러</div><div class="metric-value" id="mScheduler">stopped</div></div>
+</div>
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-3 text-sm text-blue-200">
+    <b>📊 대시보드란?</b> 검색 서비스의 운영 현황을 한눈에 파악할 수 있는 모니터링 화면입니다.<br>
+    • <b>전체 로그</b>: 설정 기간 내 총 검색 횟수<br>
+    • <b>실패 로그</b>: 검색 결과가 0건인 검색 횟수<br>
+    • <b>실패율</b>: 전체 대비 실패 비율 (%)<br>
+    • <b>스케줄러</b>: 자동 색인 스케줄러 실행 상태<br>
+    • <b>트렌드 차트</b>: 일별 성공/실패 검색 횟수 막대 그래프<br>
+    • <b>인기 키워드 차트</b>: 검색 빈도 상위 5개 키워드 도넛 차트<br>
+    • <b>스모크 실행</b>: 주요 API 엔드포인트가 정상 응답하는지 자동 테스트<br>
+    • <b>디버그 토글</b>: 원본 JSON 데이터(Health/Summary/Trend)를 표시/숨김
+</div>
+<div class="grid md:grid-cols-2 gap-3 mb-3">
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:360px">
+        <h4 class="text-sm font-bold text-gray-300 mb-1">📈 일별 검색 트렌드 (성공/실패)</h4>
+        <canvas id="trendChart" height="180"></canvas>
+    </div>
+    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:360px">
+        <h4 class="text-sm font-bold text-gray-300 mb-1">🍩 인기 키워드 TOP 5</h4>
+        <canvas id="keywordChart" height="180"></canvas>
+    </div>
+</div>
+<pre id="dashboardHealth" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mb-3"></pre>
+<pre id="dashboardSummary" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
+<pre id="dashboardTrend" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mt-3"></pre>
+<pre id="smokeOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mt-3"></pre>
+
+<script>
+let trendChart = null;
+let keywordChart = null;
+
+function toggleDashboardDebug() {
+    ["dashboardHealth", "dashboardSummary", "dashboardTrend"].forEach((id) => {
+        document.getElementById(id).classList.toggle("hidden");
+    });
+}
+
+function renderAlertBadges(rows) {
+    const container = document.getElementById("alertBadges");
+    const data = Array.isArray(rows) ? rows : [];
+    container.innerHTML = data.map((row) => {
+        const severity = row.severity || "info";
+        const message = row.message || row.code || "알림";
+        return `<span class="badge ${severity}">${message}</span>`;
+    }).join("");
+}
+
+function drawTrendChart(trendRows) {
+    const labels = (trendRows || []).map(row => row.date);
+    const success = (trendRows || []).map(row => row.success || 0);
+    const failed = (trendRows || []).map(row => row.failed || 0);
+    const ctx = document.getElementById("trendChart").getContext("2d");
+    if (trendChart) trendChart.destroy();
+    trendChart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets: [
+            { label: "성공", data: success, backgroundColor: "rgba(34,197,94,0.7)" },
+            { label: "실패", data: failed, backgroundColor: "rgba(239,68,68,0.7)" }
+        ]},
+        options: { responsive: true, plugins: { legend: { labels: { color: "#e5e7eb" } } }, scales: { x: { ticks: { color: "#9ca3af" } }, y: { ticks: { color: "#9ca3af" } } } }
+    });
+}
+
+function drawKeywordChart(summary) {
+    const rows = (summary?.top_keywords || []).slice(0, 5);
+    const labels = rows.map(row => row.keyword);
+    const values = rows.map(row => row.count);
+    const ctx = document.getElementById("keywordChart").getContext("2d");
+    if (keywordChart) keywordChart.destroy();
+    keywordChart = new Chart(ctx, {
+        type: "doughnut",
+        data: { labels, datasets: [{ data: values, backgroundColor: ["#60a5fa", "#34d399", "#fbbf24", "#f87171", "#a78bfa"] }] },
+        options: { plugins: { legend: { labels: { color: "#e5e7eb" } } } }
+    });
+}
+
+async function loadDashboard() {
+    const days = document.getElementById("dashboardDays").value || 7;
+    const health = await apiFetch(`${SYS_API}/health/overview`, { method: "GET" });
+    const summary = await apiFetch(`${SYS_API}/dashboard/summary?days=${days}`, { method: "GET" });
+    const trend = await apiFetch(`${SYS_API}/dashboard/trend?days=${days}`, { method: "GET" });
+    const alerts = await apiFetch(`${SYS_API}/dashboard/alerts?cert_warn_days=7&spike_ratio=1.5`, { method: "GET" });
+    writeJson("dashboardHealth", health.data);
+    writeJson("dashboardSummary", summary.data);
+    writeJson("dashboardTrend", trend.data);
+    renderAlertBadges(alerts.data || []);
+    document.getElementById("mTotalLogs").innerText = String(summary.data?.total_logs || 0);
+    document.getElementById("mFailedLogs").innerText = String(summary.data?.failed_logs || 0);
+    document.getElementById("mFailureRate").innerText = `${((summary.data?.failure_rate || 0) * 100).toFixed(1)}%`;
+    document.getElementById("mScheduler").innerText = (health.data?.scheduler?.running ? "running" : "stopped");
+    drawTrendChart(trend.data || []);
+    drawKeywordChart(summary.data || {});
+}
+
+async function runSmokeFromUI() {
+    const result = await apiFetch(`${SYS_API}/ops/run-smoke-test`, { method: "POST" });
+    writeJson("smokeOutput", result.data || result);
+}
+</script>

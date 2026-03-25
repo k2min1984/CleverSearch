@@ -12,6 +12,10 @@
 import os
 from dotenv import load_dotenv
 
+
+def _get_bool_env(name: str, default: str) -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
 # .env 파일이 존재할 경우 내용을 로드하여 환경 변수로 설정합니다.
 # Docker Compose 사용 시에는 docker-compose.yml의 environment 설정이 우선순위를 가집니다.
 load_dotenv()
@@ -36,6 +40,17 @@ class Settings:
     
     # 검색 엔에서 사용할 메인 인덱스 명칭 (file.py, index.py와 통일)
     OPENSEARCH_INDEX = os.getenv("OPENSEARCH_INDEX", "cleversearch-docs")
+
+    # OpenSearch 클라이언트 운영 옵션
+    OPENSEARCH_USE_SSL = _get_bool_env("OPENSEARCH_USE_SSL", "true")
+    OPENSEARCH_VERIFY_CERTS = _get_bool_env("OPENSEARCH_VERIFY_CERTS", "false")
+    OPENSEARCH_SSL_ASSERT_HOSTNAME = _get_bool_env("OPENSEARCH_SSL_ASSERT_HOSTNAME", "false")
+    OPENSEARCH_SSL_SHOW_WARN = _get_bool_env("OPENSEARCH_SSL_SHOW_WARN", "false")
+    OPENSEARCH_TIMEOUT_SECONDS = int(os.getenv("OPENSEARCH_TIMEOUT_SECONDS", "30"))
+    OPENSEARCH_HTTP_COMPRESS = _get_bool_env("OPENSEARCH_HTTP_COMPRESS", "true")
+    OPENSEARCH_POOL_MAXSIZE = int(os.getenv("OPENSEARCH_POOL_MAXSIZE", "25"))
+    OPENSEARCH_MAX_RETRIES = int(os.getenv("OPENSEARCH_MAX_RETRIES", "2"))
+    OPENSEARCH_RETRY_ON_TIMEOUT = _get_bool_env("OPENSEARCH_RETRY_ON_TIMEOUT", "true")
 
     # 애플리케이션 업무 데이터 저장용 DB URL
     DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./cleversearch_app.db")

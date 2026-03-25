@@ -1,0 +1,88 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 인기검색 탭
+# 설정 기간 내 가장 많이 검색된 키워드 순위 표시
+# 추천 키워드 조회 기능 포함
+#
+# Modified History
+# 현승준 / 2026-03-25 / 최초생성
+########################################################
+-->
+
+<!-- 인기검색 탭 -->
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+    <b>🔥 인기검색</b> — 설정 기간 내 가장 많이 검색된 키워드를 순위별로 표시합니다.<br>
+    • <b>기간(일)</b>: 집계 기간 설정 (1~365일)<br>
+    • <b>표시 개수</b>: 상위 N개만 표시 (1~50개)<br>
+    • <b>[적용]</b>: 변경된 설정으로 새로고침<br>
+    • <b>[추천 키워드]</b>: 검색 빈도 기반 추천 키워드 조회
+</div>
+<div class="flex gap-2 mb-3 items-center flex-wrap">
+    <label class="text-sm text-gray-400">기간(일):</label>
+    <input id="popularDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" />
+    <label class="text-sm text-gray-400">표시 개수:</label>
+    <input id="popularLimit" type="number" min="1" max="50" value="10" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" />
+    <button onclick="saveAndLoadPopular()" class="px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm font-medium">적용</button>
+    <button onclick="loadPopular()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
+    <button onclick="loadRecommendKeywords()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">추천 키워드</button>
+</div>
+<div id="recommendResult" class="hidden mb-3 bg-indigo-900/30 border border-indigo-700 rounded-lg p-3 text-sm text-indigo-200"></div>
+<div class="overflow-auto border border-gray-700 rounded">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-800"><tr><th class="p-2 text-left">순위</th><th class="p-2 text-left">키워드</th><th class="p-2 text-left">카운트</th></tr></thead>
+        <tbody id="popularBody"></tbody>
+    </table>
+</div>
+
+<script>
+async function loadPopularSettings() {
+    try {
+        const result = await apiFetch(`${API.replace('/admin','/system')}/popular/settings`, { method: "GET" });
+        if (result.data) {
+            document.getElementById("popularDays").value = result.data.days || 7;
+            document.getElementById("popularLimit").value = result.data.limit || 10;
+        }
+    } catch(e) { /* 실패 시 기존값 유지 */ }
+}
+async function saveAndLoadPopular() {
+    const days = parseInt(document.getElementById("popularDays").value) || 7;
+    const limit = parseInt(document.getElementById("popularLimit").value) || 10;
+    await apiFetch(`${API.replace('/admin','/system')}/popular/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days, limit })
+    });
+    await loadPopular();
+}
+async function loadPopular() {
+    await loadPopularSettings();
+    const days = document.getElementById("popularDays").value || 7;
+    const limit = document.getElementById("popularLimit").value || 10;
+    const result = await apiFetch(`${API}/popular-keywords?days=${days}&limit=${limit}`, { method: "GET" });
+    const data = result.data;
+    const body = document.getElementById("popularBody");
+    body.innerHTML = (data || []).map((row, i) =>
+        `<tr class="border-t border-gray-700"><td class="p-2">${i + 1}</td><td class="p-2">${fmt(row.keyword)}</td><td class="p-2">${fmt(row.count)}</td></tr>`
+    ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
+}
+
+async function loadRecommendKeywords() {
+    const container = document.getElementById("recommendResult");
+    container.classList.remove("hidden");
+    container.innerHTML = "<span class='text-indigo-300'>추천 키워드 조회 중...</span>";
+    try {
+        const res = await fetch(`${API.replace('/admin','/search')}/recommend?user_id=admin&limit=10`, {
+            headers: accessToken ? { "Authorization": `Bearer ${accessToken}` } : {}
+        });
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+            container.innerHTML = "<b>💡 추천 키워드:</b> " + data.map(k => `<span class='inline-block bg-indigo-800 text-indigo-200 px-2 py-1 rounded-full text-xs mr-1 mb-1'>${k}</span>`).join("");
+        } else {
+            container.innerHTML = "<span class='text-gray-400'>추천 키워드가 없습니다. 검색 이력이 축적되면 자동으로 생성됩니다.</span>";
+        }
+    } catch (e) {
+        container.innerHTML = `<span class='text-red-400'>추천 키워드 조회 실패: ${e.message}</span>`;
+    }
+}
+</script>

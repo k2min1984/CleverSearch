@@ -11,9 +11,11 @@
 """
 
 from opensearchpy import OpenSearch
+from threading import Lock
 from app.core.config import settings
 
 _client = None
+_client_lock = Lock()
 
 def get_client():
     """
@@ -24,23 +26,27 @@ def get_client():
     if _client is not None:
         return _client
 
-    _client = OpenSearch(
-        hosts=[settings.OPENSEARCH_URL],
-        http_auth=(settings.OS_ADMIN, settings.OS_PASSWORD),
-        
-        # [SSL/TLS 보안 설정]
-        use_ssl=True,
-        verify_certs=False,       
-        ssl_assert_hostname=False,
-        ssl_show_warn=False,
-        
-        # 대용량 데이터 색인 시 연결 끊김 방지 (30초)
-        timeout=30,
-        
-        # 데이터 압축 전송: 네트워크 대역폭 절약 및 응답 속도 개선
-        http_compress=True,
-        
-        # 커넥션 풀 10개 재사용
-        pool_maxsize=10        
-    )
+    with _client_lock:
+        if _client is not None:
+            return _client
+
+        _client = OpenSearch(
+            hosts=[settings.OPENSEARCH_URL],
+            http_auth=(settings.OS_ADMIN, settings.OS_PASSWORD),
+
+            # [SSL/TLS 보안 설정]
+            use_ssl=settings.OPENSEARCH_USE_SSL,
+            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+            ssl_assert_hostname=settings.OPENSEARCH_SSL_ASSERT_HOSTNAME,
+            ssl_show_warn=settings.OPENSEARCH_SSL_SHOW_WARN,
+
+            # 네트워크/타임아웃/재시도 정책
+            timeout=settings.OPENSEARCH_TIMEOUT_SECONDS,
+            max_retries=settings.OPENSEARCH_MAX_RETRIES,
+            retry_on_timeout=settings.OPENSEARCH_RETRY_ON_TIMEOUT,
+
+            # 전송 최적화 및 커넥션 풀
+            http_compress=settings.OPENSEARCH_HTTP_COMPRESS,
+            pool_maxsize=settings.OPENSEARCH_POOL_MAXSIZE
+        )
     return _client

@@ -28,7 +28,7 @@ from app.services.db_service import DBService
 from app.services.dictionary_service import DictionaryService
 from app.services.system_service import ScoringConfigService
 
-# hanspell을 타임아웃 안전하게 import (외부 네트워크 의존 모듈)
+# hanspell import (외부 네트워크 의존 모듈)
 try:
     from hanspell import spell_checker
     _HAS_HANSPELL = True
@@ -196,11 +196,8 @@ class SearchService:
 
         try:
             if _HAS_HANSPELL:
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(spell_checker.check, req.query)
-                    corrected = future.result(timeout=2)  # 최대 2초 대기
-                    clean_query = corrected.checked
+                corrected = spell_checker.check(req.query)
+                clean_query = corrected.checked
             else:
                 clean_query = req.query
         except Exception:
