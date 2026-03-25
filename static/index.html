@@ -105,9 +105,10 @@
     </div>
 
     <script>
-        const API_BASE = "https://127.0.0.1:8000/api/v1/search";
-        const FILE_BASE = "https://127.0.0.1:8000/api/v1/file";
-        const SEARCH_API = "https://127.0.0.1:8000/api/v1/search";
+        const _ORIGIN = window.location.origin;
+        const API_BASE = `${_ORIGIN}/api/v1/search`;
+        const FILE_BASE = `${_ORIGIN}/api/v1/file`;
+        const SEARCH_API = `${_ORIGIN}/api/v1/search`;
 
         function getUserId() {
             let userId = localStorage.getItem('hanseek_user_id');
@@ -281,9 +282,12 @@
             const excludeKw = excludeVal ? excludeVal.split(/[,\s]+/).filter(Boolean) : [];
 
             try {
+                const _ctrl = new AbortController();
+                const _tid = setTimeout(() => _ctrl.abort(), 15000);
                 const response = await fetch(`${API_BASE}/query`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
+                    signal: _ctrl.signal,
                     body: JSON.stringify({
                         query: query,
                         include_keywords: includeKw,
@@ -296,6 +300,7 @@
                         user_id: getUserId(),
                     })
                 });
+                clearTimeout(_tid);
 
                 const data = await response.json();
 
@@ -320,7 +325,8 @@
 
                 renderResults(data);
             } catch (error) {
-                resultList.innerHTML = `<div class="text-center py-10 text-red-400">오류: ${error.message}</div>`;
+                const msg = error.name === 'AbortError' ? '서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.' : error.message;
+                resultList.innerHTML = `<div class="text-center py-10 text-red-400">오류: ${msg}</div>`;
             }
         }
         async function checkFailedSearch() {

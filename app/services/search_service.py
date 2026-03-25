@@ -23,11 +23,17 @@ from app.core.opensearch import get_client
 from app.schemas.search_schema import SearchRequest
 from app.core.config import settings
 from app.common.utils import DocumentUtils 
-from hanspell import spell_checker
 from app.common.embedding import embedder
 from app.services.db_service import DBService
 from app.services.dictionary_service import DictionaryService
 from app.services.system_service import ScoringConfigService
+
+# hanspell을 타임아웃 안전하게 import (외부 네트워크 의존 모듈)
+try:
+    from hanspell import spell_checker
+    _HAS_HANSPELL = True
+except ImportError:
+    _HAS_HANSPELL = False
 
 client = get_client()
 
@@ -189,9 +195,15 @@ class SearchService:
         req.query = dict_normalized_query or req.query
 
         try:
-            corrected = spell_checker.check(req.query)
-            clean_query = corrected.checked
-        except:
+            if _HAS_HANSPELL:
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(spell_checker.check, req.query)
+                    corrected = future.result(timeout=2)  # 최대 2초 대기
+                    clean_query = corrected.checked
+            else:
+                clean_query = req.query
+        except Exception:
             clean_query = req.query
         if clean_query == original_query:
             clean_query = normalize_common_typos(clean_query)
