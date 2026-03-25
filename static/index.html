@@ -365,6 +365,9 @@
             }
 
             if (!data.items || data.items.length === 0) {
+                /* 결과 0건 시 카테고리 탭, 필터 영역 숨기기 */
+                document.getElementById('categoryTabs').classList.add('hidden');
+                filterArea.classList.add('hidden');
                 resultList.innerHTML = '<div class="text-center py-20 text-gray-500 font-light text-xl">일치하는 문서를 찾지 못했습니다.</div>';
                 return;
             }

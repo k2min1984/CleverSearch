@@ -85,6 +85,11 @@ async def list_smb_sources(active_only: bool = Query(False)):
     return SMBService.list_sources(active_only=active_only)
 
 
+@router.delete("/smb/sources/{source_id}", dependencies=[Depends(require_role("operator"))], summary="SMB 소스 삭제")
+async def delete_smb_source(source_id: int):
+    return SMBService.delete_source(source_id=source_id)
+
+
 @router.post("/smb/sources/{source_id}/sync", dependencies=[Depends(require_role("operator"))], summary="SMB 즉시 동기화")
 async def sync_smb_source(source_id: int, max_files: int = Query(200, ge=1, le=2000)):
     return SMBService.sync_source(source_id=source_id, max_files=max_files)
@@ -106,6 +111,11 @@ async def upsert_db_source(req: DbSourceRequest):
 @router.get("/db/sources", dependencies=[Depends(require_role("viewer"))], summary="DB 소스 조회")
 async def list_db_sources(active_only: bool = Query(False)):
     return DBIngestionService.list_sources(active_only=active_only)
+
+
+@router.delete("/db/sources/{source_id}", dependencies=[Depends(require_role("operator"))], summary="DB 소스 삭제")
+async def delete_db_source(source_id: int):
+    return DBIngestionService.delete_source(source_id=source_id)
 
 
 @router.post("/db/sources/{source_id}/sync", dependencies=[Depends(require_role("operator"))], summary="DB 즉시 동기화")
@@ -149,6 +159,11 @@ async def upsert_dictionary_entry(dict_type: str, term: str, replacement: str | 
 @router.get("/dictionary/entries", dependencies=[Depends(require_role("viewer"))], summary="사전 조회")
 async def list_dictionary_entries(dict_type: str | None = None, active_only: bool = True):
     return DictionaryService.list_entries(dict_type=dict_type, active_only=active_only)
+
+
+@router.delete("/dictionary/entry/{entry_id}", dependencies=[Depends(require_role("operator"))], summary="사전 항목 삭제")
+async def delete_dictionary_entry(entry_id: int):
+    return DictionaryService.delete_entry(entry_id=entry_id)
 
 
 @router.get("/dashboard/summary", dependencies=[Depends(require_role("viewer"))], summary="대시보드 요약 지표")

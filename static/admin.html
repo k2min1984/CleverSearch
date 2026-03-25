@@ -245,13 +245,13 @@
                     • <b>디버그 토글</b>: 원본 JSON 데이터(Health/Summary/Trend)를 표시/숨김
                 </div>
                 <div class="grid md:grid-cols-2 gap-3 mb-3">
-                    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:280px">
+                    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:360px">
                         <h4 class="text-sm font-bold text-gray-300 mb-1">📈 일별 검색 트렌드 (성공/실패)</h4>
-                        <canvas id="trendChart" height="130"></canvas>
+                        <canvas id="trendChart" height="180"></canvas>
                     </div>
-                    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:280px">
+                    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:360px">
                         <h4 class="text-sm font-bold text-gray-300 mb-1">🍩 인기 키워드 TOP 5</h4>
-                        <canvas id="keywordChart" height="130"></canvas>
+                        <canvas id="keywordChart" height="180"></canvas>
                     </div>
                 </div>
                 <pre id="dashboardHealth" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mb-3"></pre>
@@ -283,7 +283,7 @@
                     <button onclick="toggleDictView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
                 </div>
                 <div id="dictionaryList" class="hidden">
-                    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">유형</th><th class="p-2">원본</th><th class="p-2">대체</th><th class="p-2">활성</th></tr></thead><tbody id="dictBody"></tbody></table>
+                    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">유형</th><th class="p-2">원본</th><th class="p-2">대체</th><th class="p-2">활성</th><th class="p-2">관리</th></tr></thead><tbody id="dictBody"></tbody></table>
                 </div>
                 <pre id="dictionaryOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
             </div>
@@ -310,7 +310,7 @@
                     <button onclick="toggleSmbView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
                 </div>
                 <div id="smbList" class="hidden">
-                    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">이름</th><th class="p-2">경로</th><th class="p-2">활성</th><th class="p-2">최근 동기화</th></tr></thead><tbody id="smbBody"></tbody></table>
+                    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">이름</th><th class="p-2">경로</th><th class="p-2">활성</th><th class="p-2">최근 동기화</th><th class="p-2">관리</th></tr></thead><tbody id="smbBody"></tbody></table>
                 </div>
                 <pre id="smbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
             </div>
@@ -340,7 +340,7 @@
                     <button onclick="toggleDbView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
                 </div>
                 <div id="dbList" class="hidden">
-                    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">이름</th><th class="p-2">DB타입</th><th class="p-2">활성</th><th class="p-2">최근 동기화</th></tr></thead><tbody id="dbBody"></tbody></table>
+                    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">이름</th><th class="p-2">DB타입</th><th class="p-2">활성</th><th class="p-2">최근 동기화</th><th class="p-2">관리</th></tr></thead><tbody id="dbBody"></tbody></table>
                 </div>
                 <pre id="dbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
             </div>
@@ -358,6 +358,10 @@
                     <button onclick="startScheduler()" class="admin-write px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
                     <button onclick="stopScheduler()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">중지</button>
                     <button onclick="loadSchedulerStatus()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">상태 조회</button>
+                    <button onclick="toggleSchedulerView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+                </div>
+                <div id="schedulerList" class="hidden">
+                    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">항목</th><th class="p-2">값</th></tr></thead><tbody id="schedulerBody"></tbody></table>
                 </div>
                 <pre id="schedulerOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
             </div>
@@ -381,6 +385,10 @@
                     <button onclick="scanCertificates()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">인증서 상태</button>
                     <button onclick="generateRenewScript()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 생성</button>
                     <button onclick="runRenewScript()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 실행</button>
+                    <button onclick="toggleSslView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+                </div>
+                <div id="sslList" class="hidden">
+                    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">파일명</th><th class="p-2">발급대상</th><th class="p-2">만료일</th><th class="p-2">남은일수</th><th class="p-2">상태</th></tr></thead><tbody id="sslBody"></tbody></table>
                 </div>
                 <pre id="sslOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
             </div>
@@ -956,6 +964,7 @@
         async function loadSchedulerStatus() {
             const result = await apiFetch(`${SYS_API}/scheduler/status`, { method: "GET" });
             writeJson("schedulerOutput", result.data);
+            populateSchedulerList(result.data);
         }
 
         /* ===== 볼륨/SSL ===== */
@@ -970,6 +979,7 @@
             const warnDays = Number(document.getElementById("sslWarnDays").value || 30);
             const result = await apiFetch(`${SYS_API}/ssl/certificates?cert_dir=cert&warn_days=${warnDays}`, { method: "GET" });
             writeJson("sslOutput", result.data);
+            populateSslList(result.data);
         }
 
         async function generateRenewScript() {
@@ -1104,30 +1114,109 @@
             document.getElementById("dbOutput").classList.toggle("hidden");
             document.getElementById("dbList").classList.toggle("hidden");
         }
+        function toggleSchedulerView() {
+            document.getElementById("schedulerOutput").classList.toggle("hidden");
+            document.getElementById("schedulerList").classList.toggle("hidden");
+        }
+        function toggleSslView() {
+            document.getElementById("sslOutput").classList.toggle("hidden");
+            document.getElementById("sslList").classList.toggle("hidden");
+        }
 
         /* 사전 리스트 뷰 채우기 */
         function populateDictList(data) {
             const body = document.getElementById("dictBody");
             if (!body || !Array.isArray(data)) return;
-            body.innerHTML = data.map(r =>
-                `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.dict_type)}</td><td class="p-2">${fmt(r.term)}</td><td class="p-2">${fmt(r.replacement||"-")}</td><td class="p-2">${r.is_active?"✅":"❌"}</td></tr>`
-            ).join("");
+            const isViewer = loggedInRole === "viewer";
+            body.innerHTML = data.map(r => {
+                const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editDictEntry('${(r.dict_type||'').replace(/'/g,"\\'")}','${(r.term||'').replace(/'/g,"\\'")}','${(r.replacement||'').replace(/'/g,"\\'")}')">수정</span>`;
+                const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteDictEntry(${r.id})">삭제</span>`;
+                return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.dict_type)}</td><td class="p-2">${fmt(r.term)}</td><td class="p-2">${fmt(r.replacement||"-")}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+            }).join("");
         }
         /* SMB 리스트 뷰 채우기 */
         function populateSmbList(data) {
             const body = document.getElementById("smbBody");
             if (!body || !Array.isArray(data)) return;
-            body.innerHTML = data.map(r =>
-                `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.share_path)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_synced_at||"-")}</td></tr>`
-            ).join("");
+            const isViewer = loggedInRole === "viewer";
+            body.innerHTML = data.map(r => {
+                const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editSmbSource(${r.id},'${(r.name||'').replace(/'/g,"\\'")}','${(r.share_path||'').replace(/'/g,"\\'")}','${(r.username||'').replace(/'/g,"\\'")}')">수정</span>`;
+                const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteSmbSource(${r.id})">삭제</span>`;
+                return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.share_path)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_seen_at||r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+            }).join("");
         }
         /* DB 리스트 뷰 채우기 */
         function populateDbList(data) {
             const body = document.getElementById("dbBody");
             if (!body || !Array.isArray(data)) return;
-            body.innerHTML = data.map(r =>
-                `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.db_type)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_synced_at||"-")}</td></tr>`
+            const isViewer = loggedInRole === "viewer";
+            body.innerHTML = data.map(r => {
+                const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editDbSource(${r.id},'${(r.name||'').replace(/'/g,"\\'")}','${(r.db_type||'').replace(/'/g,"\\'")}')">수정</span>`;
+                const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteDbSource(${r.id})">삭제</span>`;
+                return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.db_type)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+            }).join("");
+        }
+        /* 스케줄러 리스트 뷰 채우기 */
+        function populateSchedulerList(data) {
+            const body = document.getElementById("schedulerBody");
+            if (!body || !data) return;
+            const rows = Object.entries(data).map(([k, v]) =>
+                `<tr class="border-t border-gray-700"><td class="p-2 font-medium">${k}</td><td class="p-2">${JSON.stringify(v)}</td></tr>`
             ).join("");
+            body.innerHTML = rows || '<tr><td class="p-2" colspan="2">데이터 없음</td></tr>';
+        }
+        /* SSL 리스트 뷰 채우기 */
+        function populateSslList(data) {
+            const body = document.getElementById("sslBody");
+            if (!body) return;
+            const certs = Array.isArray(data) ? data : (data?.certificates || []);
+            if (!certs.length) { body.innerHTML = '<tr><td class="p-2" colspan="5">인증서 데이터 없음</td></tr>'; return; }
+            body.innerHTML = certs.map(r => {
+                const statusColor = r.status === "healthy" ? "text-green-400" : r.status === "warning" ? "text-yellow-400" : "text-red-400";
+                return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.file||r.filename)}</td><td class="p-2">${fmt(r.subject||r.cn||"-")}</td><td class="p-2">${fmt(r.expires||r.not_after||"-")}</td><td class="p-2">${fmt(r.days_left??"-")}</td><td class="p-2 ${statusColor} font-bold">${fmt(r.status||"-")}</td></tr>`;
+            }).join("");
+        }
+
+        /* ===== CRUD 함수: 사전 ===== */
+        async function deleteDictEntry(entryId) {
+            if (!confirm(`사전 항목 ID ${entryId}를 삭제하시겠습니까?`)) return;
+            const result = await apiFetch(`${SYS_API}/dictionary/entry/${entryId}`, { method: "DELETE" });
+            if (result.ok) { alert("삭제 완료"); loadDictionaryEntries(); }
+            else { alert("삭제 실패: " + (result.data?.detail || JSON.stringify(result.data))); }
+        }
+        function editDictEntry(dictType, term, replacement) {
+            document.getElementById("dictType").value = dictType;
+            document.getElementById("dictTerm").value = term;
+            document.getElementById("dictReplacement").value = replacement === "null" ? "" : replacement;
+            alert("입력란에 데이터를 불러왔습니다. 수정 후 [단건 저장]을 클릭하세요.");
+        }
+
+        /* ===== CRUD 함수: SMB ===== */
+        async function deleteSmbSource(sourceId) {
+            if (!confirm(`SMB 소스 ID ${sourceId}를 삭제하시겠습니까?`)) return;
+            const result = await apiFetch(`${SYS_API}/smb/sources/${sourceId}`, { method: "DELETE" });
+            if (result.ok) { alert("삭제 완료"); loadSmbSources(); }
+            else { alert("삭제 실패: " + (result.data?.detail || JSON.stringify(result.data))); }
+        }
+        function editSmbSource(id, name, sharePath, username) {
+            document.getElementById("smbName").value = name;
+            document.getElementById("smbPath").value = sharePath;
+            document.getElementById("smbUser").value = username === "null" ? "" : username;
+            document.getElementById("smbPass").value = "";
+            alert("입력란에 데이터를 불러왔습니다. 수정 후 [소스 저장]을 클릭하세요.");
+        }
+
+        /* ===== CRUD 함수: DB ===== */
+        async function deleteDbSource(sourceId) {
+            if (!confirm(`DB 소스 ID ${sourceId}를 삭제하시겠습니까?`)) return;
+            const result = await apiFetch(`${SYS_API}/db/sources/${sourceId}`, { method: "DELETE" });
+            if (result.ok) { alert("삭제 완료"); loadDbSources(); }
+            else { alert("삭제 실패: " + (result.data?.detail || JSON.stringify(result.data))); }
+        }
+        function editDbSource(id, name, dbType) {
+            document.getElementById("dbName").value = name;
+            document.getElementById("dbType").value = dbType;
+            alert("입력란에 데이터를 불러왔습니다. 수정 후 [소스 저장]을 클릭하세요.");
         }
 
         /* ===== 데이터 로드 ===== */

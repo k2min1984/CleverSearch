@@ -12,7 +12,6 @@
 #
 # Modified History
 # 강광민 / 2026-03-15 / 최초생성
-# 강광민 / 2026-03-23 / 헤더 주석 추가
 ########################################################
 """
 from datetime import datetime, timedelta, timezone

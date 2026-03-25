@@ -169,6 +169,15 @@ class SMBService:
                 source.updated_at = datetime.now(timezone.utc)
                 return {"status": "fail", "source_id": source_id, "message": str(exc)}
 
+    @staticmethod
+    def delete_source(source_id: int) -> dict[str, Any]:
+        with get_db_session() as db:
+            row = db.query(SmbSource).filter(SmbSource.id == source_id).first()
+            if not row:
+                return {"status": "fail", "message": "SMB 소스를 찾을 수 없습니다"}
+            db.delete(row)
+            return {"status": "success", "message": f"SMB 소스 ID {source_id} 삭제 완료"}
+
 
 class DBIngestionService:
     """
@@ -300,6 +309,15 @@ class DBIngestionService:
                 source.last_error = str(exc)
                 source.updated_at = datetime.now(timezone.utc)
                 return {"status": "fail", "source_id": source_id, "message": str(exc)}
+
+    @staticmethod
+    def delete_source(source_id: int) -> dict[str, Any]:
+        with get_db_session() as db:
+            row = db.query(DbSource).filter(DbSource.id == source_id).first()
+            if not row:
+                return {"status": "fail", "message": "DB 소스를 찾을 수 없습니다"}
+            db.delete(row)
+            return {"status": "success", "message": f"DB 소스 ID {source_id} 삭제 완료"}
 
 
 class IngestionSchedulerService:

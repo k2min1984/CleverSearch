@@ -25,6 +25,15 @@ from app.core.database import DictionaryEntry, get_db_session
 
 class DictionaryService:
     @staticmethod
+    def delete_entry(entry_id: int) -> dict[str, Any]:
+        with get_db_session() as db:
+            row = db.query(DictionaryEntry).filter(DictionaryEntry.id == entry_id).first()
+            if not row:
+                return {"status": "fail", "message": "사전 항목을 찾을 수 없습니다"}
+            db.delete(row)
+            return {"status": "success", "message": f"사전 항목 ID {entry_id} 삭제 완료"}
+
+    @staticmethod
     def list_entries(dict_type: str | None = None, active_only: bool = True) -> list[dict[str, Any]]:
         with get_db_session() as db:
             query = db.query(DictionaryEntry)

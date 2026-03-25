@@ -33,7 +33,7 @@ client = get_client()
 
 # --- 동의어 사전 ---
 SYNONYM_DICT = {
-    "AI": ["인공지능", "지능형", "Machine Learning"],
+    "AI": ["인공지능", "Machine Learning"],
     "한전": ["한국전력공사", "KEPCO"],
     "RAG": ["검색 증강 생성"]
 }
