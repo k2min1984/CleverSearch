@@ -1,0 +1,498 @@
+<!--
+########################################################
+# Description
+# CleverSearch 메인 검색 페이지
+# 사용자가 키워드를 입력하여 문서를 검색하는 프론트엔드
+# - 키워드 검색 (일반 검색 + 초성 검색)
+# - 포함/제외 키워드 필터
+# - 파일 형식/기간 필터
+# - 자동완성 드롭다운
+# - 오타 자동 교정 표시
+# - 인기 검색어 해시태그
+#
+# Modified History
+# 강광묵 / 2026-01-20 / 최초생성
+# 강광민 / 2026-02-13 / 검색 UI 고도화
+# 강광민 / 2026-03-20 / 포함/제외 필터 추가
+########################################################
+-->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CleverSearch</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        mark { background-color: #fef08a; color: #b91c1c; font-weight: bold; padding: 0 2px; border-radius: 2px; }
+        body.has-results .main-wrapper { padding-top: 2rem; justify-content: flex-start; min-height: auto; }
+        body:not(.has-results) .main-wrapper { min-height: 80vh; display: flex; flex-direction: column; justify-content: center; }
+        .filter-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
+        /* 탭 스크롤바 숨기기 */
+        #categoryTabs::-webkit-scrollbar { display: none; }
+        #categoryTabs { -ms-overflow-style: none; scrollbar-width: none; }
+        /* 문서 미리보기 팝업 */
+        .preview-popup { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; background: #1e1e2e; border: 1px solid #3b82f6; border-radius: 0.5rem; padding: 0.75rem; font-size: 0.8rem; color: #d1d5db; max-height: 200px; overflow-y: auto; display: none; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+        .result-card:hover .preview-popup { display: block; }
+        .result-card { position: relative; }
+        /* 인기검색어 가로 배치 */
+        #popularTags { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
+    </style>
+</head>
+<body class="bg-[#202124] text-gray-100 min-h-screen">
+
+    <div class="main-wrapper max-w-5xl mx-auto px-4 transition-all duration-500">
+        <div class="text-center mb-6" id="headerArea">
+            <div class="flex justify-end mb-2">
+                <a href="/admin" class="text-xs text-gray-400 hover:text-white">관리자 리스트</a>
+            </div>
+            <h1 class="text-5xl font-bold mb-8 cursor-pointer tracking-tight" onclick="location.reload()">
+                <span class="text-blue-500">Clever</span><span class="text-white">Search</span>
+            </h1>
+            
+            <div class="relative w-full max-w-2xl mx-auto group">
+                <div class="search-container flex items-center bg-[#303134] rounded-full border border-[#5f6368] px-5 py-3 shadow-sm focus-within:shadow-lg transition-all">
+                    <i class="fas fa-search text-gray-400 mr-3"></i>
+                    <input type="text" id="searchInput" class="flex-1 bg-transparent border-none text-white focus:outline-none text-lg" placeholder="검색어 입력..." autocomplete="off">
+                    <button onclick="resetFiltersAndSearch()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium ml-2 transition">검색</button>
+                </div>
+                <div id="autocompleteList" class="absolute top-full left-0 w-full bg-[#303134] border border-[#5f6368] rounded-b-2xl shadow-xl z-50 hidden overflow-hidden mt-1 text-left"></div>
+            </div>
+
+            <div id="trendingSection" class="mt-4 text-sm text-gray-400">
+                인기 검색어: 
+                <span class="inline-flex gap-2 ml-2" id="popularTags">
+                    <span class="text-gray-500">로딩 중...</span>
+                </span>
+            </div>
+        </div>
+
+        <div id="categoryTabs" class="hidden max-w-3xl mx-auto mb-4 flex gap-6 text-sm text-gray-400 border-b border-gray-700 overflow-x-auto">
+            <button onclick="filterCategory('all')" class="category-tab pb-2 border-b-2 border-blue-500 text-blue-500 font-bold" id="tab-all">전체</button>
+            <button onclick="filterCategory('PLAN')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-PLAN">사업계획서 <span class="text-xs opacity-60" id="count-PLAN"></span></button>
+            <button onclick="filterCategory('REPORT')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-REPORT">결과보고서 <span class="text-xs opacity-60" id="count-REPORT"></span></button>
+            <button onclick="filterCategory('RULE')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-RULE">사내규정 <span class="text-xs opacity-60" id="count-RULE"></span></button>
+        </div>
+
+        <div id="filterArea" class="hidden max-w-3xl mx-auto mb-6 flex flex-wrap gap-3 border-b border-gray-700 pb-4 items-center">
+            <select id="dateFilter" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none">
+                <option value="all">전체 기간</option>
+                <option value="1d">최근 24시간</option>
+                <option value="1w">최근 1주일</option>
+                <option value="1m">최근 1개월</option>
+            </select>
+            <select id="extFilter" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none">
+                <option value="all">모든 파일</option>
+                <option value="pdf">PDF 문서</option>
+                <option value="docx">Word 문서</option>
+                <option value="hwp">한글(HWP)</option>
+            </select>
+            <input id="includeFilter" placeholder="포함 키워드" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none w-36" />
+            <input id="excludeFilter" placeholder="제외 키워드" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none w-36" />
+        </div>
+
+        <div id="resultCount" class="mb-4 text-gray-400 text-sm hidden max-w-3xl mx-auto text-left">
+            약 <span id="countNumber" class="text-blue-400 font-bold">0</span>개의 결과가 검색되었습니다.
+        </div>
+        <div id="correctionNotice" class="hidden mb-4 max-w-3xl mx-auto text-left text-sm text-amber-300 bg-amber-900/30 border border-amber-700 rounded px-3 py-2"></div>
+        <div id="resultList" class="space-y-6 max-w-3xl mx-auto pb-20 text-left"></div>
+        <div id="paginationArea" class="hidden max-w-3xl mx-auto pb-10 flex items-center justify-center gap-3">
+            <button id="prevPageBtn" class="px-4 py-2 rounded border border-gray-600 text-sm hover:bg-gray-800">이전</button>
+            <span id="pageInfo" class="text-sm text-gray-400">1 / 1</span>
+            <button id="nextPageBtn" class="px-4 py-2 rounded border border-gray-600 text-sm hover:bg-gray-800">다음</button>
+        </div>
+    </div>
+
+    <script>
+        const _ORIGIN = window.location.origin;
+        const API_BASE = `${_ORIGIN}/api/v1/user/search`;
+        const FILE_BASE = `${_ORIGIN}/api/v1/user/file`;
+        const SEARCH_API = `${_ORIGIN}/api/v1/user/search`;
+
+        function getUserId() {
+            let userId = localStorage.getItem('hanseek_user_id');
+            if (!userId) {
+                userId = `user-${crypto.randomUUID()}`;
+                localStorage.setItem('hanseek_user_id', userId);
+            }
+            return userId;
+        }
+
+        async function loadPopularTags() {
+            try {
+                const response = await fetch(`${API_BASE}/popular`);
+                const tags = await response.json();
+                const container = document.getElementById('popularTags');
+                
+                if (tags && tags.length > 0) {
+                    container.innerHTML = tags.map(tag => 
+                        `<button onclick="quickSearch('${tag}')" class="hover:text-blue-400">#${tag}</button>`
+                    ).join('');
+                } else {
+                    container.innerHTML = '<span class="text-gray-500">집계된 인기 검색어가 없습니다.</span>';
+                }
+            } catch (error) {
+                console.error("인기 검색어 로드 실패:", error);
+                document.getElementById('popularTags').innerHTML = '<span class="text-red-400">인기 검색어 로드 실패</span>';
+            }
+        }
+
+        // 페이지 로드 시 즉시 실행하도록 이벤트 등록
+        window.addEventListener('DOMContentLoaded', loadPopularTags);        
+
+        const searchInput = document.getElementById('searchInput');
+        const autocompleteList = document.getElementById('autocompleteList');
+        const resultList = document.getElementById('resultList');
+        const resultCount = document.getElementById('resultCount');
+        const filterArea = document.getElementById('filterArea');
+
+        function renderSuggestionList(items, iconClass = 'fa-history') {
+            if (!items || items.length === 0) {
+                autocompleteList.classList.add('hidden');
+                autocompleteList.innerHTML = '';
+                return;
+            }
+
+            autocompleteList.innerHTML = items.map(item => `
+                <div class="px-5 py-3 hover:bg-[#3c4043] cursor-pointer text-gray-200" onclick="selectSuggestion('${item.replace(/'/g, "\\'")}')">
+                    <i class="fas ${iconClass} text-gray-500 mr-3 text-xs"></i><span>${item}</span>
+                </div>
+            `).join('');
+            autocompleteList.classList.remove('hidden');
+        }
+
+        async function loadRecommendedSuggestions() {
+            try {
+                const userId = getUserId();
+                const response = await fetch(`${API_BASE}/recommend?user_id=${encodeURIComponent(userId)}&limit=10`);
+                const keywords = await response.json();
+                const recommendList = Array.isArray(keywords) ? keywords : [];
+                if (recommendList.length > 0) {
+                    renderSuggestionList(recommendList, 'fa-lightbulb');
+                    return;
+                }
+
+                // 개인 추천 이력이 없으면 인기 검색어를 대체 제안으로 표시
+                const popularRes = await fetch(`${API_BASE}/popular`);
+                const popularList = await popularRes.json();
+                renderSuggestionList(Array.isArray(popularList) ? popularList : [], 'fa-fire');
+            } catch (error) {
+                console.error('추천 검색어 로드 실패:', error);
+                autocompleteList.classList.add('hidden');
+            }
+        }
+
+        // [추가] 카테고리 상태 관리 변수
+        let currentCategory = 'all';
+        let currentPage = 1;
+        let totalPages = 1;
+
+        // [기능 1] 자동완성
+        searchInput.addEventListener('input', async (e) => {
+            const query = e.target.value.trim();
+            if (query.length < 1) {
+                await loadRecommendedSuggestions();
+                return;
+            }
+            try {
+                const response = await fetch(`${API_BASE}/autocomplete?q=${encodeURIComponent(query)}`);
+                const suggestions = await response.json();
+                renderSuggestionList(suggestions, 'fa-history');
+            } catch (error) { console.error(error); }
+        });
+
+        // 검색창 클릭/포커스 시, 입력값이 비어 있으면 추천 검색어를 보여줍니다.
+        searchInput.addEventListener('focus', async () => {
+            if (!searchInput.value.trim()) {
+                await loadRecommendedSuggestions();
+            }
+        });
+
+        function selectSuggestion(text) {
+            searchInput.value = text;
+            autocompleteList.classList.add('hidden');
+            performSearch();
+        }
+
+        function quickSearch(text) {
+            searchInput.value = text;
+            currentPage = 1;
+            performSearch();
+        }
+
+        // [추가] 카테고리 탭 클릭 함수
+        function filterCategory(category) {
+            currentCategory = category;
+            
+            // UI 탭 활성화 변경
+            document.querySelectorAll('.category-tab').forEach(tab => {
+                tab.classList.remove('border-blue-500', 'text-blue-500', 'font-bold');
+                tab.classList.add('border-transparent');
+            });
+            const activeTab = document.getElementById(`tab-${category}`);
+            if (activeTab) activeTab.classList.add('border-blue-500', 'text-blue-500', 'font-bold');
+            
+            currentPage = 1;
+            performSearch(); 
+        }
+
+        // 검색 버튼 클릭 시 필터 초기화 후 검색
+        function resetFiltersAndSearch() {
+            document.getElementById('dateFilter').value = 'all';
+            document.getElementById('extFilter').value = 'all';
+            document.getElementById('includeFilter').value = '';
+            document.getElementById('excludeFilter').value = '';
+            currentCategory = 'all';
+            document.querySelectorAll('.category-tab').forEach(tab => {
+                tab.classList.remove('border-blue-500', 'text-blue-500', 'font-bold');
+                tab.classList.add('border-transparent');
+            });
+            const allTab = document.getElementById('tab-all');
+            if (allTab) allTab.classList.add('border-blue-500', 'text-blue-500', 'font-bold');
+            currentPage = 1;
+            performSearch(1);
+        }
+
+        // [수정] 통합 검색 실행 (카테고리 필터 및 통계 연동)
+        async function performSearch(page = currentPage) {
+            const query = searchInput.value.trim();
+            if (!query) return;
+            currentPage = page;
+
+            const dateRange = document.getElementById('dateFilter').value;
+            const fileExt = document.getElementById('extFilter').value;
+
+            let startDate = null;
+            if (dateRange !== 'all') {
+                const now = new Date();
+                if (dateRange === '1d') now.setDate(now.getDate() - 1);
+                else if (dateRange === '1w') now.setDate(now.getDate() - 7);
+                else if (dateRange === '1m') now.setMonth(now.getMonth() - 1);
+                startDate = now.toISOString();
+            }
+
+            document.body.classList.add('has-results');
+            filterArea.classList.remove('hidden');
+            resultList.innerHTML = '<div class="text-center py-20 text-blue-400 animate-pulse">필터를 적용하여 분석 중...</div>';
+
+            const includeVal = document.getElementById('includeFilter').value.trim();
+            const excludeVal = document.getElementById('excludeFilter').value.trim();
+            const includeKw = includeVal ? includeVal.split(/[,\s]+/).filter(Boolean) : [];
+            const excludeKw = excludeVal ? excludeVal.split(/[,\s]+/).filter(Boolean) : [];
+
+            try {
+                const _ctrl = new AbortController();
+                const _tid = setTimeout(() => _ctrl.abort(), 15000);
+                const response = await fetch(`${API_BASE}/query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: _ctrl.signal,
+                    body: JSON.stringify({
+                        query: query,
+                        include_keywords: includeKw,
+                        exclude_keywords: excludeKw,
+                        start_date: startDate,
+                        file_ext: fileExt === 'all' ? null : fileExt,
+                        doc_category: currentCategory === 'all' ? null : currentCategory, // [카테고리 전송]
+                        size: 20,
+                        page: currentPage,
+                        user_id: getUserId(),
+                    })
+                });
+                clearTimeout(_tid);
+
+                const data = await response.json();
+
+                // 오타 교정이 적용되면 사용자에게 명확히 보여줍니다.
+                const correctionNotice = document.getElementById('correctionNotice');
+                if (data.is_typo_corrected && data.original_query && data.corrected_query) {
+                    correctionNotice.innerHTML = `입력어 <b>${data.original_query}</b> 를 <b>${data.corrected_query}</b> 로 교정하여 검색했습니다.`;
+                    correctionNotice.classList.remove('hidden');
+                    searchInput.value = data.corrected_query;
+                } else {
+                    correctionNotice.classList.add('hidden');
+                    correctionNotice.innerHTML = '';
+                }
+
+                // [카테고리 탭 노출 및 통계 업데이트]
+                document.getElementById('categoryTabs').classList.remove('hidden');
+                if (data.category_stats) {
+                    document.getElementById('count-PLAN').innerText = data.category_stats['PLAN'] || 0;
+                    document.getElementById('count-REPORT').innerText = data.category_stats['REPORT'] || 0;
+                    document.getElementById('count-RULE').innerText = data.category_stats['RULE'] || 0;
+                }
+
+                renderResults(data);
+            } catch (error) {
+                const msg = error.name === 'AbortError' ? '서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.' : error.message;
+                resultList.innerHTML = `<div class="text-center py-10 text-red-400">오류: ${msg}</div>`;
+            }
+        }
+        async function checkFailedSearch() {
+            try {
+                console.log("🔍 실패 로그 분석 시도 중..."); // 실행 확인용
+                const res = await fetch(`${API_BASE}/failed-analysis`);
+                
+                if (!res.ok) throw new Error(`HTTP 에러! 상태: ${res.status}`);
+                
+                const data = await res.json();
+                console.log("📥 서버에서 받은 데이터:", data); // 데이터 확인용
+
+                if (Array.isArray(data) && data.length > 0) {
+                    console.log("⚠️ 관리자 분석: 검색 결과가 없어 실패한 키워드들:", data);
+                } else {
+                    console.log("ℹ️ 아직 실패한 검색 기록이 없습니다.");
+                }
+            } catch (e) {
+                console.error("❌ 실패 로그 분석 호출 실패:", e);
+            }
+        }
+
+        // 페이지 로드 시 혹은 검색 직후에 실행되도록 설정
+        window.addEventListener('DOMContentLoaded', checkFailedSearch);
+
+        function renderResults(data) {
+            resultCount.classList.remove('hidden');
+            document.getElementById('countNumber').innerText = data.total || 0;
+            resultList.innerHTML = '';
+            totalPages = Math.max(1, Math.ceil((data.total || 0) / (data.size || 20)));
+            const pageInfo = document.getElementById('pageInfo');
+            pageInfo.innerText = `${currentPage} / ${totalPages}`;
+
+            /* 페이징: 결과가 없거나 1페이지만 있으면 숨김 */
+            const paginationArea = document.getElementById('paginationArea');
+            if (!data.items || data.items.length === 0 || totalPages <= 1) {
+                paginationArea.classList.add('hidden');
+            } else {
+                paginationArea.classList.remove('hidden');
+                document.getElementById('prevPageBtn').disabled = currentPage <= 1;
+                document.getElementById('nextPageBtn').disabled = currentPage >= totalPages;
+            }
+
+            if (!data.items || data.items.length === 0) {
+                /* 결과 0건 시 카테고리 탭, 필터 영역 숨기기 */
+                document.getElementById('categoryTabs').classList.add('hidden');
+                filterArea.classList.add('hidden');
+                resultList.innerHTML = '<div class="text-center py-20 text-gray-500 font-light text-xl">일치하는 문서를 찾지 못했습니다.</div>';
+                return;
+            }
+
+            data.items.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'result-card group bg-[#303134] p-6 rounded-xl border border-[#5f6368] hover:border-blue-500 transition-all shadow-md mb-4';
+                
+                const previewText = (item.summary || '').substring(0, 300) + ((item.summary || '').length > 300 ? '...' : '');
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <div class="flex-1">
+                            <div class="text-xs font-bold text-blue-300 bg-blue-900/40 px-2 py-1 rounded inline-block mb-2">
+                                <i class="far fa-file-alt mr-1"></i> ${item.location}
+                            </div>
+                            <h3 class="text-xl text-[#8ab4f8] group-hover:underline font-medium cursor-pointer">
+                                ${item.content.Title || item.content.origin_file}
+                            </h3>
+                        </div>
+                        <button class="text-gray-500 hover:text-white transition px-2 py-1">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                    </div>
+                    <p class="text-gray-300 text-sm leading-relaxed mb-4">${item.summary}</p>
+                    <div class="flex items-center gap-4 text-[11px] text-gray-500 border-t border-gray-700 pt-3">
+                        <span><i class="far fa-hdd mr-1"></i> ${item.content.origin_file}</span>
+                        <span><i class="far fa-calendar-alt mr-1"></i> ${item.indexed_at ? item.indexed_at.substring(0,10) : '2026.01.20'}</span>
+                        <span class="ml-auto bg-gray-800 px-2 py-0.5 rounded italic">Score: ${item.score.toFixed(2)}</span>
+                    </div>
+                    <div class="preview-popup">
+                        <div class="text-xs text-blue-400 font-bold mb-1">📄 본문 미리보기</div>
+                        <div class="text-gray-300 whitespace-pre-wrap">${previewText || '미리보기 데이터 없음'}</div>
+                    </div>
+                `;
+                
+                card.onclick = () => {
+                    const osDocId = item.id;
+                    openDocumentView(osDocId, item);
+                };
+
+                resultList.appendChild(card);
+            });
+        }
+
+        // 문서 상세 보기 (포맷팅된 새 창)
+        async function openDocumentView(docId, item) {
+            try {
+                const res = await fetch(`${SEARCH_API}/read/${docId}`);
+                const data = await res.json();
+                const c = data.content || data._source || data;
+                const title = c.Title || c.origin_file || item.content?.origin_file || '문서';
+                const origin = c.origin_file || '';
+                const category = c.doc_category || '';
+                const ext = c.file_ext || '';
+                const text = c.all_text || c.text || item.summary || '';
+                const indexed = c.indexed_at || data.indexed_at || '';
+
+                const win = window.open('', '_blank');
+                win.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${title}</title>
+<style>
+  body { font-family: 'Malgun Gothic', sans-serif; background: #1e1e2e; color: #cdd6f4; margin: 0; padding: 2rem; line-height: 1.7; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { color: #89b4fa; font-size: 1.5rem; border-bottom: 2px solid #45475a; padding-bottom: 0.5rem; }
+  .meta { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; font-size: 0.85rem; color: #a6adc8; }
+  .meta span { background: #313244; padding: 4px 10px; border-radius: 6px; }
+  .content { background: #313244; border: 1px solid #45475a; border-radius: 8px; padding: 1.5rem; white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; max-height: 70vh; overflow-y: auto; }
+  .back { display: inline-block; margin-top: 1rem; color: #89b4fa; cursor: pointer; text-decoration: underline; }
+</style></head><body>
+<div class="container">
+  <h1>📄 ${title}</h1>
+  <div class="meta">
+    <span>📁 파일명: ${origin}</span>
+    <span>📂 카테고리: ${category}</span>
+    <span>📋 확장자: ${ext}</span>
+    <span>📅 색인일: ${indexed ? indexed.substring(0, 19) : '-'}</span>
+  </div>
+  <div class="content">${text || '본문 데이터 없음'}</div>
+  <span class="back" onclick="window.close()">← 닫기</span>
+</div></body></html>`);
+                win.document.close();
+            } catch (e) {
+                window.open(`${SEARCH_API}/read/${docId}`, '_blank');
+            }
+        }
+
+        // 필터 변경 감지 이벤트
+        document.getElementById('dateFilter').addEventListener('change', () => {
+            currentPage = 1;
+            performSearch(1);
+        });
+        document.getElementById('extFilter').addEventListener('change', () => {
+            currentPage = 1;
+            performSearch(1);
+        });
+        document.getElementById('includeFilter').addEventListener('change', () => {
+            currentPage = 1;
+            performSearch(1);
+        });
+        document.getElementById('excludeFilter').addEventListener('change', () => {
+            currentPage = 1;
+            performSearch(1);
+        });
+        document.getElementById('prevPageBtn').addEventListener('click', () => {
+            if (currentPage > 1) performSearch(currentPage - 1);
+        });
+        document.getElementById('nextPageBtn').addEventListener('click', () => {
+            if (currentPage < totalPages) performSearch(currentPage + 1);
+        });
+
+        // 엔터키 처리 및 외부 클릭 제어
+        searchInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') { resetFiltersAndSearch(); } });
+        document.addEventListener('click', (e) => {
+            const searchWrapper = document.querySelector('#headerArea .group');
+            if (searchWrapper && !searchWrapper.contains(e.target)) {
+                autocompleteList.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
