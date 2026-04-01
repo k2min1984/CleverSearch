@@ -12,10 +12,17 @@
 # 강광민 / 2026-03-23 / 헤더 주석 추가
 ########################################################
 """
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.core.security import authenticate_user, issue_token_pair, refresh_access_token, revoke_token
+from app.core.security import (
+    authenticate_user,
+    check_login_rate_limit,
+    issue_token_pair,
+    record_login_attempt,
+    refresh_access_token,
+    revoke_token,
+)
 
 
 router = APIRouter()
@@ -35,8 +42,16 @@ class LogoutRequest(BaseModel):
 
 
 @router.post("/login", summary="JWT 로그인")
-async def login(req: LoginRequest):
-    user = authenticate_user(req.username, req.password)
+async def login(req: LoginRequest, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    check_login_rate_limit(req.username, client_ip)
+    try:
+        user = authenticate_user(req.username, req.password)
+    except HTTPException:
+        record_login_attempt(req.username, client_ip, success=False)
+        raise
+
+    record_login_attempt(req.username, client_ip, success=True)
     pair = issue_token_pair(subject=user["username"], role=user["role"])
     return {
         **pair,

@@ -15,6 +15,8 @@
 """
 import uuid
 from datetime import datetime, timedelta, timezone
+from threading import Lock
+from time import monotonic
 
 import jwt
 from fastapi import Header, HTTPException
@@ -35,6 +37,63 @@ ROLE_ORDER = {
     "operator": 2,
     "admin": 3,
 }
+
+_LOGIN_ATTEMPTS: dict[tuple[str, str], dict[str, float | int]] = {}
+_LOGIN_ATTEMPTS_LOCK = Lock()
+
+
+def _login_attempt_key(username: str, client_ip: str) -> tuple[str, str]:
+    return ((username or "").strip().lower(), (client_ip or "unknown").strip())
+
+
+def check_login_rate_limit(username: str, client_ip: str) -> None:
+    key = _login_attempt_key(username, client_ip)
+    now = monotonic()
+    with _LOGIN_ATTEMPTS_LOCK:
+        state = _LOGIN_ATTEMPTS.get(key)
+        if not state:
+            return
+        blocked_until = float(state.get("blocked_until", 0.0))
+        if blocked_until > now:
+            wait_seconds = int(blocked_until - now)
+            raise HTTPException(status_code=429, detail=f"로그인 시도 제한 중입니다. {wait_seconds}초 후 다시 시도하세요.")
+
+
+def record_login_attempt(username: str, client_ip: str, success: bool) -> None:
+    key = _login_attempt_key(username, client_ip)
+    now = monotonic()
+    with _LOGIN_ATTEMPTS_LOCK:
+        if success:
+            _LOGIN_ATTEMPTS.pop(key, None)
+            return
+
+        state = _LOGIN_ATTEMPTS.get(key)
+        if not state:
+            _LOGIN_ATTEMPTS[key] = {
+                "fails": 1,
+                "window_start": now,
+                "blocked_until": 0.0,
+            }
+            return
+
+        window_start = float(state.get("window_start", now))
+        fails = int(state.get("fails", 0))
+
+        if now - window_start > settings.AUTH_RATE_LIMIT_WINDOW_SECONDS:
+            window_start = now
+            fails = 0
+
+        fails += 1
+        blocked_until = float(state.get("blocked_until", 0.0))
+
+        if fails >= settings.AUTH_RATE_LIMIT_MAX_ATTEMPTS:
+            blocked_until = now + settings.AUTH_RATE_LIMIT_BLOCK_SECONDS
+
+        _LOGIN_ATTEMPTS[key] = {
+            "fails": fails,
+            "window_start": window_start,
+            "blocked_until": blocked_until,
+        }
 
 def authenticate_user(username: str, password: str) -> dict:
     uname = (username or "").strip()

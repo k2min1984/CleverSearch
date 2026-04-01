@@ -38,6 +38,15 @@
         .result-card { position: relative; }
         /* 인기검색어 가로 배치 */
         #popularTags { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
+        .suggestion-header { font-size: 11px; letter-spacing: 0.02em; color: #9aa0a6; background: #2b2d31; padding: 6px 20px; border-top: 1px solid #3c4043; }
+        #toastNotice { position: fixed; right: 16px; bottom: 16px; z-index: 100; max-width: 320px; }
+        #toastNotice.success { border-color: #2563eb; color: #dbeafe; }
+        #toastNotice.info { border-color: #475569; color: #e2e8f0; }
+        #toastNotice.error { border-color: #b91c1c; color: #fee2e2; }
+        @media (max-width: 639px) {
+            #filterArea.mobile-collapsed { display: none; }
+            #toastNotice { left: 16px; right: 16px; max-width: none; }
+        }
     </style>
 </head>
 <body class="bg-[#202124] text-gray-100 min-h-screen">
@@ -75,6 +84,10 @@
             <button onclick="filterCategory('RULE')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-RULE">사내규정 <span class="text-xs opacity-60" id="count-RULE"></span></button>
         </div>
 
+        <div id="filterToggleWrap" class="hidden max-w-3xl mx-auto mb-2 sm:hidden">
+            <button id="filterToggleBtn" class="w-full text-xs text-gray-300 border border-gray-700 rounded px-3 py-2 hover:bg-gray-800 transition">필터 펼치기</button>
+        </div>
+
         <div id="filterArea" class="hidden max-w-3xl mx-auto mb-6 flex flex-wrap gap-3 border-b border-gray-700 pb-4 items-center">
             <select id="dateFilter" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none">
                 <option value="all">전체 기간</option>
@@ -96,6 +109,10 @@
             약 <span id="countNumber" class="text-blue-400 font-bold">0</span>개의 결과가 검색되었습니다.
         </div>
         <div id="correctionNotice" class="hidden mb-4 max-w-3xl mx-auto text-left text-sm text-amber-300 bg-amber-900/30 border border-amber-700 rounded px-3 py-2"></div>
+        <div id="relatedSection" class="hidden mb-4 max-w-3xl mx-auto text-left text-sm text-gray-300">
+            연관 검색어:
+            <span id="relatedTags" class="inline-flex flex-wrap gap-2 ml-2"></span>
+        </div>
         <div id="resultList" class="space-y-6 max-w-3xl mx-auto pb-20 text-left"></div>
         <div id="paginationArea" class="hidden max-w-3xl mx-auto pb-10 flex items-center justify-center gap-3">
             <button id="prevPageBtn" class="px-4 py-2 rounded border border-gray-600 text-sm hover:bg-gray-800">이전</button>
@@ -103,6 +120,7 @@
             <button id="nextPageBtn" class="px-4 py-2 rounded border border-gray-600 text-sm hover:bg-gray-800">다음</button>
         </div>
     </div>
+    <div id="toastNotice" class="hidden bg-[#1f2937] border rounded px-4 py-3 text-sm shadow-xl"></div>
 
     <script>
         const _ORIGIN = window.location.origin;
@@ -122,12 +140,13 @@
         async function loadPopularTags() {
             try {
                 const response = await fetch(`${API_BASE}/popular`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const tags = await response.json();
                 const container = document.getElementById('popularTags');
                 
                 if (tags && tags.length > 0) {
                     container.innerHTML = tags.map(tag => 
-                        `<button onclick="quickSearch('${tag}')" class="hover:text-blue-400">#${tag}</button>`
+                        `<button onclick="quickSearch('${escapeForOnclick(tag)}')" class="hover:text-blue-400">#${escapeHtml(tag)}</button>`
                     ).join('');
                 } else {
                     container.innerHTML = '<span class="text-gray-500">집계된 인기 검색어가 없습니다.</span>';
@@ -146,6 +165,104 @@
         const resultList = document.getElementById('resultList');
         const resultCount = document.getElementById('resultCount');
         const filterArea = document.getElementById('filterArea');
+        const filterToggleWrap = document.getElementById('filterToggleWrap');
+        const filterToggleBtn = document.getElementById('filterToggleBtn');
+        const toastNotice = document.getElementById('toastNotice');
+        let toastTimer = null;
+        let lastToastKey = '';
+        let lastToastAt = 0;
+
+        function showToast(message, type = 'success') {
+            const now = Date.now();
+            const toastKey = `${type}:${message}`;
+            if (toastKey === lastToastKey && now - lastToastAt < 1200) {
+                return;
+            }
+            lastToastKey = toastKey;
+            lastToastAt = now;
+
+            if (toastTimer) clearTimeout(toastTimer);
+            toastNotice.innerText = message;
+            toastNotice.classList.remove('hidden', 'success', 'info', 'error');
+            if (type === 'error') toastNotice.classList.add('error');
+            else if (type === 'info') toastNotice.classList.add('info');
+            else toastNotice.classList.add('success');
+            toastTimer = setTimeout(() => {
+                toastNotice.classList.add('hidden');
+            }, 2200);
+        }
+
+        function escapeForOnclick(value) {
+            return String(value).replace(/'/g, "\\'");
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function renderSuggestionGroups(groups) {
+            const normalized = Array.isArray(groups) ? groups.filter(group => group.items && group.items.length > 0) : [];
+            if (normalized.length === 0) {
+                autocompleteList.classList.add('hidden');
+                autocompleteList.innerHTML = '';
+                return;
+            }
+
+            autocompleteList.innerHTML = normalized.map(group => {
+                const headerAction = group.clearable
+                    ? `<button onclick="clearRecentSuggestions(event)" class="text-[10px] text-gray-400 hover:text-red-300">전체 삭제</button>`
+                    : '';
+                const rows = group.items.map(item => `
+                    <div class="px-5 py-3 hover:bg-[#3c4043] cursor-pointer text-gray-200" onclick="selectSuggestion('${escapeForOnclick(item)}')">
+                        <div class="flex items-center justify-between gap-3">
+                            <span><i class="fas ${group.iconClass || 'fa-history'} text-gray-500 mr-3 text-xs"></i>${escapeHtml(item)}</span>
+                            ${group.removable ? `<button onclick="removeRecentSuggestion(event, '${escapeForOnclick(item)}')" class="text-[10px] text-gray-500 hover:text-red-300 px-1">삭제</button>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+                return `<div class="suggestion-header flex items-center justify-between"><span>${group.title}</span>${headerAction}</div>${rows}`;
+            }).join('');
+            autocompleteList.classList.remove('hidden');
+        }
+
+        async function removeRecentSuggestion(event, keyword) {
+            event.stopPropagation();
+            event.preventDefault();
+            try {
+                const userId = getUserId();
+                const response = await fetch(`${API_BASE}/recent/item?user_id=${encodeURIComponent(userId)}&q=${encodeURIComponent(keyword)}`, {
+                    method: 'DELETE'
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                await loadRecommendedSuggestions();
+                showToast('최근 검색어를 삭제했습니다.');
+            } catch (error) {
+                console.error('최근 검색어 삭제 실패:', error);
+                showToast('최근 검색어 삭제에 실패했습니다.', 'error');
+            }
+        }
+
+        async function clearRecentSuggestions(event) {
+            event.stopPropagation();
+            event.preventDefault();
+            try {
+                const userId = getUserId();
+                const response = await fetch(`${API_BASE}/recent?user_id=${encodeURIComponent(userId)}`, {
+                    method: 'DELETE'
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                await loadRecommendedSuggestions();
+                showToast('최근 검색어를 전체 삭제했습니다.');
+            } catch (error) {
+                console.error('최근 검색어 전체 삭제 실패:', error);
+                showToast('최근 검색어 전체 삭제에 실패했습니다.', 'error');
+            }
+        }
 
         function renderSuggestionList(items, iconClass = 'fa-history') {
             if (!items || items.length === 0) {
@@ -155,8 +272,8 @@
             }
 
             autocompleteList.innerHTML = items.map(item => `
-                <div class="px-5 py-3 hover:bg-[#3c4043] cursor-pointer text-gray-200" onclick="selectSuggestion('${item.replace(/'/g, "\\'")}')">
-                    <i class="fas ${iconClass} text-gray-500 mr-3 text-xs"></i><span>${item}</span>
+                <div class="px-5 py-3 hover:bg-[#3c4043] cursor-pointer text-gray-200" onclick="selectSuggestion('${escapeForOnclick(item)}')">
+                    <i class="fas ${iconClass} text-gray-500 mr-3 text-xs"></i><span>${escapeHtml(item)}</span>
                 </div>
             `).join('');
             autocompleteList.classList.remove('hidden');
@@ -165,21 +282,83 @@
         async function loadRecommendedSuggestions() {
             try {
                 const userId = getUserId();
-                const response = await fetch(`${API_BASE}/recommend?user_id=${encodeURIComponent(userId)}&limit=10`);
-                const keywords = await response.json();
-                const recommendList = Array.isArray(keywords) ? keywords : [];
-                if (recommendList.length > 0) {
-                    renderSuggestionList(recommendList, 'fa-lightbulb');
-                    return;
-                }
+                const [recentRes, recommendRes, popularRes] = await Promise.all([
+                    fetch(`${API_BASE}/recent?user_id=${encodeURIComponent(userId)}&limit=5`),
+                    fetch(`${API_BASE}/recommend?user_id=${encodeURIComponent(userId)}&limit=8`),
+                    fetch(`${API_BASE}/popular`)
+                ]);
 
-                // 개인 추천 이력이 없으면 인기 검색어를 대체 제안으로 표시
-                const popularRes = await fetch(`${API_BASE}/popular`);
-                const popularList = await popularRes.json();
-                renderSuggestionList(Array.isArray(popularList) ? popularList : [], 'fa-fire');
+                const recentJson = recentRes.ok ? await recentRes.json() : [];
+                const recommendJson = recommendRes.ok ? await recommendRes.json() : [];
+                const popularJson = popularRes.ok ? await popularRes.json() : [];
+
+                const recentList = Array.isArray(recentJson) ? recentJson.slice(0, 4) : [];
+                const recommendBase = Array.isArray(recommendJson) ? recommendJson : [];
+                const recommendList = recommendBase.filter(keyword => !recentList.includes(keyword)).slice(0, 4);
+                const popularBase = Array.isArray(popularJson) ? popularJson : [];
+                const popularList = popularBase.filter(keyword => !recentList.includes(keyword) && !recommendList.includes(keyword)).slice(0, 4);
+
+                renderSuggestionGroups([
+                    { title: '최근 검색어', iconClass: 'fa-clock-rotate-left', items: recentList, removable: true, clearable: true },
+                    { title: '개인 추천', iconClass: 'fa-lightbulb', items: recommendList },
+                    { title: '인기 검색어', iconClass: 'fa-fire', items: popularList }
+                ]);
             } catch (error) {
                 console.error('추천 검색어 로드 실패:', error);
                 autocompleteList.classList.add('hidden');
+            }
+        }
+
+        function syncMobileFilterState(forceCollapsed = true) {
+            const isMobile = window.matchMedia('(max-width: 639px)').matches;
+            if (isMobile) {
+                filterToggleWrap.classList.remove('hidden');
+                if (forceCollapsed) {
+                    filterArea.classList.add('mobile-collapsed');
+                    filterToggleBtn.innerText = '필터 펼치기';
+                }
+                return;
+            }
+            filterToggleWrap.classList.add('hidden');
+            filterArea.classList.remove('mobile-collapsed');
+        }
+
+        function toggleMobileFilters() {
+            if (!window.matchMedia('(max-width: 639px)').matches) return;
+            const collapsed = filterArea.classList.toggle('mobile-collapsed');
+            filterToggleBtn.innerText = collapsed ? '필터 펼치기' : '필터 접기';
+        }
+
+        async function loadRelatedKeywords(query) {
+            const relatedSection = document.getElementById('relatedSection');
+            const relatedTags = document.getElementById('relatedTags');
+
+            if (!query) {
+                relatedSection.classList.add('hidden');
+                relatedTags.innerHTML = '';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/related?q=${encodeURIComponent(query)}&limit=8`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const keywords = await response.json();
+                const items = Array.isArray(keywords) ? keywords.filter(Boolean) : [];
+
+                if (items.length === 0) {
+                    relatedSection.classList.add('hidden');
+                    relatedTags.innerHTML = '';
+                    return;
+                }
+
+                relatedTags.innerHTML = items.map(tag =>
+                    `<button onclick="quickSearch('${escapeForOnclick(tag)}')" class="px-2 py-1 rounded-full border border-gray-600 text-xs hover:border-blue-400 hover:text-blue-300 transition">${escapeHtml(tag)}</button>`
+                ).join('');
+                relatedSection.classList.remove('hidden');
+            } catch (error) {
+                console.error('연관 검색어 로드 실패:', error);
+                relatedSection.classList.add('hidden');
+                relatedTags.innerHTML = '';
             }
         }
 
@@ -274,6 +453,7 @@
 
             document.body.classList.add('has-results');
             filterArea.classList.remove('hidden');
+            syncMobileFilterState(true);
             resultList.innerHTML = '<div class="text-center py-20 text-blue-400 animate-pulse">필터를 적용하여 분석 중...</div>';
 
             const includeVal = document.getElementById('includeFilter').value.trim();
@@ -284,6 +464,7 @@
             try {
                 const slowNoticeTimer = setTimeout(() => {
                     resultList.innerHTML = '<div class="text-center py-10 text-yellow-300">요청이 지연되고 있습니다. 잠시만 기다려 주세요.</div>';
+                    showToast('검색 요청이 지연되고 있습니다. 잠시만 기다려 주세요.', 'info');
                 }, 15000);
 
                 const response = await fetch(`${API_BASE}/query`, {
@@ -302,6 +483,12 @@
                     })
                 });
                 clearTimeout(slowNoticeTimer);
+
+                if (!response.ok) {
+                    const errBody = await response.json().catch(() => ({}));
+                    const errMsg = errBody.detail || `HTTP ${response.status}`;
+                    throw new Error(errMsg);
+                }
 
                 const data = await response.json();
 
@@ -325,9 +512,14 @@
                 }
 
                 renderResults(data);
+                const relatedSeed = data.corrected_query || query;
+                await loadRelatedKeywords(relatedSeed);
             } catch (error) {
                 const msg = error.message;
                 resultList.innerHTML = `<div class="text-center py-10 text-red-400">오류: ${msg}</div>`;
+                showToast('검색 요청 중 오류가 발생했습니다.', 'error');
+                document.getElementById('relatedSection').classList.add('hidden');
+                document.getElementById('relatedTags').innerHTML = '';
             }
         }
         async function checkFailedSearch() {
@@ -375,6 +567,9 @@
                 /* 결과 0건 시 카테고리 탭, 필터 영역 숨기기 */
                 document.getElementById('categoryTabs').classList.add('hidden');
                 filterArea.classList.add('hidden');
+                filterToggleWrap.classList.add('hidden');
+                document.getElementById('relatedSection').classList.add('hidden');
+                document.getElementById('relatedTags').innerHTML = '';
                 resultList.innerHTML = '<div class="text-center py-20 text-gray-500 font-light text-xl">일치하는 문서를 찾지 못했습니다.</div>';
                 return;
             }
@@ -400,10 +595,10 @@
                         </button>
                     </div>
                     <p class="text-gray-300 text-sm leading-relaxed mb-4">${item.summary}</p>
-                    <div class="flex items-center gap-4 text-[11px] text-gray-500 border-t border-gray-700 pt-3">
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-gray-500 border-t border-gray-700 pt-3">
                         <span><i class="far fa-hdd mr-1"></i> ${item.content.origin_file}</span>
                         <span><i class="far fa-calendar-alt mr-1"></i> ${item.indexed_at ? item.indexed_at.substring(0,10) : '2026.01.20'}</span>
-                        <span class="ml-auto bg-gray-800 px-2 py-0.5 rounded italic">Score: ${item.score.toFixed(2)}</span>
+                        <span class="sm:ml-auto bg-gray-800 px-2 py-0.5 rounded italic">Score: ${item.score.toFixed(2)}</span>
                     </div>
                     <div class="preview-popup">
                         <div class="text-xs text-blue-400 font-bold mb-1">📄 본문 미리보기</div>
@@ -492,6 +687,12 @@
             const searchWrapper = document.querySelector('#headerArea .group');
             if (searchWrapper && !searchWrapper.contains(e.target)) {
                 autocompleteList.classList.add('hidden');
+            }
+        });
+        filterToggleBtn.addEventListener('click', toggleMobileFilters);
+        window.addEventListener('resize', () => {
+            if (document.body.classList.contains('has-results')) {
+                syncMobileFilterState(false);
             }
         });
     </script>

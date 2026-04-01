@@ -16,6 +16,11 @@ from dotenv import load_dotenv
 def _get_bool_env(name: str, default: str) -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
+
+def _get_csv_env(name: str, default: str) -> list[str]:
+    raw = os.getenv(name, default)
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
 # .env 파일이 존재할 경우 내용을 로드하여 환경 변수로 설정합니다.
 # Docker Compose 사용 시에는 docker-compose.yml의 environment 설정이 우선순위를 가집니다.
 load_dotenv()
@@ -29,6 +34,7 @@ class Settings:
     
     # 솔루션 명칭 변경: HanSeek -> CleverSearch
     PROJECT_NAME = os.getenv("PROJECT_NAME", "CleverSearch")
+    APP_ENV = os.getenv("APP_ENV", "dev").strip().lower()
     
     # OpenSearch 접속 정보
     # 주의: Docker 내부 통신 시 'localhost' 대신 서비스명(예: https://opensearch:9200)을 사용해야 할 수 있습니다.
@@ -53,7 +59,14 @@ class Settings:
     OPENSEARCH_RETRY_ON_TIMEOUT = _get_bool_env("OPENSEARCH_RETRY_ON_TIMEOUT", "true")
 
     # 애플리케이션 업무 데이터 저장용 DB URL
-    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./cleversearch_app.db")
+    # 기본값을 PostgreSQL로 두고, 필요 시 환경변수로 개별 오버라이드합니다.
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg2://cleversearch:cleversearch123@localhost:5432/cleversearch",
+    )
+    DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20"))
+    DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+    DB_POOL_RECYCLE_SECONDS = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))
 
     # 스케줄러 기본 동작 주기(초)
     INGEST_SCHEDULER_INTERVAL_SECONDS = int(os.getenv("INGEST_SCHEDULER_INTERVAL_SECONDS", "120"))
@@ -69,8 +82,25 @@ class Settings:
     # JWT 인증 설정
     JWT_SECRET = os.getenv("JWT_SECRET", "change-this-in-production-at-least-32-chars")
     JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-    JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
-    JWT_REFRESH_EXPIRE_MINUTES = int(os.getenv("JWT_REFRESH_EXPIRE_MINUTES", "4320"))
+    JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "30"))
+    JWT_REFRESH_EXPIRE_MINUTES = int(os.getenv("JWT_REFRESH_EXPIRE_MINUTES", "1440"))
+
+    # API/웹 보안 설정
+    CORS_ALLOWED_ORIGINS = _get_csv_env(
+        "CORS_ALLOWED_ORIGINS",
+        "https://localhost:8443,http://localhost:8443,https://127.0.0.1:8443,http://127.0.0.1:8443",
+    )
+    ALLOWED_HOSTS = _get_csv_env("ALLOWED_HOSTS", "localhost,127.0.0.1")
+    ENABLE_API_DOCS = _get_bool_env(
+        "ENABLE_API_DOCS",
+        "true" if APP_ENV in {"dev", "local", "test"} else "false",
+    )
+    ENABLE_SECURITY_HEADERS = _get_bool_env("ENABLE_SECURITY_HEADERS", "true")
+
+    # 인증 시도 제한(브루트포스 완화)
+    AUTH_RATE_LIMIT_MAX_ATTEMPTS = int(os.getenv("AUTH_RATE_LIMIT_MAX_ATTEMPTS", "5"))
+    AUTH_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "300"))
+    AUTH_RATE_LIMIT_BLOCK_SECONDS = int(os.getenv("AUTH_RATE_LIMIT_BLOCK_SECONDS", "900"))
 
 # 전역에서 import하여 사용할 수 있도록 인스턴스 생성
 settings = Settings()
