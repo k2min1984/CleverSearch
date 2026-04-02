@@ -14,19 +14,12 @@
 # 강광민 / 2026-02-13 / 파서 통합 및 임베딩 고도화
 ########################################################
 """
-import io
 import json
-import re
 from datetime import datetime, timezone
-
-import pandas as pd
-import pdfplumber
-from docx import Document
-from pptx import Presentation
 
 from app.common.embedding import embedder
 from app.common.utils import DocumentUtils
-from app.core.file import hwp, image
+from app.core.file import excel, hwp, image, office, pdf
 from app.core.opensearch import get_client
 from app.services.db_service import DBService
 
@@ -87,45 +80,15 @@ class IndexingService:
 
         text_content = ""
         if ext in ["hwp", "hwpx"]:
-            raw_text = hwp._extract_text(content, ext)
-            raw_text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", raw_text)
-            text_content = f"[[Page 1]]\n{raw_text}"
+            text_content = hwp.extract_text(content, ext)
         elif ext == "pdf":
-            with pdfplumber.open(io.BytesIO(content)) as pdf_file:
-                pages = [f"[[Page {i + 1}]]\n{p.extract_text()}" for i, p in enumerate(pdf_file.pages) if p.extract_text()]
-                text_content = "\n\n".join(pages)
-
-            if not text_content.strip():
-                try:
-                    import fitz
-
-                    pdf_doc = fitz.open(stream=content, filetype="pdf")
-                    ocr_pages = []
-                    for page_num, page in enumerate(pdf_doc):
-                        pix = page.get_pixmap(dpi=150)
-                        img_bytes = pix.tobytes("png")
-                        page_text = image._extract_text(img_bytes)
-                        if page_text and page_text.strip():
-                            ocr_pages.append(f"[[Page {page_num + 1}]]\n{page_text}")
-                    text_content = "\n\n".join(ocr_pages)
-                except Exception:
-                    text_content = ""
-        elif ext == "docx":
-            doc = Document(io.BytesIO(content))
-            text_content = f"[[Page 1]]\n" + "\n".join([p.text for p in doc.paragraphs])
-        elif ext == "pptx":
-            prs = Presentation(io.BytesIO(content))
-            slides = []
-            for i, slide in enumerate(prs.slides):
-                slide_txt = "\n".join([shape.text for shape in slide.shapes if hasattr(shape, "text")])
-                slides.append(f"[[Page {i + 1}]]\n{slide_txt}")
-            text_content = "\n\n".join(slides)
+            text_content = pdf.extract_text(content)
+        elif ext in ["docx", "pptx"]:
+            text_content = office.extract_text(content, ext)
         elif ext in ["xlsx", "xls"]:
-            excel_data = pd.read_excel(io.BytesIO(content), sheet_name=None)
-            sheets = [f"[[Sheet: {name}]]\n{df.to_string()}" for name, df in excel_data.items()]
-            text_content = "\n\n".join(sheets)
+            text_content = excel.extract_text(content)
         elif ext in ["jpg", "jpeg", "png"]:
-            text_content = image._extract_text(content)
+            text_content = image.extract_text(content)
         elif ext == "txt":
             text_content = content.decode("utf-8", errors="ignore")
 
@@ -143,7 +106,6 @@ class IndexingService:
             return {"status": "fail", "message": f"지원하지 않는 확장자: {ext}", "file": safe_filename}
 
         clean_body_text = DocumentUtils.sanitize_text(text_content)
-        clean_body_text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", clean_body_text)
         if not clean_body_text.strip():
             return {"status": "fail", "message": "추출된 텍스트 없음", "file": safe_filename}
 

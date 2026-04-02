@@ -17,6 +17,7 @@ import os
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app.core.config import settings
 from app.core.database import Base
 
 
@@ -29,9 +30,12 @@ target_metadata = Base.metadata
 
 
 def _get_database_url() -> str:
+    # 1순위: 환경변수 DATABASE_URL, 2순위: config.py 자동 조립, 3순위: alembic.ini
     env_url = os.getenv("DATABASE_URL")
     if env_url:
         return env_url
+    if settings.DATABASE_URL:
+        return settings.DATABASE_URL
     return config.get_main_option("sqlalchemy.url")
 
 

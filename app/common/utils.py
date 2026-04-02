@@ -28,6 +28,10 @@ class DocumentUtils:
     def sanitize_text(text: str) -> str:
         """[방역] JSON 파싱 에러를 유발하는 제어문자 및 특수문자 제거"""
         if not text: return ""
+        # bytes가 혼입된 경우 안전하게 정제
+        if isinstance(text, bytes):
+            text = text.decode("utf-8", errors="ignore")
+        text = text.encode("utf-8", errors="ignore").decode("utf-8")
         # 허용 문자: 한글, 영문, 숫자, 공백, 필수 문장부호
         allowed = re.compile(r'[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9\s.,!?;:()\"\'\-\[\]\<\>\t\n\r]')
         result = "".join([ch for ch in text if allowed.match(ch)])

@@ -3,6 +3,7 @@ venv/
 .venv/
 __pycache__/
 *.py[cod]
+*.pyc
 
 # 환경 변수 및 인증서 (mkcert로 만든 파일 포함)
 .env
@@ -12,3 +13,20 @@ localhost+*-key.pem
 # OS 관련
 .DS_Store
 Thumbs.db
+
+# DB / 데이터
+*.db
+postgres_data/
+opensearch_data/
+
+# 업로드 / 빌드
+uploads/
+
+# IDE
+.vscode/
+.idea/
+
+# 불필요 디렉토리
+spring-api/
+tests/
+scripts/

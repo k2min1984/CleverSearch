@@ -197,7 +197,11 @@ class SearchService:
         try:
             if _HAS_HANSPELL:
                 corrected = spell_checker.check(req.query)
-                clean_query = corrected.checked
+                # hanspell이 EUC-KR 바이트를 반환하는 경우 방어
+                raw = corrected.checked
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8", errors="ignore")
+                clean_query = raw.encode("utf-8", errors="ignore").decode("utf-8")
             else:
                 clean_query = req.query
         except Exception:

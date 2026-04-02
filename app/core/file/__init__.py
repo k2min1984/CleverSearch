@@ -16,9 +16,6 @@ from . import hwp
 from . import image
 from . import office
 from . import pdf
-from . import office
-from . import image
 
 # 외부에서 'from app.core.file import *' 를 사용할 때 허용할 목록을 정의합니다.
-__all__ = ['excel', 'hwp', 'pdf', 'office', 'image']
 __all__ = ['excel', 'hwp', 'image', 'office', 'pdf']

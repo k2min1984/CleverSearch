@@ -25,6 +25,15 @@ from app.core.database import IndexedDocument, RecentSearch, SearchLog, get_db_s
 
 class DBService:
     @staticmethod
+    def _safe_str(value) -> str:
+        """DB에서 읽은 문자열에 비정상 바이트가 섞여 있을 경우 안전하게 정제"""
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="ignore")
+        return str(value).encode("utf-8", errors="ignore").decode("utf-8")
+
+    @staticmethod
     def _tokenize(text: str) -> set[str]:
         # 연관 검색어 계산 시 한 글자 노이즈를 줄이기 위해 2글자 이상 토큰만 사용합니다.
         return {tok for tok in re.split(r"\s+", (text or "").strip().lower()) if len(tok) >= 2}
@@ -77,7 +86,7 @@ class DBService:
                 .limit(limit)
                 .all()
             )
-            return [r.query for r in rows]
+            return [DBService._safe_str(r.query) for r in rows]
 
     @staticmethod
     def remove_recent_search(user_id: str, query: str) -> int:
@@ -112,7 +121,7 @@ class DBService:
                 .limit(limit)
                 .all()
             )
-            return [r[0] for r in rows]
+            return [DBService._safe_str(r[0]) for r in rows]
 
     @staticmethod
     def get_popular_keyword_stats(days: int = 7, limit: int = 20):
@@ -128,7 +137,7 @@ class DBService:
                 .limit(limit)
                 .all()
             )
-            return [{"keyword": query, "count": count} for query, count in rows]
+            return [{"keyword": DBService._safe_str(query), "count": count} for query, count in rows]
 
     @staticmethod
     def get_failed_keywords(days: int = 7, limit: int = 10):
@@ -143,7 +152,7 @@ class DBService:
                 .limit(limit)
                 .all()
             )
-            return [{"keyword": q, "count": c} for q, c in rows]
+            return [{"keyword": DBService._safe_str(q), "count": c} for q, c in rows]
 
     @staticmethod
     def get_related_keywords(query: str, days: int = 30, limit: int = 10) -> List[str]:

@@ -27,13 +27,36 @@ from app.core.config import settings
 
 
 DATABASE_URL = settings.DATABASE_URL
-# SQLite는 개발 편의용 기본값이고, 운영에서는 PostgreSQL URL로 교체됩니다.
+
+# DB 타입별 엔진 옵션 분기
+_db_type = settings.DB_TYPE
+
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
         DATABASE_URL,
         connect_args={"check_same_thread": False},
     )
+elif _db_type == "oracle":
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
+        # Oracle: CLOB 등 LOB 바인딩 최적화
+        thick_mode=False,
+    )
+elif _db_type in ("mysql", "mariadb"):
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
+        # MySQL/MariaDB: 연결 끊김 방지를 위한 짧은 recycle 권장
+    )
 else:
+    # PostgreSQL (기본)
     engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,

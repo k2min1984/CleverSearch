@@ -10,6 +10,7 @@
 """
 
 import os
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
 
 
@@ -35,6 +36,9 @@ class Settings:
     # 솔루션 명칭 변경: HanSeek -> CleverSearch
     PROJECT_NAME = os.getenv("PROJECT_NAME", "CleverSearch")
     APP_ENV = os.getenv("APP_ENV", "dev").strip().lower()
+
+    # 민감 정보 암호화 키 (운영 환경에서는 반드시 변경 필요)
+    CREDENTIAL_SECRET = os.getenv("CREDENTIAL_SECRET", "change-this-credential-secret-in-production")
     
     # OpenSearch 접속 정보
     # 주의: Docker 내부 통신 시 'localhost' 대신 서비스명(예: https://opensearch:9200)을 사용해야 할 수 있습니다.
@@ -58,12 +62,63 @@ class Settings:
     OPENSEARCH_MAX_RETRIES = int(os.getenv("OPENSEARCH_MAX_RETRIES", "2"))
     OPENSEARCH_RETRY_ON_TIMEOUT = _get_bool_env("OPENSEARCH_RETRY_ON_TIMEOUT", "true")
 
-    # 애플리케이션 업무 데이터 저장용 DB URL
-    # 기본값을 PostgreSQL로 두고, 필요 시 환경변수로 개별 오버라이드합니다.
-    DATABASE_URL = os.getenv(
-        "DATABASE_URL",
-        "postgresql+psycopg2://cleversearch:cleversearch123@localhost:5432/cleversearch",
-    )
+    # ── 업무 데이터 저장용 DB 설정 ──────────────────────────────
+    # DB_TYPE: postgres / mysql / mariadb / oracle 중 선택
+    DB_TYPE = os.getenv("DB_TYPE", "postgres").strip().lower()
+
+    # 개별 접속 정보 (DATABASE_URL 미지정 시 이 값으로 자동 조립)
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_PORT = os.getenv("DB_PORT", "")          # 빈 값이면 DB_TYPE별 기본 포트 사용
+    DB_NAME = os.getenv("DB_NAME", "cleversearch")
+    DB_USER = os.getenv("DB_USER", "cleversearch")
+    DB_PASSWORD = os.getenv("DB_PASSWORD", "cleversearch123")
+
+    # Oracle 전용: SID 대신 서비스명 사용 시 True
+    DB_ORACLE_USE_SERVICE_NAME = _get_bool_env("DB_ORACLE_USE_SERVICE_NAME", "false")
+
+    # DB_TYPE → SQLAlchemy dialect+driver 매핑
+    _DB_DIALECTS: dict[str, str] = {
+        "postgres": "postgresql+psycopg2",
+        "mysql": "mysql+pymysql",
+        "mariadb": "mariadb+pymysql",
+        "oracle": "oracle+oracledb",
+    }
+    _DB_DEFAULT_PORTS: dict[str, str] = {
+        "postgres": "5432",
+        "mysql": "3306",
+        "mariadb": "3306",
+        "oracle": "1521",
+    }
+
+    @classmethod
+    def _build_database_url(cls) -> str:
+        """DB_TYPE + 개별 접속 정보로 DATABASE_URL을 자동 조립합니다."""
+        dialect = cls._DB_DIALECTS.get(cls.DB_TYPE)
+        if dialect is None:
+            raise ValueError(
+                f"지원하지 않는 DB_TYPE: '{cls.DB_TYPE}'. "
+                f"허용 값: {', '.join(cls._DB_DIALECTS)}"
+            )
+        port = cls.DB_PORT or cls._DB_DEFAULT_PORTS[cls.DB_TYPE]
+        # 유저명/비밀번호에 @, !, # 등 특수문자가 포함될 수 있으므로 URL 인코딩
+        safe_user = quote_plus(cls.DB_USER)
+        safe_password = quote_plus(cls.DB_PASSWORD)
+
+        if cls.DB_TYPE == "oracle":
+            if cls.DB_ORACLE_USE_SERVICE_NAME:
+                dsn = f"(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST={cls.DB_HOST})(PORT={port}))(CONNECT_DATA=(SERVICE_NAME={cls.DB_NAME})))"
+                return f"{dialect}://{safe_user}:{safe_password}@{dsn}"
+            return f"{dialect}://{safe_user}:{safe_password}@{cls.DB_HOST}:{port}/{cls.DB_NAME}"
+
+        charset_param = ""
+        if cls.DB_TYPE in ("mysql", "mariadb"):
+            charset_param = "?charset=utf8mb4"
+
+        return f"{dialect}://{safe_user}:{safe_password}@{cls.DB_HOST}:{port}/{cls.DB_NAME}{charset_param}"
+
+    # DATABASE_URL 환경변수가 직접 지정되면 그대로 사용, 아니면 자동 조립
+    DATABASE_URL: str = os.getenv("DATABASE_URL") or ""
+
     DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20"))
     DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "20"))
     DB_POOL_RECYCLE_SECONDS = int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800"))
@@ -104,3 +159,6 @@ class Settings:
 
 # 전역에서 import하여 사용할 수 있도록 인스턴스 생성
 settings = Settings()
+# DATABASE_URL 환경변수가 없으면 DB_TYPE + 개별 접속 정보로 자동 조립
+if not settings.DATABASE_URL:
+    settings.DATABASE_URL = Settings._build_database_url()

@@ -6,6 +6,8 @@ pymupdf
 python-multipart
 sqlalchemy
 psycopg2-binary
+pymysql
+oracledb
 alembic
 pandas
 openpyxl
@@ -16,5 +18,9 @@ pypdf
 olefile
 Pillow
 pytesseract
+paddlepaddle
+paddleocr
+opencv-python-headless
 py-hanspell
 PyJWT
+cryptography

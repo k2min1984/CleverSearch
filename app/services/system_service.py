@@ -28,6 +28,8 @@ from typing import Any
 
 from sqlalchemy import create_engine, text
 
+from app.utils.crypto import encrypt as _encrypt, decrypt as _decrypt
+
 from app.core.database import CertificateStatus, DbSource, SearchLog, SmbSource, get_db_session
 from app.core.opensearch import get_client
 from app.services.db_service import DBService
@@ -71,10 +73,11 @@ class SMBService:
         with get_db_session() as db:
             row = db.query(SmbSource).filter(SmbSource.name == name).first()
             now = datetime.now(timezone.utc)
+            enc_password = _encrypt(password) if password else password
             if row:
                 row.share_path = share_path
                 row.username = username
-                row.password = password
+                row.password = enc_password
                 row.is_active = is_active
                 row.updated_at = now
             else:
@@ -82,7 +85,7 @@ class SMBService:
                     name=name,
                     share_path=share_path,
                     username=username,
-                    password=password,
+                    password=enc_password,
                     is_active=is_active,
                     created_at=now,
                     updated_at=now,
@@ -103,7 +106,7 @@ class SMBService:
             return
         cmd = ["net", "use", source.share_path]
         if source.password:
-            cmd.append(source.password)
+            cmd.append(_decrypt(source.password))
         if source.username:
             cmd.extend(["/user:" + source.username])
         cmd.append("/persistent:no")
@@ -225,9 +228,10 @@ class DBIngestionService:
         with get_db_session() as db:
             row = db.query(DbSource).filter(DbSource.name == name).first()
             now = datetime.now(timezone.utc)
+            enc_url = _encrypt(connection_url)
             if row:
                 row.db_type = db_type
-                row.connection_url = connection_url
+                row.connection_url = enc_url
                 row.query_text = query_text
                 row.title_column = title_column
                 row.chunk_size = chunk_size
@@ -237,7 +241,7 @@ class DBIngestionService:
                 row = DbSource(
                     name=name,
                     db_type=db_type,
-                    connection_url=connection_url,
+                    connection_url=enc_url,
                     query_text=query_text,
                     title_column=title_column,
                     chunk_size=chunk_size,
@@ -267,7 +271,7 @@ class DBIngestionService:
             failed = 0
 
             try:
-                engine = create_engine(source.connection_url)
+                engine = create_engine(_decrypt(source.connection_url))
                 with engine.connect() as conn:
                     result = conn.execution_options(stream_results=True).execute(text(source.query_text))
                     while indexed + skipped + failed < max_rows:

@@ -11,6 +11,7 @@
 ########################################################
 """
 import io
+import re
 import zlib
 import struct
 import zipfile
@@ -20,17 +21,21 @@ import olefile
 from app.utils import string
 
 # [한글파일] 추출
-def _extract_text(content: bytes, ext: str) -> str:
+def extract_text(content: bytes, ext: str) -> str:
     """
     파일 확장자나 헤더를 보고 HWP와 HWPX를 자동으로 분기하여 처리합니다.
+    결과에서 제어문자를 제거하고 [[Page 1]] 마커를 포함하여 반환합니다.
     """
-    print("한글파일추출["+ext+"]")
     # 1. 파일 확장자가 HWPX
     if ext == "hwpx":
-        return _extract_text_hwpx(content)
-    
-    # 2. 그 외에는 HWP(OLE)로 간주하고 처리
-    return _extract_text_hwp(content)
+        raw = _extract_text_hwpx(content)
+    else:
+        # 2. 그 외에는 HWP(OLE)로 간주하고 처리
+        raw = _extract_text_hwp(content)
+
+    # 제어문자 정리 (폼 피드, 수직탭 등)
+    clean = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", raw)
+    return f"[[Page 1]]\n{clean}" if clean.strip() else ""
 
 # [한글파일] HWP
 def _extract_text_hwp(content: bytes) -> str:
@@ -62,7 +67,7 @@ def _extract_text_hwp(content: bytes) -> str:
             # [1] 압축 해제 시도 (실패 시 바이너리 유출 방지)
             try:
                 unpacked_data = zlib.decompress(data, -15)
-            except:
+            except Exception:
                 unpacked_data = data
             
             pos = 0
@@ -99,7 +104,7 @@ def _extract_text_hwp(content: bytes) -> str:
                         if clean_text.strip():
                             text_result.append(clean_text)
                             text_result.append("\n")
-                    except:
+                    except Exception:
                         pass
                 
                 pos += rec_len
@@ -109,7 +114,6 @@ def _extract_text_hwp(content: bytes) -> str:
 
     except Exception as e:
         # HWP 파싱은 워낙 변수가 많으므로, 에러 시 빈 문자열 반환하여 서버 보호
-        print(f"HWP 파싱 에러(무시됨): {e}")
         return ""
 
 # [한글파일] 추출 HWPX 
@@ -148,45 +152,12 @@ def _extract_text_hwpx(content: bytes) -> str:
                         # 문단 태그 <hp:p>
                         if elem.tag.endswith('p'):
                             text_result.append("\n")
-                except:
+                except Exception:
                     continue
 
         return "".join(text_result).strip()
 
-    except Exception as e:
-        return f"HWPX 추출 중 오류: {str(e)}"
+    except Exception:
+        return ""
 
-# [한글파일] 필터링
-def _clean_text(text: str) -> str:
-    """
-    [화이트리스트 필터링]
-    한글, 영어, 숫자, 기본 문장부호만 남기고 나머지는 제거합니다.
-    제어 문자(Code 31 이하) 및 깨진 문자(Mojibake), 한자 등을 제거하여 
-    검색 엔진(OpenSearch) 인덱싱 오류를 원천 차단합니다.
-    """
-    clean_chars = []
-    for char in text:
-        code = ord(char)
-        
-        # 1. 한글 완성형 (가~힣)
-        if 0xAC00 <= code <= 0xD7A3:
-            clean_chars.append(char)
-        
-        # 2. 한글 자모 (ㄱ~ㅎ, ㅏ~ㅣ)
-        elif 0x3131 <= code <= 0x318E:
-            clean_chars.append(char)
-        
-        # 3. 영어, 숫자, 기본 특수문자 (ASCII 32~126)
-        elif 32 <= code <= 126:
-            clean_chars.append(char)
-        
-        # 4. 필수 제어 문자 (탭, 줄바꿈, 캐리지리턴)
-        elif code in [9, 10, 13]:
-            clean_chars.append(char)
-            
-        # [참고] 한자(大韓民國)를 살려야 한다면 아래 주석 해제
-        # 해당 주석 해제 시 서식 정보(글자 색, 폰트 정보 등)나 제어 코드가 텍스트로 잘못 해석되어 글자 깨짐
-        # elif 0x4E00 <= code <= 0x9FFF:
-        #     clean_chars.append(char)
-
-    return "".join(clean_chars)
+# _clean_text 제거 — string.clean_text() 와 동일 기능이므로 통합 사용
