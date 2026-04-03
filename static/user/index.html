@@ -25,6 +25,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        :root { --bg: #eef2f7; --panel: #ffffff; --line: #d8e0ec; --text: #1f2937; --muted: #64748b; --primary: #4f46e5; }
         mark { background-color: #fef08a; color: #b91c1c; font-weight: bold; padding: 0 2px; border-radius: 2px; }
         body.has-results .main-wrapper { padding-top: 2rem; justify-content: flex-start; min-height: auto; }
         body:not(.has-results) .main-wrapper { min-height: 80vh; display: flex; flex-direction: column; justify-content: center; }
@@ -33,16 +34,36 @@
         #categoryTabs::-webkit-scrollbar { display: none; }
         #categoryTabs { -ms-overflow-style: none; scrollbar-width: none; }
         /* 문서 미리보기 팝업 */
-        .preview-popup { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; background: #1e1e2e; border: 1px solid #3b82f6; border-radius: 0.5rem; padding: 0.75rem; font-size: 0.8rem; color: #d1d5db; max-height: 200px; overflow-y: auto; display: none; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+        .preview-popup { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; background: #f8fbff; border: 1px solid #bfd0ea; border-radius: 0.75rem; padding: 0.75rem; font-size: 0.8rem; color: #334155; max-height: 200px; overflow-y: auto; display: none; box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12); }
         .result-card:hover .preview-popup { display: block; }
         .result-card { position: relative; }
         /* 인기검색어 가로 배치 */
         #popularTags { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
-        .suggestion-header { font-size: 11px; letter-spacing: 0.02em; color: #9aa0a6; background: #2b2d31; padding: 6px 20px; border-top: 1px solid #3c4043; }
+        .suggestion-header { font-size: 11px; letter-spacing: 0.02em; color: #64748b; background: #f1f5fb; padding: 6px 20px; border-top: 1px solid #d7e0ed; }
         #toastNotice { position: fixed; right: 16px; bottom: 16px; z-index: 100; max-width: 320px; }
-        #toastNotice.success { border-color: #2563eb; color: #dbeafe; }
-        #toastNotice.info { border-color: #475569; color: #e2e8f0; }
-        #toastNotice.error { border-color: #b91c1c; color: #fee2e2; }
+        #toastNotice.success { border-color: #2563eb; color: #1d4ed8; background: #eaf2ff; }
+        #toastNotice.info { border-color: #64748b; color: #334155; background: #f4f7fb; }
+        #toastNotice.error { border-color: #b91c1c; color: #b91c1c; background: #ffecee; }
+        body { background: linear-gradient(180deg, #f8fafd 0%, var(--bg) 100%); color: var(--text); }
+        .main-wrapper { color: var(--text); }
+        .search-container { background: #ffffff !important; border-color: #cfd9e7 !important; box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08); }
+        #autocompleteList { background: #ffffff !important; border-color: #d3ddea !important; border-radius: 0.9rem; }
+        #filterArea { border-color: #d9e2ef !important; }
+        #categoryTabs { border-color: #d9e2ef !important; color: #64748b !important; }
+        #resultCount, #trendingSection, #relatedSection, #pageInfo { color: #64748b !important; }
+        #paginationArea button { background: #ffffff; border-color: #d0dbe9 !important; color: #334155; }
+        #paginationArea button:hover { background: #f1f5fb !important; }
+        .bg-\[\#202124\] { background: transparent !important; }
+        .bg-\[\#303134\] { background: #ffffff !important; }
+        .border-\[\#5f6368\] { border-color: #ced8e7 !important; }
+        .text-gray-100, .text-gray-200, .text-gray-300, .text-gray-400, .text-gray-500 { color: #64748b !important; }
+        .text-white { color: #1f2937 !important; }
+        .hover\:text-white:hover { color: #334155 !important; }
+        .hover\:bg-gray-800:hover { background: #edf2f8 !important; }
+        .bg-gray-800, .bg-amber-900\/30 { background: #f6f9fe !important; }
+        .border-gray-700, .border-gray-600 { border-color: #d6dfec !important; }
+        #searchInput { color: #1f2937 !important; }
+        #searchInput::placeholder { color: #94a3b8; }
         @media (max-width: 639px) {
             #filterArea.mobile-collapsed { display: none; }
             #toastNotice { left: 16px; right: 16px; max-width: none; }
@@ -54,16 +75,16 @@
     <div class="main-wrapper max-w-5xl mx-auto px-4 transition-all duration-500">
         <div class="text-center mb-6" id="headerArea">
             <div class="flex justify-end mb-2">
-                <a href="/admin" class="text-xs text-gray-400 hover:text-white">관리자 리스트</a>
+                <a href="/admin" class="text-xs text-gray-500 hover:text-slate-700">관리자 리스트</a>
             </div>
             <h1 class="text-5xl font-bold mb-8 cursor-pointer tracking-tight" onclick="location.reload()">
-                <span class="text-blue-500">Clever</span><span class="text-white">Search</span>
+                <span class="text-indigo-600">Clever</span><span class="text-slate-800">Search</span>
             </h1>
             
             <div class="relative w-full max-w-2xl mx-auto group">
                 <div class="search-container flex items-center bg-[#303134] rounded-full border border-[#5f6368] px-5 py-3 shadow-sm focus-within:shadow-lg transition-all">
                     <i class="fas fa-search text-gray-400 mr-3"></i>
-                    <input type="text" id="searchInput" class="flex-1 bg-transparent border-none text-white focus:outline-none text-lg" placeholder="검색어 입력..." autocomplete="off">
+                    <input type="text" id="searchInput" class="flex-1 bg-transparent border-none text-slate-800 focus:outline-none text-lg" placeholder="검색어 입력..." autocomplete="off">
                     <button onclick="resetFiltersAndSearch()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium ml-2 transition">검색</button>
                 </div>
                 <div id="autocompleteList" class="absolute top-full left-0 w-full bg-[#303134] border border-[#5f6368] rounded-b-2xl shadow-xl z-50 hidden overflow-hidden mt-1 text-left"></div>
@@ -215,13 +236,13 @@
 
             autocompleteList.innerHTML = normalized.map(group => {
                 const headerAction = group.clearable
-                    ? `<button onclick="clearRecentSuggestions(event)" class="text-[10px] text-gray-400 hover:text-red-300">전체 삭제</button>`
+                    ? `<button onclick="clearRecentSuggestions(event)" class="text-[10px] text-gray-500 hover:text-red-600">전체 삭제</button>`
                     : '';
                 const rows = group.items.map(item => `
-                    <div class="px-5 py-3 hover:bg-[#3c4043] cursor-pointer text-gray-200" onclick="selectSuggestion('${escapeForOnclick(item)}')">
+                    <div class="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700" onclick="selectSuggestion('${escapeForOnclick(item)}')">
                         <div class="flex items-center justify-between gap-3">
-                            <span><i class="fas ${group.iconClass || 'fa-history'} text-gray-500 mr-3 text-xs"></i>${escapeHtml(item)}</span>
-                            ${group.removable ? `<button onclick="removeRecentSuggestion(event, '${escapeForOnclick(item)}')" class="text-[10px] text-gray-500 hover:text-red-300 px-1">삭제</button>` : ''}
+                            <span><i class="fas ${group.iconClass || 'fa-history'} text-slate-400 mr-3 text-xs"></i>${escapeHtml(item)}</span>
+                            ${group.removable ? `<button onclick="removeRecentSuggestion(event, '${escapeForOnclick(item)}')" class="text-[10px] text-slate-400 hover:text-red-600 px-1">삭제</button>` : ''}
                         </div>
                     </div>
                 `).join('');
@@ -272,8 +293,8 @@
             }
 
             autocompleteList.innerHTML = items.map(item => `
-                <div class="px-5 py-3 hover:bg-[#3c4043] cursor-pointer text-gray-200" onclick="selectSuggestion('${escapeForOnclick(item)}')">
-                    <i class="fas ${iconClass} text-gray-500 mr-3 text-xs"></i><span>${escapeHtml(item)}</span>
+                <div class="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700" onclick="selectSuggestion('${escapeForOnclick(item)}')">
+                    <i class="fas ${iconClass} text-slate-400 mr-3 text-xs"></i><span>${escapeHtml(item)}</span>
                 </div>
             `).join('');
             autocompleteList.classList.remove('hidden');
@@ -576,33 +597,33 @@
 
             data.items.forEach(item => {
                 const card = document.createElement('div');
-                card.className = 'result-card group bg-[#303134] p-6 rounded-xl border border-[#5f6368] hover:border-blue-500 transition-all shadow-md mb-4';
+                card.className = 'result-card group bg-[#303134] p-6 rounded-xl border border-[#5f6368] hover:border-indigo-400 transition-all shadow-md mb-4';
                 
                 const previewText = (item.summary || '').substring(0, 300) + ((item.summary || '').length > 300 ? '...' : '');
 
                 card.innerHTML = `
                     <div class="flex justify-between items-start mb-2">
                         <div class="flex-1">
-                            <div class="text-xs font-bold text-blue-300 bg-blue-900/40 px-2 py-1 rounded inline-block mb-2">
+                            <div class="text-xs font-bold text-indigo-700 bg-indigo-100 px-2 py-1 rounded inline-block mb-2">
                                 <i class="far fa-file-alt mr-1"></i> ${item.location}
                             </div>
-                            <h3 class="text-xl text-[#8ab4f8] group-hover:underline font-medium cursor-pointer">
+                            <h3 class="text-xl text-indigo-700 group-hover:underline font-medium cursor-pointer">
                                 ${item.content.Title || item.content.origin_file}
                             </h3>
                         </div>
-                        <button class="text-gray-500 hover:text-white transition px-2 py-1">
+                        <button class="text-slate-400 hover:text-slate-700 transition px-2 py-1">
                             <i class="fas fa-ellipsis-v"></i>
                         </button>
                     </div>
-                    <p class="text-gray-300 text-sm leading-relaxed mb-4">${item.summary}</p>
-                    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-gray-500 border-t border-gray-700 pt-3">
+                    <p class="text-slate-600 text-sm leading-relaxed mb-4">${item.summary}</p>
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 border-t border-slate-200 pt-3">
                         <span><i class="far fa-hdd mr-1"></i> ${item.content.origin_file}</span>
                         <span><i class="far fa-calendar-alt mr-1"></i> ${item.indexed_at ? item.indexed_at.substring(0,10) : '2026.01.20'}</span>
-                        <span class="sm:ml-auto bg-gray-800 px-2 py-0.5 rounded italic">Score: ${item.score.toFixed(2)}</span>
+                        <span class="sm:ml-auto bg-slate-100 px-2 py-0.5 rounded italic">Score: ${item.score.toFixed(2)}</span>
                     </div>
                     <div class="preview-popup">
-                        <div class="text-xs text-blue-400 font-bold mb-1">📄 본문 미리보기</div>
-                        <div class="text-gray-300 whitespace-pre-wrap">${previewText || '미리보기 데이터 없음'}</div>
+                        <div class="text-xs text-indigo-600 font-bold mb-1">📄 본문 미리보기</div>
+                        <div class="text-slate-600 whitespace-pre-wrap">${previewText || '미리보기 데이터 없음'}</div>
                     </div>
                 `;
                 
@@ -632,13 +653,13 @@
                 win.document.write(`<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${title}</title>
 <style>
-  body { font-family: 'Malgun Gothic', sans-serif; background: #1e1e2e; color: #cdd6f4; margin: 0; padding: 2rem; line-height: 1.7; }
+    body { font-family: 'Malgun Gothic', sans-serif; background: #f3f6fb; color: #334155; margin: 0; padding: 2rem; line-height: 1.7; }
   .container { max-width: 900px; margin: 0 auto; }
-  h1 { color: #89b4fa; font-size: 1.5rem; border-bottom: 2px solid #45475a; padding-bottom: 0.5rem; }
-  .meta { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; font-size: 0.85rem; color: #a6adc8; }
-  .meta span { background: #313244; padding: 4px 10px; border-radius: 6px; }
-  .content { background: #313244; border: 1px solid #45475a; border-radius: 8px; padding: 1.5rem; white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; max-height: 70vh; overflow-y: auto; }
-  .back { display: inline-block; margin-top: 1rem; color: #89b4fa; cursor: pointer; text-decoration: underline; }
+    h1 { color: #4f46e5; font-size: 1.5rem; border-bottom: 2px solid #d6dfec; padding-bottom: 0.5rem; }
+    .meta { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; font-size: 0.85rem; color: #64748b; }
+    .meta span { background: #ffffff; border: 1px solid #d6dfec; padding: 4px 10px; border-radius: 6px; }
+    .content { background: #ffffff; border: 1px solid #d6dfec; border-radius: 8px; padding: 1.5rem; white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; max-height: 70vh; overflow-y: auto; }
+    .back { display: inline-block; margin-top: 1rem; color: #4f46e5; cursor: pointer; text-decoration: underline; }
 </style></head><body>
 <div class="container">
   <h1>📄 ${title}</h1>

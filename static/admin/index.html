@@ -1,94 +1,491 @@
-<!--
-########################################################
-# Description
-# CleverSearch 관리자 페이지
-# 14개 탭 기반 운영 관리 프론트엔드 (모듈화 구조)
-# - 로그인 + 메뉴 + 동적 탭 로딩
-# - 각 탭 HTML은 admin/ 폴더 내 개별 파일로 관리
-#
-# Modified History
-# 강광묵 / 2026-01-20 / 최초생성
-# 강광민 / 2026-03-15 / 대시보드 및 관리 탭 추가
-# 강광민 / 2026-03-20 / 패널 설명/리스트뷰/RBAC 고도화
-# 현승준 / 2026-03-25 / 탭별 HTML 분리 및 동적 로딩 리팩터링
-########################################################
--->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CleverSearch 관리자</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CleverSearch Admin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
     <style>
-        body { background: #111827; color: #e5e7eb; }
-        .tab.active { background: #1d4ed8; color: #fff; }
-        table th, table td { white-space: nowrap; }
-        input, select, textarea { color: #e5e7eb; }
-        .pill { border: 1px solid #374151; border-radius: 9999px; padding: 0.25rem 0.75rem; font-size: 0.75rem; }
-        .metric { background: #111827; border: 1px solid #374151; border-radius: 0.75rem; padding: 0.75rem; }
-        .metric-label { color: #9ca3af; font-size: 0.75rem; }
-        .metric-value { font-size: 1.25rem; font-weight: 700; }
-        .badge { border-radius: 9999px; padding: 0.25rem 0.75rem; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; }
-        .badge.info { background: #1f2937; color: #93c5fd; border: 1px solid #374151; }
-        .badge.warning { background: #3f2a03; color: #fbbf24; border: 1px solid #92400e; }
-        .badge.critical { background: #450a0a; color: #fca5a5; border: 1px solid #b91c1c; }
-        .drop-zone { border: 2px dashed #374151; border-radius: 0.75rem; padding: 2rem; text-align: center; transition: all 0.2s; }
-        .drop-zone.dragover { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
-        .btn-del { cursor:pointer; color:#ef4444; }
-        .btn-del:hover { color:#f87171; text-decoration:underline; }
+        :root {
+            --bg: #eceff3;
+            --panel: #ffffff;
+            --line: #d9dee6;
+            --text: #202938;
+            --muted: #6c778b;
+            --primary: #5b5ce2;
+            --primary-weak: #eeecff;
+            --danger: #ef4444;
+            --success: #12a874;
+            --warning: #f4b400;
+            --info: #06b6d4;
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --shadow: 0 10px 24px rgba(30, 41, 59, 0.06);
+        }
+
+        * {
+            font-family: "Nunito", sans-serif;
+        }
+
+        body {
+            margin: 0;
+            background: linear-gradient(180deg, #f7f8fc 0%, var(--bg) 100%);
+            color: var(--text);
+        }
+
+        .admin-shell {
+            min-height: 100vh;
+            display: grid;
+            grid-template-columns: 232px 1fr;
+        }
+
+        .side {
+            background: #f6f8fc;
+            border-right: 1px solid var(--line);
+            padding: 18px 14px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 18px;
+            padding: 4px 8px;
+        }
+
+        .brand-mark {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            display: grid;
+            place-items: center;
+            color: #fff;
+            font-weight: 800;
+            background: linear-gradient(140deg, #4d62e6, #7a60f3);
+        }
+
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 64px;
+            padding: 0 22px;
+            border-bottom: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(8px);
+        }
+
+        .content-wrap {
+            padding: 18px 20px 26px;
+        }
+
+        #tabContent {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow);
+            padding: 18px;
+            min-height: calc(100vh - 130px);
+        }
+
+        #tabMenu {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        #tabMenu .tab {
+            width: 100%;
+            border: 1px solid transparent;
+            border-radius: 11px;
+            text-align: left;
+            padding: 10px 12px;
+            color: #5f6b81;
+            background: transparent;
+            font-weight: 700;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        #tabMenu .tab:hover {
+            border-color: #dbe2ef;
+            background: #eef2f9;
+            color: #334155;
+        }
+
+        #tabMenu .tab.active {
+            background: var(--primary-weak);
+            color: var(--primary);
+            border-color: #ded8ff;
+        }
+
+        button,
+        .btn,
+        .admin-btn {
+            border-radius: 10px;
+            border: none;
+            font-weight: 700;
+            transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+        }
+
+        button:hover,
+        .btn:hover,
+        .admin-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+            box-shadow: 0 7px 14px rgba(91, 92, 226, 0.24);
+        }
+
+        .btn-secondary {
+            background: #5f6b7a;
+            color: #fff;
+            box-shadow: 0 7px 14px rgba(95, 107, 122, 0.22);
+        }
+
+        .btn-success {
+            background: #16a56f;
+            color: #fff;
+            box-shadow: 0 7px 14px rgba(22, 165, 111, 0.22);
+        }
+
+        .btn-danger-solid {
+            background: #e53935;
+            color: #fff;
+            box-shadow: 0 7px 14px rgba(229, 57, 53, 0.24);
+        }
+
+        .btn-warning {
+            background: #f6bd16;
+            color: #312700;
+            box-shadow: 0 7px 14px rgba(246, 189, 22, 0.24);
+        }
+
+        .btn-info {
+            background: #20b5d6;
+            color: #fff;
+            box-shadow: 0 7px 14px rgba(32, 181, 214, 0.24);
+        }
+
+        .btn-unified {
+            border-radius: 10px !important;
+            padding: 7px 12px !important;
+            font-weight: 800 !important;
+            border: 1px solid transparent !important;
+            line-height: 1.2 !important;
+        }
+
+        .btn-soft {
+            background: #edf1f7;
+            color: #374151;
+            border: 1px solid #d8dee9;
+        }
+
+        .btn-danger {
+            background: #ffe9eb;
+            color: #c4283c;
+            border: 1px solid #ffcdd4;
+        }
+
+        .btn-top {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #f4f6fb;
+            color: #384256;
+            border: 1px solid #d8dfeb;
+            box-shadow: 0 6px 14px rgba(74, 88, 113, 0.1);
+        }
+
+        .btn-top:hover {
+            background: #e9eef8;
+            color: #273247;
+        }
+
+        .pill {
+            border: 1px solid #dbe1ea;
+            border-radius: 999px;
+            padding: 4px 10px;
+            background: #fff;
+            color: #667084;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .metric {
+            background: #fff;
+            border: 1px solid #dbe1ea;
+            border-radius: 12px;
+            padding: 12px;
+        }
+
+        .metric-label {
+            color: #6f7991;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .metric-value {
+            color: #0f172a;
+            font-size: 20px;
+            font-weight: 800;
+            line-height: 1.15;
+            margin-top: 4px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        table thead th {
+            background: #f5f7fb;
+            color: #4a5568;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            white-space: nowrap;
+            border-bottom: 1px solid #dbe1ea;
+        }
+
+        table th,
+        table td {
+            border-bottom: 1px solid #edf1f6;
+            padding: 10px 12px;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        input,
+        select,
+        textarea {
+            background: #fff;
+            color: #334155;
+            border: 1px solid #d7dee9;
+            border-radius: 10px;
+            padding: 8px 10px;
+            outline: none;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            border-color: #a5b4fc;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.14);
+        }
+
+        .drop-zone {
+            border: 2px dashed #c4cfde;
+            border-radius: 14px;
+            padding: 36px 18px;
+            text-align: center;
+            background: #fbfcff;
+            transition: all 0.2s;
+        }
+
+        .drop-zone.dragover {
+            border-color: #8587ff;
+            background: #f2f1ff;
+        }
+
+        .badge {
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 800;
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid transparent;
+        }
+
+        .badge.info { background: #eaf4ff; color: #2469da; border-color: #cfe4ff; }
+        .badge.warning { background: #fff5d8; color: #946200; border-color: #ffe6a2; }
+        .badge.critical { background: #ffe8ed; color: #bf2942; border-color: #ffcfd8; }
+
+        .btn-del {
+            cursor: pointer;
+            color: #e53935;
+            font-weight: 800;
+        }
+
+        .btn-del:hover {
+            color: #c62828;
+            text-decoration: underline;
+        }
+
+        /*
+         * Tab fragments still contain old dark classes.
+         * Normalize them into light UI colors so text and controls stay readable.
+         */
+        #tabContent {
+            color: #253041;
+        }
+
+        #tabContent .bg-gray-900,
+        #tabContent .bg-gray-800,
+        #tabContent .bg-gray-700,
+        #tabContent .bg-gray-600 {
+            background: #ffffff !important;
+            color: #243045 !important;
+            border-color: #dce3ef !important;
+        }
+
+        #tabContent .border-gray-900,
+        #tabContent .border-gray-800,
+        #tabContent .border-gray-700,
+        #tabContent .border-gray-600 {
+            border-color: #dce3ef !important;
+        }
+
+        #tabContent .text-gray-100,
+        #tabContent .text-gray-200,
+        #tabContent .text-gray-300,
+        #tabContent .text-gray-400,
+        #tabContent .text-gray-500,
+        #tabContent .text-gray-600,
+        #tabContent .text-red-200,
+        #tabContent .text-red-300,
+        #tabContent .text-red-400,
+        #tabContent .text-indigo-200,
+        #tabContent .text-indigo-300,
+        #tabContent .text-indigo-400,
+        #tabContent .text-blue-200,
+        #tabContent .text-blue-300,
+        #tabContent .text-blue-400 {
+            color: #5c6b82 !important;
+        }
+
+        #tabContent .text-white {
+            color: #ffffff !important;
+        }
+
+        #tabContent .bg-blue-900\/30,
+        #tabContent .bg-blue-900,
+        #tabContent .bg-red-900\/30,
+        #tabContent .bg-red-900,
+        #tabContent .bg-indigo-900,
+        #tabContent .bg-indigo-800,
+        #tabContent .bg-yellow-900\/30 {
+            background: #eef3ff !important;
+            color: #3a4963 !important;
+            border-color: #ccd8f5 !important;
+        }
+
+        #tabContent .bg-blue-600,
+        #tabContent .bg-indigo-600,
+        #tabContent .bg-purple-600 {
+            background: #5b5ce2 !important;
+            color: #ffffff !important;
+            border: 1px solid #4f50cb !important;
+        }
+
+        #tabContent .bg-green-600 {
+            background: #16a56f !important;
+            color: #ffffff !important;
+            border: 1px solid #128a5e !important;
+        }
+
+        #tabContent .bg-red-600,
+        #tabContent .bg-red-700,
+        #tabContent .bg-red-800,
+        #tabContent .bg-red-900 {
+            background: #e53935 !important;
+            color: #ffffff !important;
+            border: 1px solid #cf2f2b !important;
+        }
+
+        #tabContent .bg-yellow-500,
+        #tabContent .bg-yellow-600 {
+            background: #f6bd16 !important;
+            color: #332700 !important;
+            border: 1px solid #e0aa0e !important;
+        }
+
+        #tabContent button,
+        #tabContent .admin-write,
+        #tabContent a[class*="bg-"] {
+            font-weight: 800;
+        }
+
+        #tabContent pre {
+            background: #f7f9fd !important;
+            color: #41516b !important;
+            border-color: #dce3ef !important;
+        }
+
+        #tabContent [class*="rounded-lg"],
+        #tabContent [class*="rounded-xl"] {
+            border-radius: 12px !important;
+        }
+
+        @media (max-width: 1100px) {
+            .admin-shell {
+                grid-template-columns: 1fr;
+            }
+
+            .side {
+                border-right: 0;
+                border-bottom: 1px solid var(--line);
+                padding-bottom: 8px;
+            }
+
+            #tabMenu {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+            }
+
+            .topbar {
+                position: static;
+            }
+
+            #tabContent {
+                min-height: 50vh;
+            }
+        }
     </style>
 </head>
-<body class="min-h-screen">
-
-    <!-- ===== 로그인 화면 (비인증 시 표시) ===== -->
-    <div id="loginSection" class="flex items-center justify-center min-h-screen">
-        <div class="bg-gray-800 border border-gray-700 rounded-xl p-8 w-full max-w-md shadow-2xl">
-            <h1 class="text-2xl font-bold text-center mb-2">CleverSearch</h1>
-            <p class="text-gray-400 text-center mb-6 text-sm">관리자 로그인</p>
-            <div class="space-y-4">
+<body>
+    <div class="admin-shell">
+        <aside class="side">
+            <div class="brand">
+                <div class="brand-mark">A</div>
                 <div>
-                    <label class="block text-sm text-gray-400 mb-1">아이디</label>
-                    <input id="loginUser" value="admin" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-                </div>
-                <div>
-                    <label class="block text-sm text-gray-400 mb-1">비밀번호</label>
-                    <input id="loginPass" value="admin123!" type="password" class="w-full bg-gray-900 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-                </div>
-                <div id="loginError" class="hidden text-red-400 text-sm text-center"></div>
-                <button onclick="loginJwt()" class="w-full px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium transition">로그인</button>
-            </div>
-            <div class="mt-4 text-center">
-                <a href="/" class="text-xs text-gray-500 hover:text-gray-300">검색 페이지로 이동</a>
-            </div>
-        </div>
-    </div>
-
-    <!-- ===== 메인 관리자 콘텐츠 (인증 후 표시) ===== -->
-    <div id="mainContent" class="hidden">
-        <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="flex items-center justify-between mb-6">
-                <h1 class="text-2xl font-bold">CleverSearch 관리자</h1>
-                <div class="flex items-center gap-2">
-                    <span class="text-sm text-gray-400" id="loggedInUser"></span>
-                    <span class="pill" id="authStatus">JWT</span>
-                    <button onclick="logoutJwt()" class="px-3 py-1 rounded bg-red-700 hover:bg-red-600 text-sm">로그아웃</button>
-                    <a href="/" class="px-3 py-2 rounded bg-gray-700 hover:bg-gray-600 text-sm">검색 페이지</a>
+                    <div class="text-base font-extrabold text-slate-800">CleverSearch</div>
+                    <div class="text-xs text-slate-500">Administrator</div>
                 </div>
             </div>
-
-            <!-- 탭 메뉴 (menu.html에서 동적 로드) -->
             <div id="tabMenuContainer"></div>
+        </aside>
 
-            <!-- 탭 콘텐츠 (*.html에서 동적 로드) -->
-            <div id="tabContent"></div>
+        <div>
+            <header class="topbar">
+                <div class="text-lg font-extrabold tracking-tight">Admin Console</div>
+                <div class="flex items-center gap-2">
+                    <span class="pill" id="authStatus">JWT Session</span>
+                    <span class="pill" id="loggedInUser">-</span>
+                    <a href="/" class="btn-top px-3 py-2 text-sm">검색 페이지</a>
+                    <button onclick="logoutJwt()" class="btn-top px-3 py-2 text-sm">로그아웃</button>
+                </div>
+            </header>
 
+            <main class="content-wrap">
+                <div id="tabContent"></div>
+            </main>
         </div>
     </div>
 
     <script>
-        /* ===== 글로벌 상수 ===== */
         const _ORIGIN = window.location.origin;
         const API = `${_ORIGIN}/api/v1/admin`;
         const FILE_API = `${_ORIGIN}/api/v1/user/file`;
@@ -99,94 +496,52 @@
         let refreshToken = localStorage.getItem("cleversearch_admin_refresh_token") || "";
         let loggedInUsername = localStorage.getItem("cleversearch_admin_username") || "";
         let loggedInRole = localStorage.getItem("cleversearch_admin_role") || "viewer";
-        let trendChart = null;
-        let keywordChart = null;
 
-        /* 탭 이름 목록 */
         const TAB_NAMES = [
-            "upload", "docs", "popular", "logs", "recent", "failed",
-            "dashboard", "dictionary", "smb", "dbsources", "scheduler",
-            "ssl", "scoring", "reset"
+            "dashboard", "docs", "upload", "popular", "logs", "recent", "failed",
+            "dictionary", "smb", "dbsources", "scheduler", "ssl", "scoring", "reset"
         ];
 
-        /* 현재 활성 탭 */
-        let activeTab = "upload";
-
-        /* 탭별 초기화 함수 (탭 로드 후 호출) */
         const tabInitMap = {
-            upload: () => { setupUpload(); },
-            docs: () => { loadDocs(); },
-            popular: () => { loadPopular(); },
-            logs: () => { loadLogs(); },
-            recent: () => { loadRecent(); },
-            failed: () => { loadFailed(); },
-            dashboard: () => { loadDashboard(); },
-            dictionary: () => { loadDictionaryEntries(); },
-            smb: () => { loadSmbSources(); },
-            dbsources: () => { loadDbSources(); },
-            scheduler: () => { loadSchedulerStatus(); },
-            ssl: () => { scanCertificates(); },
-            scoring: () => { loadScoringWeights(); },
+            dashboard: () => { if (typeof loadDashboard === "function") loadDashboard(); },
+            docs: () => { if (typeof loadDocs === "function") loadDocs(); },
+            upload: () => { if (typeof setupUpload === "function") setupUpload(); },
+            popular: () => { if (typeof loadPopular === "function") loadPopular(); },
+            logs: () => { if (typeof loadLogs === "function") loadLogs(); },
+            recent: () => { if (typeof loadRecent === "function") loadRecent(); },
+            failed: () => { if (typeof loadFailed === "function") loadFailed(); },
+            dictionary: () => { if (typeof loadDictionaryEntries === "function") loadDictionaryEntries(); },
+            smb: () => { if (typeof loadSmbSources === "function") loadSmbSources(); },
+            dbsources: () => { if (typeof loadDbSources === "function") loadDbSources(); },
+            scheduler: () => { if (typeof loadSchedulerStatus === "function") loadSchedulerStatus(); },
+            ssl: () => { if (typeof scanCertificates === "function") scanCertificates(); },
+            scoring: () => { if (typeof loadScoringWeights === "function") loadScoringWeights(); },
             reset: null
         };
 
-        /* ===== 인증 상태 UI 전환 ===== */
-        function showApp() {
-            document.getElementById("loginSection").classList.add("hidden");
-            document.getElementById("mainContent").classList.remove("hidden");
-            document.getElementById("loggedInUser").textContent = loggedInUsername || "admin";
-            initAdmin();
+        let activeTab = "dashboard";
+        const tabCache = {};
+
+        function forceLoginRedirect() {
+            window.location.replace("/static/admin/login.html");
         }
 
-        function showLogin() {
-            document.getElementById("loginSection").classList.remove("hidden");
-            document.getElementById("mainContent").classList.add("hidden");
-        }
-
-        /* ===== 로그인 ===== */
-        async function loginJwt() {
-            const username = document.getElementById("loginUser").value;
-            const password = document.getElementById("loginPass").value;
-            const errEl = document.getElementById("loginError");
-            errEl.classList.add("hidden");
-            try {
-                const res = await fetch(`${AUTH_API}/login`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username, password })
-                });
-                const payload = await res.json();
-                if (res.ok && payload.access_token) {
-                    accessToken = payload.access_token;
-                    refreshToken = payload.refresh_token || "";
-                    loggedInUsername = payload.username || username;
-                    loggedInRole = payload.role || "viewer";
-                    localStorage.setItem("cleversearch_admin_token", accessToken);
-                    localStorage.setItem("cleversearch_admin_refresh_token", refreshToken);
-                    localStorage.setItem("cleversearch_admin_username", loggedInUsername);
-                    localStorage.setItem("cleversearch_admin_role", loggedInRole);
-                    location.reload();
-                } else {
-                    errEl.textContent = payload.detail || "로그인 실패: 아이디 또는 비밀번호를 확인하세요";
-                    errEl.classList.remove("hidden");
-                }
-            } catch (e) {
-                errEl.textContent = "서버에 연결할 수 없습니다";
-                errEl.classList.remove("hidden");
-            }
-        }
-
-        /* ===== 로그아웃 ===== */
         async function logoutJwt() {
             try {
                 if (accessToken) {
                     await fetch(`${AUTH_API}/logout`, {
                         method: "POST",
-                        headers: { "Authorization": `Bearer ${accessToken}`, "Content-Type": "application/json" },
+                        headers: {
+                            "Authorization": `Bearer ${accessToken}`,
+                            "Content-Type": "application/json"
+                        },
                         body: JSON.stringify({ refresh_token: refreshToken || null })
                     });
                 }
-            } catch (e) { /* ignore */ }
+            } catch (e) {
+                // network error on logout is non-fatal for local session cleanup
+            }
+
             accessToken = "";
             refreshToken = "";
             loggedInUsername = "";
@@ -195,28 +550,23 @@
             localStorage.removeItem("cleversearch_admin_refresh_token");
             localStorage.removeItem("cleversearch_admin_username");
             localStorage.removeItem("cleversearch_admin_role");
-            showLogin();
+            forceLoginRedirect();
         }
 
-        /* ===== API 요청 헬퍼 (지연 안내 메시지) ===== */
         async function apiFetch(url, options = {}) {
             const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-            if (accessToken) {
-                headers["Authorization"] = `Bearer ${accessToken}`;
-            }
+            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
 
             let slowNoticeTimer = null;
-            let slowNoticeShown = false;
             slowNoticeTimer = setTimeout(() => {
-                slowNoticeShown = true;
-                const msg = "요청이 지연되고 있습니다. 네트워크/서버 상태를 확인해 주세요.";
+                const msg = "요청이 지연되고 있습니다. 네트워크 또는 서버 상태를 확인해 주세요.";
                 const target = document.getElementById("tabContent");
                 if (target) {
                     const prev = target.querySelector("#apiSlowNotice");
                     if (!prev) {
                         const notice = document.createElement("div");
                         notice.id = "apiSlowNotice";
-                        notice.className = "mb-3 rounded border border-yellow-700 bg-yellow-900/30 px-3 py-2 text-sm text-yellow-200";
+                        notice.className = "mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800";
                         notice.textContent = msg;
                         target.prepend(notice);
                     }
@@ -226,7 +576,7 @@
             try {
                 const res = await fetch(url, { ...options, headers });
                 if (res.status === 401) {
-                    logoutJwt();
+                    await logoutJwt();
                     return { ok: false, status: 401, data: { detail: "세션 만료" } };
                 }
                 const data = await res.json().catch(() => ({ raw: "json parse fail" }));
@@ -235,14 +585,11 @@
                 return { ok: false, status: 0, data: { detail: "서버 연결 실패" } };
             } finally {
                 if (slowNoticeTimer) clearTimeout(slowNoticeTimer);
-                if (slowNoticeShown) {
-                    const notice = document.getElementById("apiSlowNotice");
-                    if (notice) notice.remove();
-                }
+                const notice = document.getElementById("apiSlowNotice");
+                if (notice) notice.remove();
             }
         }
 
-        /* ===== 유틸리티 함수 ===== */
         function fmt(v) { return (v === null || v === undefined || v === "") ? "-" : v; }
         function yesNo(v) { return v ? "Y" : "N"; }
 
@@ -251,8 +598,39 @@
             if (el) el.textContent = JSON.stringify(payload, null, 2);
         }
 
-        /* ===== 동적 탭 로딩 ===== */
-        const tabCache = {};
+        function applyButtonPreset(button, text) {
+            button.classList.remove(
+                "btn-primary", "btn-secondary", "btn-success", "btn-danger-solid", "btn-warning", "btn-info"
+            );
+
+            if (/삭제|초기화|중지|복원/.test(text)) {
+                button.classList.add("btn-danger-solid");
+                return;
+            }
+            if (/저장|적용|생성|업로드/.test(text)) {
+                button.classList.add("btn-primary");
+                return;
+            }
+            if (/실행|시작|동기화/.test(text)) {
+                button.classList.add("btn-success");
+                return;
+            }
+            if (/상태|조회|새로고침|전환|토글|추천|디버그/.test(text)) {
+                button.classList.add("btn-secondary");
+                return;
+            }
+            button.classList.add("btn-soft");
+        }
+
+        function normalizeTabUi(container) {
+            container.querySelectorAll("button").forEach(button => {
+                if (button.classList.contains("tab")) return;
+
+                button.classList.add("btn-unified");
+                const text = (button.textContent || "").replace(/\s+/g, "").trim();
+                applyButtonPreset(button, text);
+            });
+        }
 
         async function loadTabHtml(tabName) {
             if (tabCache[tabName]) return tabCache[tabName];
@@ -263,22 +641,21 @@
                 tabCache[tabName] = html;
                 return html;
             } catch (e) {
-                return `<div class="text-red-400 p-4">탭 로드 실패: ${tabName} (${e.message})</div>`;
+                return `<div class="text-red-600 p-4">탭 로드 실패: ${tabName} (${e.message})</div>`;
             }
         }
 
         async function switchTab(tabName) {
             activeTab = tabName;
-            /* 메뉴 버튼 활성화 상태 변경 */
             document.querySelectorAll("#tabMenuContainer .tab").forEach(btn => {
                 btn.classList.toggle("active", btn.dataset.tab === tabName);
             });
-            /* 탭 콘텐츠 로드 */
+
             const container = document.getElementById("tabContent");
-            container.innerHTML = '<div class="text-gray-400 p-4">로딩 중...</div>';
+            container.innerHTML = '<div class="text-slate-500 p-4">로딩 중...</div>';
             const html = await loadTabHtml(tabName);
             container.innerHTML = html;
-            /* 탭 내 script 태그 실행 */
+
             container.querySelectorAll("script").forEach(oldScript => {
                 const newScript = document.createElement("script");
                 if (oldScript.src) {
@@ -288,22 +665,26 @@
                 }
                 oldScript.parentNode.replaceChild(newScript, oldScript);
             });
-            /* viewer 역할이면 쓰기 버튼 비활성화 */
+
+            normalizeTabUi(container);
+
             if (loggedInRole === "viewer") {
                 container.querySelectorAll(".admin-write").forEach(btn => {
                     btn.disabled = true;
                     btn.classList.add("opacity-40", "cursor-not-allowed");
-                    btn.title = "viewer 권한으로는 이 기능을 사용할 수 없습니다";
+                    btn.title = "viewer 권한으로는 사용할 수 없습니다";
                 });
                 const dz = document.getElementById("dropZone");
-                if (dz) { dz.style.pointerEvents = "none"; dz.classList.add("opacity-40"); }
+                if (dz) {
+                    dz.style.pointerEvents = "none";
+                    dz.classList.add("opacity-40");
+                }
             }
-            /* 탭별 초기화 함수 호출 */
+
             const initFn = tabInitMap[tabName];
             if (initFn) initFn();
         }
 
-        /* ===== 메뉴 로드 및 탭 이벤트 설정 ===== */
         async function loadMenu() {
             const container = document.getElementById("tabMenuContainer");
             try {
@@ -311,134 +692,44 @@
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 container.innerHTML = await res.text();
             } catch (e) {
-                /* 메뉴 로드 실패 시 인라인 폴백 생성 */
-                container.innerHTML = TAB_NAMES.map((name, i) =>
-                    `<button class="tab ${i===0?'active':''} px-3 py-2 rounded bg-gray-700 text-sm" data-tab="${name}">${name}</button>`
-                ).join("");
+                container.innerHTML = `<div id="tabMenu">${TAB_NAMES.map((name, i) =>
+                    `<button class="tab ${i===0?"active":""}" data-tab="${name}">${name}</button>`
+                ).join("")}</div>`;
             }
-            /* 탭 클릭 이벤트 바인딩 */
+
             container.querySelectorAll(".tab").forEach(btn => {
                 btn.addEventListener("click", () => switchTab(btn.dataset.tab));
             });
         }
 
-        /* ===== 파일 업로드 (드래그&드롭) ===== */
-        function setupUpload() {
-            const dropZone = document.getElementById("dropZone");
-            const fileInput = document.getElementById("fileInput");
-            if (!dropZone || !fileInput) return;
-
-            dropZone.addEventListener("click", () => fileInput.click());
-            dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("dragover"); });
-            dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
-            dropZone.addEventListener("drop", (e) => {
-                e.preventDefault();
-                dropZone.classList.remove("dragover");
-                handleFiles(e.dataTransfer.files);
-            });
-            fileInput.addEventListener("change", () => { handleFiles(fileInput.files); fileInput.value = ""; });
-        }
-
-        async function handleFiles(fileList) {
-            const queue = document.getElementById("uploadQueue");
-            for (const file of fileList) {
-                const row = document.createElement("div");
-                row.className = "flex items-center gap-2 bg-gray-800 rounded px-3 py-2 text-sm";
-                row.innerHTML = `<span class="flex-1">${file.name}</span><span class="text-yellow-400">업로드 중...</span>`;
-                queue.appendChild(row);
-                try {
-                    const formData = new FormData();
-                    formData.append("file", file);
-                    const headers = {};
-                    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
-                    const res = await fetch(`${FILE_API}/upload`, { method: "POST", headers, body: formData });
-                    const data = await res.json();
-                    const statusText = data.status || (res.ok ? "success" : "fail");
-                    const color = statusText === "success" ? "text-green-400" : statusText === "skipped" ? "text-blue-400" : "text-red-400";
-                    row.innerHTML = `<span class="flex-1">${file.name}</span><span class="${color}">${statusText}</span><span class="text-gray-500 text-xs">${data.message || data.detail || ""}</span>`;
-                } catch (e) {
-                    row.innerHTML = `<span class="flex-1">${file.name}</span><span class="text-red-400">네트워크 오류</span>`;
-                }
-            }
-        }
-
-        /* ===== 대시보드 헬퍼 (Chart.js 관련) ===== */
-        function toggleDashboardDebug() {
-            ["dashboardHealth", "dashboardSummary", "dashboardTrend"].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.classList.toggle("hidden");
-            });
-        }
-
-        function renderAlertBadges(rows) {
-            const container = document.getElementById("alertBadges");
-            if (!container) return;
-            const data = Array.isArray(rows) ? rows : [];
-            container.innerHTML = data.map(row => {
-                const severity = row.severity || "info";
-                const message = row.message || row.code || "알림";
-                return `<span class="badge ${severity}">${message}</span>`;
-            }).join("");
-        }
-
-        function drawTrendChart(trendRows) {
-            const el = document.getElementById("trendChart");
-            if (!el) return;
-            const labels = (trendRows || []).map(row => row.date);
-            const success = (trendRows || []).map(row => row.success || 0);
-            const failed = (trendRows || []).map(row => row.failed || 0);
-            const ctx = el.getContext("2d");
-            if (trendChart) trendChart.destroy();
-            trendChart = new Chart(ctx, {
-                type: "bar",
-                data: { labels, datasets: [
-                    { label: "성공", data: success, backgroundColor: "rgba(34,197,94,0.7)" },
-                    { label: "실패", data: failed, backgroundColor: "rgba(239,68,68,0.7)" }
-                ]},
-                options: { responsive: true, plugins: { legend: { labels: { color: "#e5e7eb" } } }, scales: { x: { ticks: { color: "#9ca3af" } }, y: { ticks: { color: "#9ca3af" } } } }
-            });
-        }
-
-        function drawKeywordChart(summary) {
-            const el = document.getElementById("keywordChart");
-            if (!el) return;
-            const rows = (summary?.top_keywords || []).slice(0, 5);
-            const labels = rows.map(row => row.keyword);
-            const values = rows.map(row => row.count);
-            const ctx = el.getContext("2d");
-            if (keywordChart) keywordChart.destroy();
-            keywordChart = new Chart(ctx, {
-                type: "doughnut",
-                data: { labels, datasets: [{ data: values, backgroundColor: ["#60a5fa", "#34d399", "#fbbf24", "#f87171", "#a78bfa"] }] },
-                options: { plugins: { legend: { labels: { color: "#e5e7eb" } } } }
-            });
-        }
-
-        /* ===== JSON / 리스트 전환 토글 ===== */
         function toggleDictView() {
             const j = document.getElementById("dictionaryOutput");
             const l = document.getElementById("dictionaryList");
             if (j) j.classList.toggle("hidden");
             if (l) l.classList.toggle("hidden");
         }
+
         function toggleSmbView() {
             const j = document.getElementById("smbOutput");
             const l = document.getElementById("smbList");
             if (j) j.classList.toggle("hidden");
             if (l) l.classList.toggle("hidden");
         }
+
         function toggleDbView() {
             const j = document.getElementById("dbOutput");
             const l = document.getElementById("dbList");
             if (j) j.classList.toggle("hidden");
             if (l) l.classList.toggle("hidden");
         }
+
         function toggleSchedulerView() {
             const j = document.getElementById("schedulerOutput");
             const l = document.getElementById("schedulerList");
             if (j) j.classList.toggle("hidden");
             if (l) l.classList.toggle("hidden");
         }
+
         function toggleSslView() {
             const j = document.getElementById("sslOutput");
             const l = document.getElementById("sslList");
@@ -446,26 +737,17 @@
             if (l) l.classList.toggle("hidden");
         }
 
-        /* ===== 엔터 키 로그인 ===== */
-        document.addEventListener("keydown", (e) => {
-            if (e.key === "Enter" && !document.getElementById("loginSection").classList.contains("hidden")) {
-                loginJwt();
-            }
-        });
-
-        /* ===== 관리자 초기화 (메뉴 + 첫 탭 로드) ===== */
         async function initAdmin() {
+            document.getElementById("loggedInUser").textContent = loggedInUsername || "admin";
             await loadMenu();
-            await switchTab("upload");
+            await switchTab("dashboard");
         }
 
-        /* ===== 시작 ===== */
-        if (accessToken) {
-            showApp();
+        if (!accessToken) {
+            forceLoginRedirect();
         } else {
-            showLogin();
+            initAdmin();
         }
     </script>
 </body>
 </html>
-

@@ -10,21 +10,44 @@
 -->
 
 <!-- 문서 목록 탭 -->
-<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b>📝 문서 목록</b> — OpenSearch에 색인된 전체 문서를 조회합니다.<br>
-    • 파일명, 확장자, 카테고리, 등록일시, 본문 미리보기를 확인할 수 있습니다.<br>
-    • 각 문서의 <b>[삭제]</b> 버튼으로 OpenSearch + DB에서 동시 제거합니다.
-</div>
-<div class="flex gap-2 mb-3">
-    <button onclick="loadDocs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
-    <span id="docTotal" class="text-sm text-gray-400 self-center"></span>
-</div>
-<div class="overflow-auto border border-gray-700 rounded">
-    <table class="w-full text-sm">
-        <thead class="bg-gray-800"><tr><th class="p-2 text-left">ID</th><th class="p-2 text-left">제목</th><th class="p-2 text-left">파일명</th><th class="p-2 text-left">확장자</th><th class="p-2 text-left">카테고리</th><th class="p-2 text-left">등록일시</th><th class="p-2 text-left">미리보기</th><th class="p-2 text-left">삭제</th></tr></thead>
-        <tbody id="docsBody"></tbody>
-    </table>
-</div>
+<section class="space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h2 class="text-2xl font-extrabold text-slate-800">Data Tables</h2>
+            <p class="text-sm text-slate-500">색인 문서 목록을 조회하고 필요 시 즉시 삭제합니다.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <button onclick="loadDocs()" class="btn-primary px-3 py-2 text-sm">새로고침</button>
+            <span id="docTotal" class="text-sm font-bold text-slate-500"></span>
+        </div>
+    </div>
+
+    <div class="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 class="mb-3 text-xl font-bold text-slate-800">Bootstrap Data Table</h3>
+        <div class="mb-3 flex flex-wrap gap-2 text-sm text-slate-500">
+            <span>Search:</span>
+            <input type="text" class="w-56" placeholder="Search..." disabled />
+        </div>
+
+        <div class="overflow-auto rounded-lg border border-slate-200">
+            <table class="text-sm">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>제목</th>
+                        <th>파일명</th>
+                        <th>확장자</th>
+                        <th>카테고리</th>
+                        <th>등록일시</th>
+                        <th>미리보기</th>
+                        <th>삭제</th>
+                    </tr>
+                </thead>
+                <tbody id="docsBody"></tbody>
+            </table>
+        </div>
+    </div>
+</section>
 
 <script>
 async function loadDocs() {
@@ -41,7 +64,7 @@ async function loadDocs() {
             <td class="p-2">${fmt(row.file_ext)}</td>
             <td class="p-2">${fmt(row.doc_category)}</td>
             <td class="p-2">${fmt(row.indexed_at)}</td>
-            <td class="p-2 max-w-xs truncate">${fmt(row.text_preview)}</td>
+            <td class="p-2 max-w-xs truncate text-slate-500">${fmt(row.text_preview)}</td>
             <td class="p-2">${loggedInRole === "viewer" ? '<span class="text-gray-600 opacity-40">삭제</span>' : '<span class="btn-del" onclick="deleteDoc(' + row.id + ')">삭제</span>'}</td>
         </tr>`
     ).join("") || '<tr><td class="p-2" colspan="8">데이터 없음</td></tr>';

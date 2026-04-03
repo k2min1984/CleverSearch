@@ -11,44 +11,45 @@
 -->
 
 <!-- 대시보드 탭 -->
-<div class="flex gap-2 mb-3">
-    <input id="dashboardDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
-    <button onclick="loadDashboard()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">새로고침</button>
-    <button onclick="runSmokeFromUI()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">스모크 실행</button>
-    <button onclick="toggleDashboardDebug()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">디버그 토글</button>
-</div>
-<div id="alertBadges" class="flex flex-wrap gap-2 mb-3"></div>
-<div class="grid md:grid-cols-4 gap-3 mb-3">
-    <div class="metric"><div class="metric-label">전체 로그</div><div class="metric-value" id="mTotalLogs">0</div></div>
-    <div class="metric"><div class="metric-label">실패 로그</div><div class="metric-value" id="mFailedLogs">0</div></div>
-    <div class="metric"><div class="metric-label">실패율</div><div class="metric-value" id="mFailureRate">0%</div></div>
-    <div class="metric"><div class="metric-label">스케줄러</div><div class="metric-value" id="mScheduler">stopped</div></div>
-</div>
-<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-3 text-sm text-blue-200">
-    <b>📊 대시보드란?</b> 검색 서비스의 운영 현황을 한눈에 파악할 수 있는 모니터링 화면입니다.<br>
-    • <b>전체 로그</b>: 설정 기간 내 총 검색 횟수<br>
-    • <b>실패 로그</b>: 검색 결과가 0건인 검색 횟수<br>
-    • <b>실패율</b>: 전체 대비 실패 비율 (%)<br>
-    • <b>스케줄러</b>: 자동 색인 스케줄러 실행 상태<br>
-    • <b>트렌드 차트</b>: 일별 성공/실패 검색 횟수 막대 그래프<br>
-    • <b>인기 키워드 차트</b>: 검색 빈도 상위 5개 키워드 도넛 차트<br>
-    • <b>스모크 실행</b>: 주요 API 엔드포인트가 정상 응답하는지 자동 테스트<br>
-    • <b>디버그 토글</b>: 원본 JSON 데이터(Health/Summary/Trend)를 표시/숨김
-</div>
-<div class="grid md:grid-cols-2 gap-3 mb-3">
-    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:360px">
-        <h4 class="text-sm font-bold text-gray-300 mb-1">📈 일별 검색 트렌드 (성공/실패)</h4>
-        <canvas id="trendChart" height="180"></canvas>
+<section class="space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h2 class="text-2xl font-extrabold text-slate-800">Dashboard</h2>
+            <p class="text-sm text-slate-500">운영 현황을 카드/차트 중심으로 확인합니다.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <input id="dashboardDays" type="number" min="1" value="7" class="w-20" />
+            <button onclick="loadDashboard()" class="btn-primary px-3 py-2 text-sm">새로고침</button>
+            <button onclick="runSmokeFromUI()" class="btn-soft px-3 py-2 text-sm">스모크 실행</button>
+            <button onclick="toggleDashboardDebug()" class="btn-soft px-3 py-2 text-sm">디버그</button>
+        </div>
     </div>
-    <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 overflow-hidden" style="max-height:360px">
-        <h4 class="text-sm font-bold text-gray-300 mb-1">🍩 인기 키워드 TOP 5</h4>
-        <canvas id="keywordChart" height="180"></canvas>
+
+    <div id="alertBadges" class="flex flex-wrap gap-2"></div>
+
+    <div class="grid gap-3 md:grid-cols-4">
+        <div class="metric"><div class="metric-label">TOTAL LOGS</div><div class="metric-value" id="mTotalLogs">0</div></div>
+        <div class="metric"><div class="metric-label">FAILED LOGS</div><div class="metric-value" id="mFailedLogs">0</div></div>
+        <div class="metric"><div class="metric-label">FAILURE RATE</div><div class="metric-value" id="mFailureRate">0%</div></div>
+        <div class="metric"><div class="metric-label">SCHEDULER</div><div class="metric-value" id="mScheduler">stopped</div></div>
     </div>
-</div>
-<pre id="dashboardHealth" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mb-3"></pre>
-<pre id="dashboardSummary" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
-<pre id="dashboardTrend" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mt-3"></pre>
-<pre id="smokeOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto mt-3"></pre>
+
+    <div class="grid gap-3 lg:grid-cols-3">
+        <div class="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-4">
+            <h4 class="mb-2 text-sm font-extrabold text-slate-700">Site Visits Trend</h4>
+            <canvas id="trendChart" height="150"></canvas>
+        </div>
+        <div class="rounded-xl border border-slate-200 bg-white p-4">
+            <h4 class="mb-2 text-sm font-extrabold text-slate-700">Top Keywords</h4>
+            <canvas id="keywordChart" height="150"></canvas>
+        </div>
+    </div>
+
+    <pre id="dashboardHealth" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
+    <pre id="dashboardSummary" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
+    <pre id="dashboardTrend" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
+    <pre id="smokeOutput" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
+</section>
 
 <script>
 let trendChart = null;
