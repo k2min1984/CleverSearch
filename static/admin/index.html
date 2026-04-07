@@ -58,14 +58,10 @@
         }
 
         .brand-mark {
-            width: 34px;
-            height: 34px;
-            border-radius: 10px;
-            display: grid;
-            place-items: center;
-            color: #fff;
-            font-weight: 800;
-            background: linear-gradient(140deg, #4d62e6, #7a60f3);
+            width: 44px;
+            height: 44px;
+            object-fit: contain;
+            filter: drop-shadow(0 4px 10px rgba(30, 41, 59, 0.18));
         }
 
         .topbar {
@@ -459,7 +455,7 @@
     <div class="admin-shell">
         <aside class="side">
             <div class="brand">
-                <div class="brand-mark">A</div>
+                <img class="brand-mark" src="/static/clever-cloud.png" alt="CleverSearch logo" loading="eager" />
                 <div>
                     <div class="text-base font-extrabold text-slate-800">CleverSearch</div>
                     <div class="text-xs text-slate-500">Administrator</div>
@@ -521,6 +517,24 @@
 
         let activeTab = "dashboard";
         const tabCache = {};
+
+        function resolveInitialTab() {
+            const fromHash = (window.location.hash || "").replace(/^#/, "").trim();
+            if (TAB_NAMES.includes(fromHash)) return fromHash;
+
+            const fromStorage = localStorage.getItem("cleversearch_admin_active_tab") || "";
+            if (TAB_NAMES.includes(fromStorage)) return fromStorage;
+
+            return "dashboard";
+        }
+
+        function persistActiveTab(tabName) {
+            if (!TAB_NAMES.includes(tabName)) return;
+            localStorage.setItem("cleversearch_admin_active_tab", tabName);
+            if (window.location.hash !== `#${tabName}`) {
+                window.history.replaceState(null, "", `#${tabName}`);
+            }
+        }
 
         function forceLoginRedirect() {
             window.location.replace("/static/admin/login.html");
@@ -615,7 +629,7 @@
                 button.classList.add("btn-success");
                 return;
             }
-            if (/상태|조회|새로고침|전환|토글|추천|디버그/.test(text)) {
+            if (/상태|조회|전환|토글|추천|디버그/.test(text)) {
                 button.classList.add("btn-secondary");
                 return;
             }
@@ -646,7 +660,11 @@
         }
 
         async function switchTab(tabName) {
+            if (!TAB_NAMES.includes(tabName)) {
+                tabName = "dashboard";
+            }
             activeTab = tabName;
+            persistActiveTab(tabName);
             document.querySelectorAll("#tabMenuContainer .tab").forEach(btn => {
                 btn.classList.toggle("active", btn.dataset.tab === tabName);
             });
@@ -740,8 +758,15 @@
         async function initAdmin() {
             document.getElementById("loggedInUser").textContent = loggedInUsername || "admin";
             await loadMenu();
-            await switchTab("dashboard");
+            await switchTab(resolveInitialTab());
         }
+
+        window.addEventListener("hashchange", () => {
+            const fromHash = (window.location.hash || "").replace(/^#/, "").trim();
+            if (TAB_NAMES.includes(fromHash) && fromHash !== activeTab) {
+                switchTab(fromHash);
+            }
+        });
 
         if (!accessToken) {
             forceLoginRedirect();

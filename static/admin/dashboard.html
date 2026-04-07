@@ -19,7 +19,6 @@
         </div>
         <div class="flex flex-wrap gap-2">
             <input id="dashboardDays" type="number" min="1" value="7" class="w-20" />
-            <button onclick="loadDashboard()" class="btn-primary px-3 py-2 text-sm">새로고침</button>
             <button onclick="runSmokeFromUI()" class="btn-soft px-3 py-2 text-sm">스모크 실행</button>
             <button onclick="toggleDashboardDebug()" class="btn-soft px-3 py-2 text-sm">디버그</button>
         </div>
@@ -122,4 +121,6 @@ async function runSmokeFromUI() {
     const result = await apiFetch(`${SYS_API}/ops/run-smoke-test`, { method: "POST" });
     writeJson("smokeOutput", result.data || result);
 }
+
+document.getElementById("dashboardDays")?.addEventListener("change", loadDashboard);
 </script>

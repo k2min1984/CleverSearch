@@ -34,15 +34,10 @@
             margin-bottom: 18px;
         }
         .mark {
-            width: 42px;
-            height: 42px;
-            border-radius: 12px;
-            display: grid;
-            place-items: center;
-            color: #fff;
-            font-size: 22px;
-            font-weight: 800;
-            background: linear-gradient(145deg, #5962e7, #745cf3);
+            width: 52px;
+            height: 52px;
+            object-fit: contain;
+            filter: drop-shadow(0 4px 10px rgba(30, 41, 59, 0.18));
         }
         .input {
             width: 100%;
@@ -78,7 +73,7 @@
 <body>
     <form class="card" id="loginForm">
         <div class="brand">
-            <div class="mark">A</div>
+            <img class="mark" src="/static/clever-cloud.png" alt="CleverSearch logo" loading="eager" />
             <div>
                 <div class="text-lg font-extrabold text-slate-800">CleverSearch</div>
                 <div class="text-xs text-slate-500">Administrator Login</div>

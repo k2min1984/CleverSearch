@@ -46,7 +46,7 @@ class Settings:
     
     # 보안 인증 정보 (운영 환경에서는 반드시 강력한 비밀번호로 변경 필요)
     OS_ADMIN = os.getenv("OS_ADMIN", "admin")
-    OS_PASSWORD = os.getenv("OS_PASSWORD", "Admin123!") # 대소문자+특수문자 규칙 준수 권장
+    OS_PASSWORD = os.getenv("OS_PASSWORD", "admin") # 로컬 기본값(OpenSearch 초기 기본 계정) / 운영에서는 반드시 교체
     
     # 검색 엔에서 사용할 메인 인덱스 명칭 (file.py, index.py와 통일)
     OPENSEARCH_INDEX = os.getenv("OPENSEARCH_INDEX", "cleversearch-docs")
@@ -57,7 +57,7 @@ class Settings:
     OPENSEARCH_SSL_ASSERT_HOSTNAME = _get_bool_env("OPENSEARCH_SSL_ASSERT_HOSTNAME", "false")
     OPENSEARCH_SSL_SHOW_WARN = _get_bool_env("OPENSEARCH_SSL_SHOW_WARN", "false")
     OPENSEARCH_TIMEOUT_SECONDS = int(os.getenv("OPENSEARCH_TIMEOUT_SECONDS", "30"))
-    OPENSEARCH_HTTP_COMPRESS = _get_bool_env("OPENSEARCH_HTTP_COMPRESS", "true")
+    OPENSEARCH_HTTP_COMPRESS = _get_bool_env("OPENSEARCH_HTTP_COMPRESS", "false")
     OPENSEARCH_POOL_MAXSIZE = int(os.getenv("OPENSEARCH_POOL_MAXSIZE", "25"))
     OPENSEARCH_MAX_RETRIES = int(os.getenv("OPENSEARCH_MAX_RETRIES", "2"))
     OPENSEARCH_RETRY_ON_TIMEOUT = _get_bool_env("OPENSEARCH_RETRY_ON_TIMEOUT", "true")
@@ -143,7 +143,7 @@ class Settings:
     # API/웹 보안 설정
     CORS_ALLOWED_ORIGINS = _get_csv_env(
         "CORS_ALLOWED_ORIGINS",
-        "https://localhost:8443,http://localhost:8443,https://127.0.0.1:8443,http://127.0.0.1:8443",
+        "https://localhost:8000,http://localhost:8000,https://127.0.0.1:8000,http://127.0.0.1:8000,https://localhost:8443,http://localhost:8443,https://127.0.0.1:8443,http://127.0.0.1:8443",
     )
     ALLOWED_HOSTS = _get_csv_env("ALLOWED_HOSTS", "localhost,127.0.0.1")
     ENABLE_API_DOCS = _get_bool_env(

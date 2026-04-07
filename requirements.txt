@@ -1,26 +1,42 @@
+# ── Web Framework & Server ──
 fastapi
 uvicorn[standard]
-opensearch-py
-python-dotenv
-pymupdf
 python-multipart
+python-dotenv
+pydantic
+
+# ── Search Engine ──
+opensearch-py
+
+# ── Database & ORM ──
 sqlalchemy
+alembic
 psycopg2-binary
 pymysql
 oracledb
-alembic
-pandas
-openpyxl
+
+# ── AI / Embedding ──
+sentence-transformers
+numpy
+
+# ── Document Parsing ──
+pymupdf
 pdfplumber
 python-docx
 python-pptx
-pypdf
+openpyxl
+pandas
 olefile
+
+# ── Image & OCR (PaddleOCR optional – install separately if needed) ──
 Pillow
 pytesseract
-paddlepaddle
-paddleocr
-opencv-python-headless
+# paddlepaddle   # GPU/CPU 환경에 따라 별도 설치 권장: pip install paddlepaddle
+# paddleocr      # pip install paddleocr (PaddleOCR 미설치 시 Tesseract 폴백)
+
+# ── Korean NLP ──
 py-hanspell
+
+# ── Auth & Security ──
 PyJWT
 cryptography

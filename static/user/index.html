@@ -64,6 +64,8 @@
         .border-gray-700, .border-gray-600 { border-color: #d6dfec !important; }
         #searchInput { color: #1f2937 !important; }
         #searchInput::placeholder { color: #94a3b8; }
+        .search-submit-btn { color: #ffffff !important; }
+        .search-submit-btn:hover { color: #ffffff !important; }
         @media (max-width: 639px) {
             #filterArea.mobile-collapsed { display: none; }
             #toastNotice { left: 16px; right: 16px; max-width: none; }
@@ -85,7 +87,7 @@
                 <div class="search-container flex items-center bg-[#303134] rounded-full border border-[#5f6368] px-5 py-3 shadow-sm focus-within:shadow-lg transition-all">
                     <i class="fas fa-search text-gray-400 mr-3"></i>
                     <input type="text" id="searchInput" class="flex-1 bg-transparent border-none text-slate-800 focus:outline-none text-lg" placeholder="검색어 입력..." autocomplete="off">
-                    <button onclick="resetFiltersAndSearch()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium ml-2 transition">검색</button>
+                    <button onclick="resetFiltersAndSearch()" class="search-submit-btn bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium ml-2 transition">검색</button>
                 </div>
                 <div id="autocompleteList" class="absolute top-full left-0 w-full bg-[#303134] border border-[#5f6368] rounded-b-2xl shadow-xl z-50 hidden overflow-hidden mt-1 text-left"></div>
             </div>

@@ -14,7 +14,6 @@
 # 강광민 / 2026-02-13 / 파서 통합 및 임베딩 고도화
 ########################################################
 """
-import json
 from datetime import datetime, timezone
 
 from app.common.embedding import embedder
@@ -121,6 +120,9 @@ class IndexingService:
 
         category = DocumentUtils.map_category(safe_filename)
         vector_data = embedder.get_embedding(clean_body_text[:2000])
+        if hasattr(vector_data, "tolist"):
+            vector_data = vector_data.tolist()
+        safe_source_label = DocumentUtils.sanitize_text(source_label)
 
         doc_source = {
             "origin_file": safe_filename,
@@ -132,10 +134,10 @@ class IndexingService:
             "file_ext": ext,
             "indexed_at": datetime.now(timezone.utc).isoformat(),
             "text_vector": vector_data,
-            "source_label": source_label,
+            "source_label": safe_source_label,
         }
 
-        safe_doc = json.dumps(doc_source, ensure_ascii=False)
+        safe_doc = DocumentUtils.sanitize_for_opensearch(doc_source)
         index_res = client.index(index=INDEX_NAME, body=safe_doc, refresh=True)
         DBService.save_indexed_document(
             os_doc_id=index_res.get("_id", ""),

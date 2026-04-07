@@ -15,6 +15,7 @@
 """
 import re
 import hashlib
+import math
 from datetime import datetime
 from opensearchpy import helpers
 
@@ -32,6 +33,8 @@ class DocumentUtils:
         if isinstance(text, bytes):
             text = text.decode("utf-8", errors="ignore")
         text = text.encode("utf-8", errors="ignore").decode("utf-8")
+        # JSON 비허용 제어문자 제거 (\t, \n, \r 제외)
+        text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', ' ', text)
         # 허용 문자: 한글, 영문, 숫자, 공백, 필수 문장부호
         allowed = re.compile(r'[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9\s.,!?;:()\"\'\-\[\]\<\>\t\n\r]')
         result = "".join([ch for ch in text if allowed.match(ch)])
@@ -55,7 +58,6 @@ class DocumentUtils:
     @staticmethod
     def check_duplicate_content(client, index_name: str, digest: str):
         """[검증] OpenSearch 내 중복 데이터 여부 확인"""
-        client.indices.refresh(index=index_name)
         res = client.search(
             index=index_name,
             body={
@@ -84,3 +86,38 @@ class DocumentUtils:
             else:
                 result.append(char)
         return "".join(result)
+
+    @staticmethod
+    def sanitize_for_opensearch(value):
+        """[정제] OpenSearch JSON body 전송 전 재귀 정제"""
+        if value is None:
+            return None
+
+        if isinstance(value, (bytes, str)):
+            return DocumentUtils.sanitize_text(value)
+
+        if isinstance(value, bool):
+            return value
+
+        if isinstance(value, int):
+            return value
+
+        if isinstance(value, float):
+            return value if math.isfinite(value) else 0.0
+
+        if isinstance(value, dict):
+            cleaned = {}
+            for k, v in value.items():
+                clean_key = DocumentUtils.sanitize_text(str(k))
+                cleaned[clean_key] = DocumentUtils.sanitize_for_opensearch(v)
+            return cleaned
+
+        if isinstance(value, (list, tuple, set)):
+            return [DocumentUtils.sanitize_for_opensearch(v) for v in value]
+
+        # numpy array/series 등 tolist 지원 타입 방어
+        tolist = getattr(value, "tolist", None)
+        if callable(tolist):
+            return DocumentUtils.sanitize_for_opensearch(tolist())
+
+        return DocumentUtils.sanitize_text(str(value))

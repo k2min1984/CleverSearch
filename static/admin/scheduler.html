@@ -20,7 +20,6 @@
     <input id="schedulerInterval" type="number" min="10" value="120" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-32" />
     <button onclick="startScheduler()" class="admin-write px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
     <button onclick="stopScheduler()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">중지</button>
-    <button onclick="loadSchedulerStatus()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">상태 조회</button>
     <button onclick="toggleSchedulerView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
 </div>
 <div id="schedulerList" class="hidden">
@@ -33,11 +32,17 @@ async function startScheduler() {
     const interval = Number(document.getElementById("schedulerInterval").value || 120);
     const result = await apiFetch(`${SYS_API}/scheduler/start?interval_seconds=${interval}`, { method: "POST" });
     writeJson("schedulerOutput", result);
+    if (result.ok) {
+        await loadSchedulerStatus();
+    }
 }
 
 async function stopScheduler() {
     const result = await apiFetch(`${SYS_API}/scheduler/stop`, { method: "POST" });
     writeJson("schedulerOutput", result);
+    if (result.ok) {
+        await loadSchedulerStatus();
+    }
 }
 
 async function loadSchedulerStatus() {
@@ -59,4 +64,6 @@ function populateSchedulerList(data) {
     ).join("");
     body.innerHTML = rows || '<tr><td class="p-2" colspan="2">데이터 없음</td></tr>';
 }
+
+loadSchedulerStatus();
 </script>

@@ -41,6 +41,30 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 
+def _startup_log(level: str, step: str, message: str, action: str = "") -> None:
+    line = f"[STARTUP][{level}][{step}] {message}"
+    if action:
+        line += f" | 조치: {action}"
+    print(line)
+
+
+def _startup_action_guide(exc: Exception) -> str:
+    text = str(exc)
+    lowered = text.lower()
+
+    if "인증 실패(401)" in text or "authenticationexception" in lowered or "401" in lowered:
+        return "OS_ADMIN/OS_PASSWORD를 OpenSearch 실제 계정과 일치시키고 앱을 재기동하세요."
+    if "권한 부족(403)" in text or "authorizationexception" in lowered or "403" in lowered:
+        return "인덱스 조회/생성 권한이 있는 계정으로 교체하거나 권한을 부여하세요."
+    if "tls" in lowered or "ssl" in lowered or "인증서" in text:
+        return "인증서 체인과 VERIFY_CERTS 설정을 점검하고 신뢰된 인증서를 적용하세요."
+    if "연결 실패" in text or "connection" in lowered:
+        return "OpenSearch 서비스 상태, URL/포트, 방화벽 정책을 확인하세요."
+    if "[보안 설정 오류]" in text:
+        return "운영 필수 환경변수(APP_ENV/JWT_SECRET/CORS/HOST/VERIFY_CERTS)를 교정하세요."
+    return "직전 STARTUP 로그의 실패 단계를 기준으로 환경변수/네트워크/권한을 점검하세요."
+
+
 def _validate_production_security() -> None:
     if settings.APP_ENV not in {"prod", "production"}:
         return
@@ -66,33 +90,49 @@ async def lifespan(app: FastAPI):
     애플리케이션 Lifecycle 관리: 서버 시작 시와 종료 시 실행될 로직 정의
     """
     # 1. 서버 시작 시: OpenSearch 인덱스 자동 생성 및 설정 확인
-    print("🚀 [System] CleverSearch 엔진 시동 중...")
+    _startup_log("INFO", "BOOT", "CleverSearch 시작", f"env={settings.APP_ENV}")
+    strict_startup = settings.APP_ENV in {"prod", "production"}
     try:
+        _startup_log("INFO", "SECURITY", "운영 보안 정책 점검 시작")
         _validate_production_security()
-        init_database()
-        print("✅ [System] 업무 DB 테이블 초기화 완료")
+        _startup_log("PASS", "SECURITY", "운영 보안 정책 점검 통과")
 
+        _startup_log("INFO", "DATABASE", "업무 DB 초기화 시작")
+        init_database()
+        _startup_log("PASS", "DATABASE", "업무 DB 초기화 완료")
+
+        _startup_log("INFO", "BOOTSTRAP", "외부 소스 부트스트랩 시작")
         bootstrap_summary = bootstrap_sources_from_env(
             db_sources_json=settings.DB_SOURCES_JSON,
             smb_sources_json=settings.SMB_SOURCES_JSON,
         )
-        print(f"✅ [System] 소스 부트스트랩 완료: {bootstrap_summary}")
+        _startup_log("PASS", "BOOTSTRAP", f"외부 소스 부트스트랩 완료: {bootstrap_summary}")
 
         # [주의] setup.py의 create_index도 DocumentUtils의 매핑을 따르도록 수정되어야 함
-        create_index() 
-        print("✅ [System] 인덱스 설정 및 확인 완료")
+        _startup_log("INFO", "OPENSEARCH", "인덱스 초기화/검증 시작")
+        create_index()
+        _startup_log("PASS", "OPENSEARCH", "인덱스 초기화/검증 완료")
 
         if settings.AUTO_START_INGEST_SCHEDULER:
+            _startup_log("INFO", "SCHEDULER", "자동 색인 스케줄러 시작")
             IngestionSchedulerService.start(settings.INGEST_SCHEDULER_INTERVAL_SECONDS)
-            print("✅ [System] 자동 색인 스케줄러 시작 완료")
+            _startup_log("PASS", "SCHEDULER", "자동 색인 스케줄러 시작 완료")
+        else:
+            _startup_log("INFO", "SCHEDULER", "자동 색인 스케줄러 비활성화 상태")
+
+        _startup_log("PASS", "READY", "서비스 기동 준비 완료")
     except Exception as e:
-        print(f"❌ [System] 인덱스 초기화 실패: {e}")
+        action = _startup_action_guide(e)
+        _startup_log("FAIL", "STARTUP", f"시작 점검 실패: {e}", action)
+        if strict_startup:
+            raise RuntimeError("운영 환경 시작 차단: OpenSearch/인덱스 초기화 실패") from e
+        _startup_log("WARN", "DEV-MODE", "개발 환경이므로 서버는 계속 기동합니다")
     
     yield  # 서버 가동 중 (API 요청 처리)
     
     # 2. 서버 종료 시
     IngestionSchedulerService.stop()
-    print("👋 [System] CleverSearch 엔진 종료")
+    _startup_log("INFO", "SHUTDOWN", "CleverSearch 종료")
 
 # --- FastAPI 인스턴스 설정 ---
 app = FastAPI(

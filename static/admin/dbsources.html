@@ -29,7 +29,6 @@
 <div class="flex gap-2 mb-3">
     <button onclick="upsertDbSource()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
     <button onclick="syncDbSource()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
-    <button onclick="loadDbSources()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">목록 조회</button>
     <button onclick="toggleDbView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
 </div>
 <div id="dbList" class="hidden">
@@ -50,6 +49,9 @@ async function upsertDbSource() {
     };
     const result = await apiFetch(`${SYS_API}/db/sources`, { method: "POST", body: JSON.stringify(payload) });
     writeJson("dbOutput", result);
+    if (result.ok) {
+        await loadDbSources();
+    }
 }
 
 async function loadDbSources() {
@@ -62,6 +64,9 @@ async function syncDbSource() {
     const sourceId = document.getElementById("dbSyncId").value;
     const result = await apiFetch(`${SYS_API}/db/sources/${sourceId}/sync?max_rows=1000`, { method: "POST" });
     writeJson("dbOutput", result);
+    if (result.ok) {
+        await loadDbSources();
+    }
 }
 
 function toggleDbView() {
@@ -91,4 +96,6 @@ function editDbSource(id, name, dbType) {
     document.getElementById("dbType").value = dbType;
     alert("입력란에 데이터를 불러왔습니다. 수정 후 [소스 저장]을 클릭하세요.");
 }
+
+loadDbSources();
 </script>

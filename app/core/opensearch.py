@@ -11,6 +11,12 @@
 """
 
 from opensearchpy import OpenSearch
+from opensearchpy.exceptions import (
+    AuthenticationException,
+    AuthorizationException,
+    ConnectionError as OpenSearchConnectionError,
+    SSLError as OpenSearchSSLError,
+)
 from threading import Lock
 from app.core.config import settings
 
@@ -50,3 +56,35 @@ def get_client():
             pool_maxsize=settings.OPENSEARCH_POOL_MAXSIZE
         )
     return _client
+
+
+def validate_opensearch_connection() -> None:
+    """
+    OpenSearch 인증/연결 상태를 시작 단계에서 명확히 검증합니다.
+    실패 시 원인별 안내가 담긴 RuntimeError를 발생시킵니다.
+    """
+    client = get_client()
+    try:
+        if not client.ping():
+            raise RuntimeError(
+                "OpenSearch ping 실패: URL/네트워크/TLS 설정을 확인하세요. "
+                "(OPENSEARCH_URL, OPENSEARCH_USE_SSL, OPENSEARCH_VERIFY_CERTS)"
+            )
+        client.info()
+    except AuthenticationException as exc:
+        raise RuntimeError(
+            "OpenSearch 인증 실패(401): OS_ADMIN/OS_PASSWORD가 OpenSearch 계정과 일치하지 않습니다. "
+            "환경변수 또는 .env 설정을 확인하세요."
+        ) from exc
+    except AuthorizationException as exc:
+        raise RuntimeError(
+            "OpenSearch 권한 부족(403): 계정 권한으로 인덱스 조회/생성이 불가능합니다."
+        ) from exc
+    except OpenSearchSSLError as exc:
+        raise RuntimeError(
+            "OpenSearch TLS/인증서 검증 실패: 인증서 신뢰체인 또는 VERIFY_CERTS 설정을 확인하세요."
+        ) from exc
+    except OpenSearchConnectionError as exc:
+        raise RuntimeError(
+            "OpenSearch 연결 실패: 서비스 기동 상태, URL, 포트, 방화벽을 확인하세요."
+        ) from exc

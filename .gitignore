@@ -5,10 +5,9 @@ __pycache__/
 *.py[cod]
 *.pyc
 
-# 환경 변수 및 인증서 (mkcert로 만든 파일 포함)
+# 환경 변수
 .env
-*.pem
-localhost+*-key.pem
+.env.local.backup
 
 # OS 관련
 .DS_Store
@@ -16,6 +15,7 @@ Thumbs.db
 
 # DB / 데이터
 *.db
+*.db.backup
 postgres_data/
 opensearch_data/
 
@@ -30,3 +30,16 @@ uploads/
 spring-api/
 tests/
 scripts/
+
+# 임시/테스트 결과 파일
+e2e_schedule_test_result.json
+test_scenario_results.json
+search1.json
+alldata.json
+final_patch.json
+patch.json
+popular_settings.json
+
+# 개인 문서 (커밋 제외)
+docs/강광민_수행업무_이해가이드.md
+docs/PM_설명서_학습가이드_20260406_강광민.md
