@@ -15,6 +15,7 @@
 ########################################################
 """
 from datetime import datetime, timezone
+import hashlib
 
 from app.common.embedding import embedder
 from app.common.utils import DocumentUtils
@@ -108,8 +109,39 @@ class IndexingService:
         if not clean_body_text.strip():
             return {"status": "fail", "message": "추출된 텍스트 없음", "file": safe_filename}
 
-        content_digest = DocumentUtils.generate_content_digest(clean_body_text, safe_filename)
+        # 동일 파일 재업로드를 강하게 차단하기 위해 파일 바이트 해시를 기본 지문으로 사용합니다.
+        binary_digest = hashlib.sha256(content).hexdigest()
+        legacy_text_digest = DocumentUtils.generate_content_digest(clean_body_text, safe_filename)
+        content_digest = binary_digest
+
+        db_dup = DBService.find_duplicate_indexed_document(
+            title=safe_filename,
+            all_text=clean_body_text,
+            content_hash=str(content_digest),
+        )
+        if (not db_dup.get("is_duplicate")) and (legacy_text_digest != content_digest):
+            db_dup = DBService.find_duplicate_indexed_document(
+                title=safe_filename,
+                all_text=clean_body_text,
+                content_hash=str(legacy_text_digest),
+            )
+        if db_dup.get("is_duplicate"):
+            reason = db_dup.get("reason")
+            origin_file = db_dup.get("origin_file") or safe_filename
+            if reason == "title_and_content":
+                message = f"DB 중복(제목+내용 동일): {origin_file}"
+            else:
+                message = f"DB 중복(내용 해시 동일): {origin_file}"
+            return {
+                "status": "skipped",
+                "message": message,
+                "file": safe_filename,
+                "content_hash": content_digest,
+            }
+
         is_dup, existing_file = DocumentUtils.check_duplicate_content(client, INDEX_NAME, content_digest)
+        if (not is_dup) and (legacy_text_digest != content_digest):
+            is_dup, existing_file = DocumentUtils.check_duplicate_content(client, INDEX_NAME, legacy_text_digest)
         if is_dup:
             return {
                 "status": "skipped",

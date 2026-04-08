@@ -39,6 +39,12 @@ class DBService:
         return {tok for tok in re.split(r"\s+", (text or "").strip().lower()) if len(tok) >= 2}
 
     @staticmethod
+    def _normalize_for_dedup(text: str) -> str:
+        """중복 비교용 정규화: 소문자 + 영숫자/한글만 유지."""
+        base = DBService._safe_str(text).lower()
+        return re.sub(r"[^가-힣a-z0-9]", "", base)
+
+    @staticmethod
     def save_search_log(user_id: str, query: str, total_hits: int, search_type: str = "manual_search", is_failed: bool = None) -> None:
         # 인기검색/실패검색/추천검색의 기준이 되는 원본 로그를 적재합니다.
         with get_db_session() as db:
@@ -255,6 +261,75 @@ class DBService:
                     all_text=all_text,
                 )
             )
+
+    @staticmethod
+    def find_duplicate_indexed_document(title: str, all_text: str, content_hash: str | None = None):
+        """DB 기준 중복 문서 조회 (제목+본문 우선, 해시 보조)."""
+        with get_db_session() as db:
+            by_title_content = (
+                db.query(IndexedDocument)
+                .filter(IndexedDocument.title == title, IndexedDocument.all_text == all_text)
+                .first()
+            )
+            if by_title_content:
+                return {
+                    "is_duplicate": True,
+                    "reason": "title_and_content",
+                    "doc_id": by_title_content.id,
+                    "origin_file": by_title_content.origin_file,
+                }
+
+            # DB에 동일 제목이 이미 있으면 본문 정규화 비교로 다시 검증합니다.
+            norm_title = DBService._normalize_for_dedup(title)
+            norm_text = DBService._normalize_for_dedup(all_text)
+            title_candidates = (
+                db.query(IndexedDocument)
+                .filter(IndexedDocument.title == title)
+                .all()
+            )
+            for row in title_candidates:
+                if DBService._normalize_for_dedup(row.title) != norm_title:
+                    continue
+                if DBService._normalize_for_dedup(row.all_text) == norm_text:
+                    return {
+                        "is_duplicate": True,
+                        "reason": "title_and_content",
+                        "doc_id": row.id,
+                        "origin_file": row.origin_file,
+                    }
+
+            if content_hash:
+                by_hash = (
+                    db.query(IndexedDocument)
+                    .filter(IndexedDocument.content_hash == content_hash)
+                    .first()
+                )
+                if by_hash:
+                    return {
+                        "is_duplicate": True,
+                        "reason": "content_hash",
+                        "doc_id": by_hash.id,
+                        "origin_file": by_hash.origin_file,
+                    }
+
+            return {"is_duplicate": False}
+
+    @staticmethod
+    def find_duplicate_by_content_hash(content_hash: str):
+        """파일 바이트 해시 기준 중복 문서 조회."""
+        with get_db_session() as db:
+            row = (
+                db.query(IndexedDocument)
+                .filter(IndexedDocument.content_hash == content_hash)
+                .first()
+            )
+            if not row:
+                return {"is_duplicate": False}
+            return {
+                "is_duplicate": True,
+                "doc_id": row.id,
+                "origin_file": row.origin_file,
+            }
 
     @staticmethod
     def list_indexed_documents(skip: int = 0, limit: int = 20):

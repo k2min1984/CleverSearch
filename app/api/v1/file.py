@@ -14,6 +14,7 @@
 ########################################################
 """
 import re
+import hashlib
 
 # FastAPI 관련 항목들을 한 줄로 통합
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Path
@@ -34,6 +35,7 @@ ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'hwp', 'hwpx', 'pdf', 'docx', 'pptx', 'jpg'
 
 # 업로드 파일 최대 크기 (100MB) - DoS 공격 방지
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024
+MAX_BATCH_FILES = 50
 
 def ensure_index():
     """인덱스가 없을 경우 초기 설정(Settings/Mappings)과 함께 생성"""
@@ -41,6 +43,67 @@ def ensure_index():
         IndexingService.ensure_index()
     except Exception as e:
         print(f"❌ 인덱스 생성 실패: {str(e)}")
+
+
+async def _process_uploaded_file(file: UploadFile) -> dict:
+    """단일 파일 업로드 처리 공통 로직."""
+    filename = DocumentUtils.sanitize_text(file.filename)
+    ext = filename.split('.')[-1].lower() if '.' in filename else ""
+
+    if ext not in ALLOWED_EXTENSIONS:
+        return {
+            "status": "fail",
+            "message": f"지원하지 않는 확장자입니다: {ext}",
+            "filename": filename,
+        }
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        return {
+            "status": "fail",
+            "message": f"파일 크기 초과: 최대 100MB 허용 (현재 {len(content)//1024//1024}MB)",
+            "filename": filename,
+        }
+
+    # 업로드 API 입구에서 동일 파일(바이트 해시)을 즉시 차단합니다.
+    binary_digest = hashlib.sha256(content).hexdigest()
+    hash_dup = DBService.find_duplicate_by_content_hash(binary_digest)
+    if hash_dup.get("is_duplicate"):
+        return {
+            "status": "skipped",
+            "message": f"DB 중복(동일 파일): {hash_dup.get('origin_file')}",
+            "filename": filename,
+        }
+
+    try:
+        result = IndexingService.index_bytes(filename, content, source_label="upload")
+        status = result.get("status", "success")
+        if status == "fail":
+            return {
+                "status": "fail",
+                "message": result.get("message", "색인 실패"),
+                "filename": filename,
+            }
+        if status == "skipped":
+            return {
+                "status": "skipped",
+                "message": result.get("message", "중복 문서로 건너뜀"),
+                "filename": filename,
+            }
+        return {
+            "status": "success",
+            "message": f"[{filename}] 업로드 완료",
+            "category": result.get("category", "OTHERS"),
+            "doc_id": result.get("doc_id", ""),
+            "filename": filename,
+        }
+    except Exception as e:
+        clean_err = DocumentUtils.sanitize_text(str(e))
+        return {
+            "status": "fail",
+            "message": f"서버 내부 오류: {clean_err}",
+            "filename": filename,
+        }
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -50,33 +113,53 @@ async def upload_file(file: UploadFile = File(...)):
     """
     # 1. 인덱스 존재 여부 확인 및 생성
     ensure_index()
-    
-    # 2. 파일명 방역 및 정보 추출
-    filename = DocumentUtils.sanitize_text(file.filename)
-    ext = filename.split('.')[-1].lower() if '.' in filename else ""
-    
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"지원하지 않는 확장자입니다: {ext}")
 
-    content = await file.read()
-    # 파일 크기 검증 (100MB 초과 시 거부) - 메모리 폭발 방지
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=413, detail=f"파일 크기 초과: 최대 100MB 허용 (현재 {len(content)//1024//1024}MB)")
-    try:
-        result = IndexingService.index_bytes(filename, content, source_label="upload")
-        if result.get("status") == "fail":
-            return result
-        if result.get("status") == "skipped":
-            return result
-        return {
-            "status": "success",
-            "message": f"[{filename}] 업로드 완료",
-            "category": result.get("category", "OTHERS"),
-            "doc_id": result.get("doc_id", ""),
-        }
-    except Exception as e:
-        clean_err = DocumentUtils.sanitize_text(str(e))
-        raise HTTPException(status_code=500, detail=f"서버 내부 오류: {clean_err}")
+    result = await _process_uploaded_file(file)
+    if result.get("status") == "fail":
+        message = result.get("message", "업로드 실패")
+        if "지원하지 않는 확장자" in message:
+            raise HTTPException(status_code=400, detail=message)
+        if "파일 크기 초과" in message:
+            raise HTTPException(status_code=413, detail=message)
+        raise HTTPException(status_code=500, detail=message)
+    return result
+
+
+@router.post("/upload-multiple")
+async def upload_multiple_files(files: list[UploadFile] = File(...)):
+    """다중 파일 업로드 처리. 파일별 결과를 모두 반환합니다."""
+    ensure_index()
+
+    if not files:
+        raise HTTPException(status_code=400, detail="업로드할 파일이 없습니다")
+    if len(files) > MAX_BATCH_FILES:
+        raise HTTPException(status_code=400, detail=f"한 번에 최대 {MAX_BATCH_FILES}개 파일까지 업로드할 수 있습니다")
+
+    results = []
+    for upload_file in files:
+        results.append(await _process_uploaded_file(upload_file))
+
+    success_count = len([r for r in results if r.get("status") == "success"])
+    skipped_count = len([r for r in results if r.get("status") == "skipped"])
+    fail_count = len([r for r in results if r.get("status") == "fail"])
+
+    overall_status = "success"
+    if success_count == 0 and fail_count > 0:
+        overall_status = "fail"
+    elif fail_count > 0 or skipped_count > 0:
+        overall_status = "partial"
+
+    return {
+        "status": overall_status,
+        "message": f"다중 업로드 처리 완료 (성공 {success_count}, 건너뜀 {skipped_count}, 실패 {fail_count})",
+        "summary": {
+            "total": len(results),
+            "success": success_count,
+            "skipped": skipped_count,
+            "fail": fail_count,
+        },
+        "results": results,
+    }
 
 # --- 관리용 API ---
 @router.delete("/clear-all-data")

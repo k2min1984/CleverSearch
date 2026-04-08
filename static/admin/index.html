@@ -647,12 +647,16 @@
         }
 
         async function loadTabHtml(tabName) {
-            if (tabCache[tabName]) return tabCache[tabName];
+            const isHotTab = tabName === "upload";
+            if (!isHotTab && tabCache[tabName]) return tabCache[tabName];
             try {
-                const res = await fetch(`/static/admin/${encodeURIComponent(tabName)}.html`);
+                const tabUrl = isHotTab
+                    ? `/static/admin/${encodeURIComponent(tabName)}.html?v=${Date.now()}`
+                    : `/static/admin/${encodeURIComponent(tabName)}.html`;
+                const res = await fetch(tabUrl, { cache: isHotTab ? "no-store" : "default" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const html = await res.text();
-                tabCache[tabName] = html;
+                if (!isHotTab) tabCache[tabName] = html;
                 return html;
             } catch (e) {
                 return `<div class="text-red-600 p-4">탭 로드 실패: ${tabName} (${e.message})</div>`;
