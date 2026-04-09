@@ -12,7 +12,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from fastapi.testclient import TestClient
+
+from app.main import app
 from app.core.database import DictionaryEntry, SearchLog, SessionLocal, init_database
 from app.services.dictionary_service import DictionaryService
 from app.services.system_service import DashboardService, IngestionSchedulerService, VolumeSSLService
@@ -69,6 +73,50 @@ class TestSystemServices(unittest.TestCase):
             result = VolumeSSLService.generate_renew_script(output_path=script_path)
             self.assertEqual(result["status"], "generated")
             self.assertTrue(Path(script_path).exists())
+
+    def test_admin_smoke_endpoint(self):
+        with TestClient(app) as client:
+            login_res = client.post(
+                "/api/v1/common/auth/login",
+                json={"username": "admin", "password": "admin123!"},
+            )
+            self.assertEqual(login_res.status_code, 200)
+            token = login_res.json().get("access_token")
+            self.assertTrue(token)
+
+            with patch("app.api.admin.system.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                mock_run.return_value.stdout = "smoke ok"
+                mock_run.return_value.stderr = ""
+
+                res = client.post(
+                    "/api/v1/admin/system/ops/run-smoke-test",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+
+            self.assertEqual(res.status_code, 200)
+            payload = res.json()
+            self.assertEqual(payload.get("status"), "success")
+            self.assertEqual(payload.get("exit_code"), 0)
+
+    def test_scheduler_stop_endpoint(self):
+        with TestClient(app) as client:
+            login_res = client.post(
+                "/api/v1/common/auth/login",
+                json={"username": "admin", "password": "admin123!"},
+            )
+            self.assertEqual(login_res.status_code, 200)
+            token = login_res.json().get("access_token")
+            self.assertTrue(token)
+
+            res = client.post(
+                "/api/v1/admin/system/scheduler/stop",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+            self.assertEqual(res.status_code, 200)
+            payload = res.json()
+            self.assertIn(payload.get("status"), ["stopped", "already-stopped"])
 
 
 if __name__ == "__main__":

@@ -11,16 +11,15 @@
 
 <!-- 스케줄러 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b>⏰ 자동 색인 스케줄러란?</b> 설정한 주기(분)마다 SMB·DB 소스를 자동으로 동기화하여 최신 상태를 유지합니다.<br>
+    <b><span aria-hidden="true">⏰</span> 자동 색인 스케줄러란?</b> 설정한 주기(분)마다 SMB·DB 소스를 자동으로 동기화하여 최신 상태를 유지합니다.<br>
     • <b>간격(분)</b>: 동기화 주기 (최소 10분, 기본 120분)<br>
-    • 시작 후 백그라운드에서 자동 실행되며, 별도 중지 전까지 계속됩니다.
+    • 시작 후 백그라운드에서 자동 실행되며, 상태는 이 탭에서 확인할 수 있습니다.
 </div>
 <div class="flex gap-2 mb-3 items-center">
     <label class="text-sm text-gray-400">간격(분):</label>
     <input id="schedulerInterval" type="number" min="10" value="120" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-32" />
-    <button onclick="startScheduler()" class="admin-write px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
-    <button onclick="stopScheduler()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">중지</button>
-    <button onclick="toggleSchedulerView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+    <button id="schedulerStartBtn" type="button" class="admin-write px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
+    <button id="schedulerToggleBtn" type="button" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
     <span id="schedulerTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="schedulerList" class="hidden">
@@ -51,10 +50,22 @@ function renderSchedulerPagination() {
     const totalPages = Math.max(1, Math.ceil(schedulerRows.length / SCHEDULER_PAGE_SIZE));
     pager.classList.remove("hidden");
     pager.innerHTML = `
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${schedulerPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${schedulerPage === 1 ? "disabled" : ""} onclick="changeSchedulerPage(${schedulerPage - 1})">이전</button>
+        <button type="button" class="js-scheduler-page px-3 py-1 rounded border border-gray-500 text-sm ${schedulerPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${schedulerPage === 1 ? "disabled" : ""} data-page="${schedulerPage - 1}">이전</button>
         <span class="text-slate-500 font-semibold">${schedulerPage} / ${totalPages}</span>
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${schedulerPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${schedulerPage === totalPages ? "disabled" : ""} onclick="changeSchedulerPage(${schedulerPage + 1})">다음</button>
+        <button type="button" class="js-scheduler-page px-3 py-1 rounded border border-gray-500 text-sm ${schedulerPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${schedulerPage === totalPages ? "disabled" : ""} data-page="${schedulerPage + 1}">다음</button>
     `;
+}
+
+function bindSchedulerActions() {
+    const pager = document.getElementById("schedulerPagination");
+    if (pager && pager.dataset.bound !== "1") {
+        pager.dataset.bound = "1";
+        pager.addEventListener("click", (event) => {
+            const pageBtn = event.target.closest(".js-scheduler-page");
+            if (!pageBtn) return;
+            changeSchedulerPage(Number(pageBtn.dataset.page || 1));
+        });
+    }
 }
 
 function renderSchedulerRows() {
@@ -65,9 +76,10 @@ function renderSchedulerRows() {
     const start = (schedulerPage - 1) * SCHEDULER_PAGE_SIZE;
     const pageRows = schedulerRows.slice(start, start + SCHEDULER_PAGE_SIZE);
 
-    body.innerHTML = pageRows.map(([k, v]) =>
-        `<tr class="border-t border-gray-700"><td class="p-2 font-medium">${k}</td><td class="p-2">${JSON.stringify(v)}</td></tr>`
-    ).join("") || '<tr><td class="p-2" colspan="2">데이터 없음</td></tr>';
+    body.innerHTML = pageRows.map(([k, v]) => {
+        const valueText = typeof v === "string" ? v : JSON.stringify(v);
+        return `<tr class="border-t border-gray-700"><td class="p-2 font-medium">${fmt(k)}</td><td class="p-2">${fmt(valueText)}</td></tr>`;
+    }).join("") || '<tr><td class="p-2" colspan="2">데이터 없음</td></tr>';
 
     renderSchedulerPagination();
 }
@@ -75,14 +87,6 @@ function renderSchedulerRows() {
 async function startScheduler() {
     const interval = Number(document.getElementById("schedulerInterval").value || 120);
     const result = await apiFetch(`${SYS_API}/scheduler/start?interval_seconds=${interval}`, { method: "POST" });
-    writeJson("schedulerOutput", result);
-    if (result.ok) {
-        await loadSchedulerStatus();
-    }
-}
-
-async function stopScheduler() {
-    const result = await apiFetch(`${SYS_API}/scheduler/stop`, { method: "POST" });
     writeJson("schedulerOutput", result);
     if (result.ok) {
         await loadSchedulerStatus();
@@ -116,4 +120,7 @@ function populateSchedulerList(data) {
 }
 
 loadSchedulerStatus();
+bindSchedulerActions();
+document.getElementById("schedulerStartBtn")?.addEventListener("click", startScheduler);
+document.getElementById("schedulerToggleBtn")?.addEventListener("click", toggleSchedulerView);
 </script>

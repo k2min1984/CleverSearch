@@ -9,19 +9,48 @@
 ########################################################
 -->
 
-<nav id="tabMenu">
-    <button class="tab active" data-tab="dashboard">📊 대시보드</button>
-    <button class="tab" data-tab="docs">📋 문서 리스트</button>
-    <button class="tab" data-tab="upload">📁 파일 업로드</button>
-    <button class="tab" data-tab="popular">🔥 인기검색</button>
-    <button class="tab" data-tab="logs">🧾 검색 로그</button>
-    <button class="tab" data-tab="recent">🕘 최근 검색어</button>
-    <button class="tab" data-tab="failed">🚨 실패 검색어</button>
-    <button class="tab" data-tab="dictionary">🗂 사전 관리</button>
-    <button class="tab" data-tab="smb">🖧 SMB 색인</button>
-    <button class="tab" data-tab="dbsources">🗄 DB 색인</button>
-    <button class="tab" data-tab="scheduler">⏱ 스케줄러</button>
-    <button class="tab" data-tab="ssl">🔒 볼륨/SSL</button>
-    <button class="tab" data-tab="scoring">🎯 검색 품질</button>
-    <button class="tab" data-tab="reset">♻ 초기화</button>
+<nav id="tabMenu" aria-label="관리자 메뉴">
+    <section class="menu-section" aria-labelledby="menu-overview">
+        <h3 id="menu-overview" class="menu-title"><span aria-hidden="true">🧭</span> 개요</h3>
+        <div class="menu-items">
+            <button class="tab" data-tab="dashboard"><span aria-hidden="true">📊</span> 대시보드</button>
+        </div>
+    </section>
+
+    <section class="menu-section" aria-labelledby="menu-search-ops">
+        <h3 id="menu-search-ops" class="menu-title"><span aria-hidden="true">🔎</span> 검색 운영</h3>
+        <div class="menu-items">
+            <button class="tab" data-tab="popular"><span aria-hidden="true">🔥</span> 인기 검색어</button>
+            <button class="tab" data-tab="logs"><span aria-hidden="true">🧾</span> 검색 로그</button>
+            <button class="tab" data-tab="recent"><span aria-hidden="true">🕘</span> 최근 검색어</button>
+            <button class="tab" data-tab="failed"><span aria-hidden="true">⚠️</span> 실패 검색어</button>
+            <button class="tab" data-tab="scoring"><span aria-hidden="true">🎯</span> 검색 품질</button>
+        </div>
+    </section>
+
+    <section class="menu-section" aria-labelledby="menu-content-ops">
+        <h3 id="menu-content-ops" class="menu-title"><span aria-hidden="true">🗂</span> 콘텐츠 운영</h3>
+        <div class="menu-items">
+            <button class="tab" data-tab="docs"><span aria-hidden="true">📚</span> 문서 리스트</button>
+            <button class="tab" data-tab="upload"><span aria-hidden="true">📤</span> 파일 업로드</button>
+            <button class="tab" data-tab="dictionary"><span aria-hidden="true">📖</span> 사전 관리</button>
+        </div>
+    </section>
+
+    <section class="menu-section" aria-labelledby="menu-ingestion">
+        <h3 id="menu-ingestion" class="menu-title"><span aria-hidden="true">🛰</span> 데이터 수집/색인</h3>
+        <div class="menu-items">
+            <button class="tab" data-tab="smb"><span aria-hidden="true">📁</span> SMB 색인</button>
+            <button class="tab" data-tab="dbsources"><span aria-hidden="true">🗃</span> DB 색인</button>
+            <button class="tab" data-tab="scheduler"><span aria-hidden="true">⏰</span> 스케줄러</button>
+        </div>
+    </section>
+
+    <section class="menu-section" aria-labelledby="menu-system-security">
+        <h3 id="menu-system-security" class="menu-title"><span aria-hidden="true">🛡️</span> 시스템/보안</h3>
+        <div class="menu-items">
+            <button class="tab" data-tab="ssl"><span aria-hidden="true">🔐</span> 볼륨/SSL</button>
+            <button class="tab" data-tab="reset"><span aria-hidden="true">🧹</span> 초기화</button>
+        </div>
+    </section>
 </nav>

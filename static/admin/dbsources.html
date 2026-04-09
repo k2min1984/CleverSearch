@@ -11,7 +11,7 @@
 
 <!-- DB 색인 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b>🗄️ DB 색인이란?</b> 외부 데이터베이스에 저장된 텍스트 데이터를 SQL 쿼리로 추출하여 OpenSearch에 색인합니다.<br>
+    <b><span aria-hidden="true">🗄️</span> DB 색인이란?</b> 외부 데이터베이스에 저장된 텍스트 데이터를 SQL 쿼리로 추출하여 OpenSearch에 색인합니다.<br>
     • <b>db_type</b>: mysql, oracle, postgresql, sqlite 중 선택<br>
     • <b>connection_url</b>: DB 접속 문자열 (예: mysql+pymysql://user:pass@host/db)<br>
     • <b>query_text</b>: 색인할 데이터를 추출하는 SELECT 쿼리<br>
@@ -27,9 +27,9 @@
 </div>
 <textarea id="dbQuery" rows="3" placeholder="SELECT 쿼리 (query_text)" class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm mb-3"></textarea>
 <div class="flex gap-2 mb-3">
-    <button onclick="upsertDbSource()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
-    <button onclick="syncDbSource()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
-    <button onclick="toggleDbView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+    <button id="dbSaveBtn" type="button" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
+    <button id="dbSyncBtn" type="button" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
+    <button id="dbToggleBtn" type="button" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
     <span id="dbTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="dbList" class="hidden">
@@ -60,9 +60,9 @@ function renderDbPagination() {
     const totalPages = Math.max(1, Math.ceil(dbRows.length / DB_PAGE_SIZE));
     pager.classList.remove("hidden");
     pager.innerHTML = `
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${dbPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${dbPage === 1 ? "disabled" : ""} onclick="changeDbPage(${dbPage - 1})">이전</button>
+        <button type="button" class="js-db-page px-3 py-1 rounded border border-gray-500 text-sm ${dbPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${dbPage === 1 ? "disabled" : ""} data-page="${dbPage - 1}">이전</button>
         <span class="text-slate-500 font-semibold">${dbPage} / ${totalPages}</span>
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${dbPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${dbPage === totalPages ? "disabled" : ""} onclick="changeDbPage(${dbPage + 1})">다음</button>
+        <button type="button" class="js-db-page px-3 py-1 rounded border border-gray-500 text-sm ${dbPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${dbPage === totalPages ? "disabled" : ""} data-page="${dbPage + 1}">다음</button>
     `;
 }
 
@@ -75,11 +75,55 @@ function renderDbRows() {
     const start = (dbPage - 1) * DB_PAGE_SIZE;
     const pageRows = dbRows.slice(start, start + DB_PAGE_SIZE);
     body.innerHTML = pageRows.map(r => {
-        const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editDbSource(${r.id},'${(r.name||'').replace(/'/g,"\\'")}','${(r.db_type||'').replace(/'/g,"\\'")}')">수정</span>`;
-        const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteDbSource(${r.id})">삭제</span>`;
-        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.db_type)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+        const safeId = Number.isFinite(Number(r.id)) ? Number(r.id) : "";
+        const name = encodeURIComponent(String(r.name || ""));
+        const dbType = encodeURIComponent(String(r.db_type || ""));
+        const editBtn = isViewer ? '' : `<button type="button" class="text-blue-400 cursor-pointer hover:underline mr-2 btn-db-edit" data-id="${safeId}" data-name="${name}" data-db-type="${dbType}">수정</button>`;
+        const delBtn = isViewer ? '' : `<button type="button" class="btn-del btn-db-delete" data-id="${safeId}">삭제</button>`;
+        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.db_type)}</td><td class="p-2">${r.is_active?'<span aria-hidden="true">✅</span>':'<span aria-hidden="true">❌</span>'}</td><td class="p-2">${fmt(r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
     }).join("");
     renderDbPagination();
+}
+
+function bindDbActions() {
+    const pager = document.getElementById("dbPagination");
+    if (pager && pager.dataset.bound !== "1") {
+        pager.dataset.bound = "1";
+        pager.addEventListener("click", (event) => {
+            const pageBtn = event.target.closest(".js-db-page");
+            if (!pageBtn) return;
+            changeDbPage(Number(pageBtn.dataset.page || 1));
+        });
+    }
+
+    const body = document.getElementById("dbBody");
+    if (!body || body.dataset.actionsBound === "1") return;
+    body.dataset.actionsBound = "1";
+    body.addEventListener("click", (event) => {
+        const editBtn = event.target.closest(".btn-db-edit");
+        if (editBtn) {
+            const id = Number(editBtn.dataset.id || 0);
+            if (!Number.isFinite(id) || id <= 0) {
+                alert("잘못된 DB 소스 ID입니다.");
+                return;
+            }
+            editDbSource(
+                id,
+                decodeURIComponent(editBtn.dataset.name || ""),
+                decodeURIComponent(editBtn.dataset.dbType || "")
+            );
+            return;
+        }
+        const delBtn = event.target.closest(".btn-db-delete");
+        if (delBtn) {
+            const id = Number(delBtn.dataset.id || 0);
+            if (!Number.isFinite(id) || id <= 0) {
+                alert("잘못된 DB 소스 ID입니다.");
+                return;
+            }
+            deleteDbSource(id);
+        }
+    });
 }
 
 async function upsertDbSource() {
@@ -145,4 +189,8 @@ function editDbSource(id, name, dbType) {
 }
 
 loadDbSources();
+bindDbActions();
+document.getElementById("dbSaveBtn")?.addEventListener("click", upsertDbSource);
+document.getElementById("dbSyncBtn")?.addEventListener("click", syncDbSource);
+document.getElementById("dbToggleBtn")?.addEventListener("click", toggleDbView);
 </script>

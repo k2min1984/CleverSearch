@@ -11,7 +11,7 @@
 
 <!-- 최근 검색어 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b>🕐 최근 검색어</b> — 사용자별 최근 검색어 목록을 표시합니다.<br>
+    <b><span aria-hidden="true">🕐</span> 최근 검색어</b> — 사용자별 최근 검색어 목록을 표시합니다.<br>
     • <b>user_id</b> 입력 시 해당 사용자의 검색어만 필터링됩니다.<br>
     • 비워두면 전체 사용자의 최근 검색어를 표시합니다.
 </div>
@@ -65,10 +65,21 @@ function renderRecentPagination() {
     const totalPages = Math.max(1, Math.ceil(recentFilteredRows.length / RECENT_PAGE_SIZE));
     pager.classList.remove("hidden");
     pager.innerHTML = `
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${recentPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${recentPage === 1 ? "disabled" : ""} onclick="changeRecentPage(${recentPage - 1})">이전</button>
+        <button type="button" class="js-recent-page px-3 py-1 rounded border border-gray-500 text-sm ${recentPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${recentPage === 1 ? "disabled" : ""} data-page="${recentPage - 1}">이전</button>
         <span class="text-slate-500 font-semibold">${recentPage} / ${totalPages}</span>
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${recentPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${recentPage === totalPages ? "disabled" : ""} onclick="changeRecentPage(${recentPage + 1})">다음</button>
+        <button type="button" class="js-recent-page px-3 py-1 rounded border border-gray-500 text-sm ${recentPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${recentPage === totalPages ? "disabled" : ""} data-page="${recentPage + 1}">다음</button>
     `;
+}
+
+function bindRecentPagination() {
+    const pager = document.getElementById("recentPagination");
+    if (!pager || pager.dataset.bound === "1") return;
+    pager.dataset.bound = "1";
+    pager.addEventListener("click", (event) => {
+        const button = event.target.closest(".js-recent-page");
+        if (!button) return;
+        changeRecentPage(Number(button.dataset.page || 1));
+    });
 }
 
 function renderRecentRows(rows) {
@@ -96,4 +107,5 @@ async function loadRecent() {
 }
 
 document.getElementById("recentSearch")?.addEventListener("input", applyRecentFilter);
+bindRecentPagination();
 </script>

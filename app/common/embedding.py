@@ -21,9 +21,9 @@ MODEL_NAME = 'jhgan/ko-sroberta-multitask'
 
 class AIEmbedder:
     def __init__(self):
-        print("🚀 AI 임베딩 모델 로딩 중... (최초 1회 다운로드 발생)")
+        print("[AI] Embedding model loading... (first-time download may occur)")
         self.model = SentenceTransformer(MODEL_NAME)
-        print("✅ AI 임베딩 모델 로딩 완료!")
+        print("[AI] Embedding model loaded.")
 
     def get_embedding(self, text: str):
         """텍스트를 입력받아 768차원의 벡터(숫자 리스트)로 변환합니다."""

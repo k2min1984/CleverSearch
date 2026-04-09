@@ -11,7 +11,7 @@
 
 <!-- 실패 검색어 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b>❌ 실패 검색어</b> — 검색 결과가 0건인 키워드를 빈도순으로 표시합니다.<br>
+    <b><span aria-hidden="true">❌</span> 실패 검색어</b> — 검색 결과가 0건인 키워드를 빈도순으로 표시합니다.<br>
     • <b>기간(일)</b>: 집계 기간 설정<br>
     • 실패 키워드 분석을 통해 사전 등록이나 동의어 추가를 검토할 수 있습니다.
 </div>
@@ -62,10 +62,21 @@ function renderFailedPagination() {
     const totalPages = Math.max(1, Math.ceil(failedFilteredRows.length / FAILED_PAGE_SIZE));
     pager.classList.remove("hidden");
     pager.innerHTML = `
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${failedPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${failedPage === 1 ? "disabled" : ""} onclick="changeFailedPage(${failedPage - 1})">이전</button>
+        <button type="button" class="js-failed-page px-3 py-1 rounded border border-gray-500 text-sm ${failedPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${failedPage === 1 ? "disabled" : ""} data-page="${failedPage - 1}">이전</button>
         <span class="text-slate-500 font-semibold">${failedPage} / ${totalPages}</span>
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${failedPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${failedPage === totalPages ? "disabled" : ""} onclick="changeFailedPage(${failedPage + 1})">다음</button>
+        <button type="button" class="js-failed-page px-3 py-1 rounded border border-gray-500 text-sm ${failedPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${failedPage === totalPages ? "disabled" : ""} data-page="${failedPage + 1}">다음</button>
     `;
+}
+
+function bindFailedPagination() {
+    const pager = document.getElementById("failedPagination");
+    if (!pager || pager.dataset.bound === "1") return;
+    pager.dataset.bound = "1";
+    pager.addEventListener("click", (event) => {
+        const button = event.target.closest(".js-failed-page");
+        if (!button) return;
+        changeFailedPage(Number(button.dataset.page || 1));
+    });
 }
 
 function renderFailedRows(rows) {
@@ -95,4 +106,5 @@ async function loadFailed() {
 
 document.getElementById("failedDays")?.addEventListener("change", loadFailed);
 document.getElementById("failedSearch")?.addEventListener("input", applyFailedFilter);
+bindFailedPagination();
 </script>

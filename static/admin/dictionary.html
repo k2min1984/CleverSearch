@@ -11,7 +11,7 @@
 
 <!-- 사전 관리 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b>📖 사전 관리란?</b> 검색 품질을 높이기 위해 동의어·불용어·사용자사전을 등록합니다.<br>
+    <b><span aria-hidden="true">📖</span> 사전 관리란?</b> 검색 품질을 높이기 위해 동의어·불용어·사용자사전을 등록합니다.<br>
     • <b>synonym (동의어)</b>: 같은 의미의 단어를 매핑합니다. 예) AI → 인공지능<br>
     • <b>stopword (불용어)</b>: 검색에서 무시할 조사/접속사를 등록합니다. 예) 에, 은, 는<br>
     • <b>user (사용자사전)</b>: 오타를 올바른 단어로 교정합니다. 예) 계휙서 → 계획서
@@ -24,7 +24,7 @@
     </select>
     <input id="dictTerm" placeholder="원본 단어 (term)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-56" />
     <input id="dictReplacement" placeholder="대체 단어 (replacement)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-56" />
-    <button onclick="upsertDictionaryEntry()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm whitespace-nowrap">단건 저장</button>
+    <button id="dictSaveBtn" type="button" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm whitespace-nowrap">단건 저장</button>
     <span id="dictTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="dictionaryList">
@@ -55,9 +55,9 @@ function renderDictPagination() {
     const totalPages = Math.max(1, Math.ceil(dictRows.length / DICT_PAGE_SIZE));
     pager.classList.remove("hidden");
     pager.innerHTML = `
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${dictPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${dictPage === 1 ? "disabled" : ""} onclick="changeDictPage(${dictPage - 1})">이전</button>
+        <button type="button" class="js-dict-page px-3 py-1 rounded border border-gray-500 text-sm ${dictPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${dictPage === 1 ? "disabled" : ""} data-page="${dictPage - 1}">이전</button>
         <span class="text-slate-500 font-semibold">${dictPage} / ${totalPages}</span>
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${dictPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${dictPage === totalPages ? "disabled" : ""} onclick="changeDictPage(${dictPage + 1})">다음</button>
+        <button type="button" class="js-dict-page px-3 py-1 rounded border border-gray-500 text-sm ${dictPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${dictPage === totalPages ? "disabled" : ""} data-page="${dictPage + 1}">다음</button>
     `;
 }
 
@@ -70,11 +70,51 @@ function renderDictRows() {
     const start = (dictPage - 1) * DICT_PAGE_SIZE;
     const pageRows = dictRows.slice(start, start + DICT_PAGE_SIZE);
     body.innerHTML = pageRows.map(r => {
-        const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editDictEntry('${(r.dict_type||'').replace(/'/g,"\\'")}','${(r.term||'').replace(/'/g,"\\'")}','${(r.replacement||'').replace(/'/g,"\\'")}')">수정</span>`;
-        const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteDictEntry(${r.id})">삭제</span>`;
-        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.dict_type)}</td><td class="p-2">${fmt(r.term)}</td><td class="p-2">${fmt(r.replacement||"-")}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+        const dictType = encodeURIComponent(String(r.dict_type || ""));
+        const term = encodeURIComponent(String(r.term || ""));
+        const replacement = encodeURIComponent(String(r.replacement || ""));
+        const safeId = Number.isFinite(Number(r.id)) ? Number(r.id) : "";
+        const editBtn = isViewer ? '' : `<button type="button" class="text-blue-400 cursor-pointer hover:underline mr-2 btn-dict-edit" data-dict-type="${dictType}" data-term="${term}" data-replacement="${replacement}">수정</button>`;
+        const delBtn = isViewer ? '' : `<button type="button" class="btn-del btn-dict-delete" data-id="${safeId}">삭제</button>`;
+        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.dict_type)}</td><td class="p-2">${fmt(r.term)}</td><td class="p-2">${fmt(r.replacement||"-")}</td><td class="p-2">${r.is_active?'<span aria-hidden="true">✅</span>':'<span aria-hidden="true">❌</span>'}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
     }).join("") || '<tr><td class="p-2" colspan="6">데이터 없음</td></tr>';
     renderDictPagination();
+}
+
+function bindDictActions() {
+    const pager = document.getElementById("dictPagination");
+    if (pager && pager.dataset.bound !== "1") {
+        pager.dataset.bound = "1";
+        pager.addEventListener("click", (event) => {
+            const pageBtn = event.target.closest(".js-dict-page");
+            if (!pageBtn) return;
+            changeDictPage(Number(pageBtn.dataset.page || 1));
+        });
+    }
+
+    const body = document.getElementById("dictBody");
+    if (!body || body.dataset.actionsBound === "1") return;
+    body.dataset.actionsBound = "1";
+    body.addEventListener("click", (event) => {
+        const editBtn = event.target.closest(".btn-dict-edit");
+        if (editBtn) {
+            editDictEntry(
+                decodeURIComponent(editBtn.dataset.dictType || ""),
+                decodeURIComponent(editBtn.dataset.term || ""),
+                decodeURIComponent(editBtn.dataset.replacement || "")
+            );
+            return;
+        }
+        const delBtn = event.target.closest(".btn-dict-delete");
+        if (delBtn) {
+            const id = Number(delBtn.dataset.id || 0);
+            if (!Number.isFinite(id) || id <= 0) {
+                alert("잘못된 사전 항목 ID입니다.");
+                return;
+            }
+            deleteDictEntry(id);
+        }
+    });
 }
 
 async function upsertDictionaryEntry() {
@@ -116,4 +156,6 @@ function editDictEntry(dictType, term, replacement) {
 }
 
 loadDictionaryEntries();
+bindDictActions();
+document.getElementById("dictSaveBtn")?.addEventListener("click", upsertDictionaryEntry);
 </script>

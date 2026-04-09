@@ -22,6 +22,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CleverSearch</title>
+    <link rel="icon" type="image/png" href="/static/clever-cloud.png" />
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -171,8 +172,9 @@
                 
                 if (tags && tags.length > 0) {
                     container.innerHTML = tags.map(tag => 
-                        `<button onclick="quickSearch('${escapeForOnclick(tag)}')" class="hover:text-blue-400">#${escapeHtml(tag)}</button>`
+                        `<button type="button" data-query="${encodeURIComponent(String(tag))}" class="hover:text-blue-400">#${escapeHtml(tag)}</button>`
                     ).join('');
+                    bindQueryButtons(container);
                 } else {
                     container.innerHTML = '<span class="text-gray-500">집계된 인기 검색어가 없습니다.</span>';
                 }
@@ -217,10 +219,6 @@
             }, 2200);
         }
 
-        function escapeForOnclick(value) {
-            return String(value).replace(/'/g, "\\'");
-        }
-
         function escapeHtml(value) {
             return String(value)
                 .replace(/&/g, '&amp;')
@@ -228,6 +226,25 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        }
+
+        function decodeDataValue(value) {
+            try {
+                return decodeURIComponent(value || '');
+            } catch {
+                return String(value || '');
+            }
+        }
+
+        function bindQueryButtons(container) {
+            if (!container) return;
+            container.querySelectorAll('button[data-query]').forEach((button) => {
+                if (button.dataset.bound === '1') return;
+                button.dataset.bound = '1';
+                button.addEventListener('click', () => {
+                    quickSearch(decodeDataValue(button.dataset.query));
+                });
+            });
         }
 
         function renderSuggestionGroups(groups) {
@@ -240,24 +257,58 @@
 
             autocompleteList.innerHTML = normalized.map(group => {
                 const headerAction = group.clearable
-                    ? `<button onclick="clearRecentSuggestions(event)" class="text-[10px] text-gray-500 hover:text-red-600">전체 삭제</button>`
+                    ? `<button type="button" class="text-[10px] text-gray-500 hover:text-red-600 js-clear-recent">전체 삭제</button>`
                     : '';
                 const rows = group.items.map(item => `
-                    <div class="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700" onclick="selectSuggestion('${escapeForOnclick(item)}')">
+                    <div class="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700" role="button" tabindex="0" data-suggestion="${encodeURIComponent(String(item))}">
                         <div class="flex items-center justify-between gap-3">
                             <span><i class="fas ${group.iconClass || 'fa-history'} text-slate-400 mr-3 text-xs"></i>${escapeHtml(item)}</span>
-                            ${group.removable ? `<button onclick="removeRecentSuggestion(event, '${escapeForOnclick(item)}')" class="text-[10px] text-slate-400 hover:text-red-600 px-1">삭제</button>` : ''}
+                            ${group.removable ? `<button type="button" data-remove-query="${encodeURIComponent(String(item))}" class="text-[10px] text-slate-400 hover:text-red-600 px-1 js-remove-recent">삭제</button>` : ''}
                         </div>
                     </div>
                 `).join('');
                 return `<div class="suggestion-header flex items-center justify-between"><span>${group.title}</span>${headerAction}</div>${rows}`;
             }).join('');
+            bindSuggestionInteractions();
             autocompleteList.classList.remove('hidden');
         }
 
+        function bindSuggestionInteractions() {
+            if (autocompleteList.dataset.actionsBound !== '1') {
+                autocompleteList.dataset.actionsBound = '1';
+                autocompleteList.addEventListener('click', (event) => {
+                    const clearButton = event.target.closest('.js-clear-recent');
+                    if (clearButton) {
+                        clearRecentSuggestions(event);
+                        return;
+                    }
+                    const removeButton = event.target.closest('.js-remove-recent');
+                    if (removeButton) {
+                        const keyword = decodeDataValue(removeButton.dataset.removeQuery);
+                        removeRecentSuggestion(event, keyword);
+                    }
+                });
+            }
+
+            autocompleteList.querySelectorAll('[data-suggestion]').forEach((row) => {
+                if (row.dataset.bound === '1') return;
+                row.dataset.bound = '1';
+                row.addEventListener('click', () => {
+                    selectSuggestion(decodeURIComponent(row.dataset.suggestion || ''));
+                });
+                row.addEventListener('keydown', (event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    selectSuggestion(decodeURIComponent(row.dataset.suggestion || ''));
+                });
+            });
+        }
+
         async function removeRecentSuggestion(event, keyword) {
-            event.stopPropagation();
-            event.preventDefault();
+            if (event) {
+                event.stopPropagation();
+                event.preventDefault();
+            }
             try {
                 const userId = getUserId();
                 const response = await fetch(`${API_BASE}/recent/item?user_id=${encodeURIComponent(userId)}&q=${encodeURIComponent(keyword)}`, {
@@ -273,8 +324,10 @@
         }
 
         async function clearRecentSuggestions(event) {
-            event.stopPropagation();
-            event.preventDefault();
+            if (event) {
+                event.stopPropagation();
+                event.preventDefault();
+            }
             try {
                 const userId = getUserId();
                 const response = await fetch(`${API_BASE}/recent?user_id=${encodeURIComponent(userId)}`, {
@@ -297,10 +350,11 @@
             }
 
             autocompleteList.innerHTML = items.map(item => `
-                <div class="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700" onclick="selectSuggestion('${escapeForOnclick(item)}')">
+                <div class="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700" role="button" tabindex="0" data-suggestion="${encodeURIComponent(String(item))}">
                     <i class="fas ${iconClass} text-slate-400 mr-3 text-xs"></i><span>${escapeHtml(item)}</span>
                 </div>
             `).join('');
+            bindSuggestionInteractions();
             autocompleteList.classList.remove('hidden');
         }
 
@@ -377,8 +431,9 @@
                 }
 
                 relatedTags.innerHTML = items.map(tag =>
-                    `<button onclick="quickSearch('${escapeForOnclick(tag)}')" class="px-2 py-1 rounded-full border border-gray-600 text-xs hover:border-blue-400 hover:text-blue-300 transition">${escapeHtml(tag)}</button>`
+                    `<button type="button" data-query="${encodeURIComponent(String(tag))}" class="px-2 py-1 rounded-full border border-gray-600 text-xs hover:border-blue-400 hover:text-blue-300 transition">${escapeHtml(tag)}</button>`
                 ).join('');
+                bindQueryButtons(relatedTags);
                 relatedSection.classList.remove('hidden');
             } catch (error) {
                 console.error('연관 검색어 로드 실패:', error);
@@ -529,7 +584,7 @@
                 // 오타 교정이 적용되면 사용자에게 명확히 보여줍니다.
                 const correctionNotice = document.getElementById('correctionNotice');
                 if (data.is_typo_corrected && data.original_query && data.corrected_query) {
-                    correctionNotice.innerHTML = `입력어 <b>${data.original_query}</b> 를 <b>${data.corrected_query}</b> 로 교정하여 검색했습니다.`;
+                    correctionNotice.innerHTML = `입력어 <b>${escapeHtml(data.original_query)}</b> 를 <b>${escapeHtml(data.corrected_query)}</b> 로 교정하여 검색했습니다.`;
                     correctionNotice.classList.remove('hidden');
                     searchInput.value = data.corrected_query;
                 } else {
@@ -550,7 +605,7 @@
                 await loadRelatedKeywords(relatedSeed);
             } catch (error) {
                 const msg = error.message;
-                resultList.innerHTML = `<div class="text-center py-10 text-red-400">오류: ${msg}</div>`;
+                resultList.innerHTML = `<div class="text-center py-10 text-red-400">오류: ${escapeHtml(msg)}</div>`;
                 showToast('검색 요청 중 오류가 발생했습니다.', 'error');
                 document.getElementById('relatedSection').classList.add('hidden');
                 document.getElementById('relatedTags').innerHTML = '';
@@ -611,6 +666,9 @@
             data.items.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'result-card group bg-[#303134] p-6 rounded-xl border border-[#5f6368] hover:border-indigo-400 transition-all shadow-md mb-4';
+                card.tabIndex = 0;
+                card.setAttribute('role', 'button');
+                card.setAttribute('aria-label', '문서 상세 열기');
 
                 const summaryText = item.summary || '내용 없음';
                 const cardPreviewText = summaryText.substring(0, 300) + (summaryText.length > 300 ? '...' : '');
@@ -618,39 +676,49 @@
                 const originFile = item.content?.origin_file || item.content?.originfile || '-';
                 const indexedDate = item.indexed_at || item.content?.indexed_at || item.content?.indexedat || '';
                 const titleText = item.content?.Title || originFile || '제목 없음';
+                const scoreText = Number.isFinite(item.score) ? item.score.toFixed(2) : '0.00';
 
                 card.innerHTML = `
                     <div class="flex justify-between items-start mb-2">
                         <div class="flex-1">
                             <div class="text-xs font-bold text-indigo-700 bg-indigo-100 px-2 py-1 rounded inline-block mb-2">
-                                <i class="far fa-file-alt mr-1"></i> ${item.location}
+                                <i class="far fa-file-alt mr-1"></i> ${escapeHtml(item.location || '-')}
                             </div>
                             <h3 class="text-xl text-indigo-700 group-hover:underline font-medium cursor-pointer">
-                                ${titleText}
+                                ${escapeHtml(titleText)}
                             </h3>
                         </div>
                         <button class="text-slate-400 hover:text-slate-700 transition px-2 py-1">
                             <i class="fas fa-ellipsis-v"></i>
                         </button>
                     </div>
-                    <p class="text-slate-600 text-sm leading-relaxed mb-4">${cardPreviewText}</p>
+                    <p class="text-slate-600 text-sm leading-relaxed mb-4">${escapeHtml(cardPreviewText)}</p>
                     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 border-t border-slate-200 pt-3">
                         <span class="preview-anchor" tabindex="0" role="button" aria-label="본문 미리보기">
-                            <i class="far fa-hdd mr-1"></i> ${originFile}
+                            <i class="far fa-hdd mr-1"></i> ${escapeHtml(originFile)}
                             <div class="preview-popup">
                                 <div class="text-xs text-indigo-600 font-bold mb-1">본문 미리보기</div>
-                                <div class="text-slate-600 whitespace-pre-wrap">${popupFullText || '미리보기 데이터 없음'}</div>
+                                <div class="text-slate-600 whitespace-pre-wrap">${escapeHtml(popupFullText || '미리보기 데이터 없음')}</div>
                             </div>
                         </span>
-                        <span><i class="far fa-calendar-alt mr-1"></i> ${indexedDate ? indexedDate.substring(0,10) : '-'}</span>
-                        <span class="sm:ml-auto bg-slate-100 px-2 py-0.5 rounded italic">Score: ${item.score.toFixed(2)}</span>
+                        <span><i class="far fa-calendar-alt mr-1"></i> ${escapeHtml(indexedDate ? indexedDate.substring(0,10) : '-')}</span>
+                        <span class="sm:ml-auto bg-slate-100 px-2 py-0.5 rounded italic">Score: ${scoreText}</span>
                     </div>
                 `;
                 
-                card.onclick = () => {
+                card.onclick = (event) => {
+                    if (event.target.closest('button, a, input, textarea, select, .preview-anchor')) return;
                     const osDocId = item.id;
                     openDocumentView(osDocId, item);
                 };
+
+                card.addEventListener('keydown', (event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    if (event.target.closest('button, a, input, textarea, select, .preview-anchor')) return;
+                    event.preventDefault();
+                    const osDocId = item.id;
+                    openDocumentView(osDocId, item);
+                });
 
                 const previewAnchor = card.querySelector('.preview-anchor');
                 if (previewAnchor) {
@@ -665,8 +733,9 @@
 
         // 문서 상세 보기 (포맷팅된 새 창)
         async function openDocumentView(docId, item) {
+            const safeDocId = encodeURIComponent(String(docId ?? ""));
             try {
-                const res = await fetch(`${SEARCH_API}/read/${docId}`);
+                const res = await fetch(`${SEARCH_API}/read/${safeDocId}`);
                 const data = await res.json();
                 const c = data.content || data._source || data;
                 const title = c.Title || c.origin_file || c.originfile || item.content?.origin_file || item.content?.originfile || '문서';
@@ -676,9 +745,20 @@
                 const text = c.all_text || c.alltext || c.text || item.content?.all_text || item.content?.alltext || '';
                 const indexed = c.indexed_at || c.indexedat || data.indexed_at || data.indexedat || '';
 
-                const win = window.open('', '_blank');
+                                const safeTitle = escapeHtml(title);
+                                const safeOrigin = escapeHtml(origin);
+                                const safeCategory = escapeHtml(category);
+                                const safeExt = escapeHtml(ext);
+                                const safeIndexed = escapeHtml(indexed ? indexed.substring(0, 10) : '-');
+                                const safeText = escapeHtml(text || '본문 데이터 없음');
+
+                const win = window.open('', '_blank', 'noopener,noreferrer');
+                if (!win) {
+                    throw new Error('popup blocked');
+                }
+                win.opener = null;
                 win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${title}</title>
+<html><head><meta charset="utf-8"><title>${safeTitle}</title>
 <style>
     body { font-family: 'Malgun Gothic', sans-serif; background: #f3f6fb; color: #334155; margin: 0; padding: 2rem; line-height: 1.7; }
   .container { max-width: 900px; margin: 0 auto; }
@@ -686,22 +766,22 @@
     .meta { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; font-size: 0.85rem; color: #64748b; }
     .meta span { background: #ffffff; border: 1px solid #d6dfec; padding: 4px 10px; border-radius: 6px; }
     .content { background: #ffffff; border: 1px solid #d6dfec; border-radius: 8px; padding: 1.5rem; white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; max-height: 70vh; overflow-y: auto; }
-    .back { display: inline-block; margin-top: 1rem; color: #4f46e5; cursor: pointer; text-decoration: underline; }
+        .close-btn { display: inline-block; margin-top: 1rem; color: #4f46e5; cursor: pointer; text-decoration: underline; border: none; background: transparent; padding: 0; font: inherit; }
 </style></head><body>
 <div class="container">
-  <h1>📄 ${title}</h1>
+    <h1>📄 ${safeTitle}</h1>
   <div class="meta">
-    <span>📁 파일명: ${origin}</span>
-    <span>📂 카테고리: ${category}</span>
-    <span>📋 확장자: ${ext}</span>
-    <span>📅 색인일: ${indexed ? indexed.substring(0, 10) : '-'}</span>
+        <span>📁 파일명: ${safeOrigin}</span>
+        <span>📂 카테고리: ${safeCategory}</span>
+        <span>📋 확장자: ${safeExt}</span>
+        <span>📅 색인일: ${safeIndexed}</span>
   </div>
-  <div class="content">${text || '본문 데이터 없음'}</div>
-  <span class="back" onclick="window.close()">← 닫기</span>
+    <div class="content">${safeText}</div>
+    <button class="close-btn" type="button" onclick="window.close()" aria-label="문서 창 닫기">← 닫기</button>
 </div></body></html>`);
                 win.document.close();
             } catch (e) {
-                window.open(`${SEARCH_API}/read/${docId}`, '_blank');
+                window.open(`${SEARCH_API}/read/${safeDocId}`, '_blank', 'noopener,noreferrer');
             }
         }
 

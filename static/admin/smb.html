@@ -11,7 +11,7 @@
 
 <!-- SMB 색인 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b>📁 SMB 색인이란?</b> 네트워크 공유 폴더(SMB/CIFS)에 있는 파일을 자동으로 수집·색인합니다.<br>
+    <b><span aria-hidden="true">📁</span> SMB 색인이란?</b> 네트워크 공유 폴더(SMB/CIFS)에 있는 파일을 자동으로 수집·색인합니다.<br>
     • <b>name</b>: 소스를 구분할 이름 (예: 본사공유, R&D자료실)<br>
     • <b>share_path</b>: SMB 경로 (예: \\\\server\\share\\docs)<br>
     • <b>username/password</b>: 인증이 필요한 경우 입력
@@ -21,12 +21,12 @@
     <input id="smbPath" placeholder="경로 (share_path)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
     <input id="smbUser" placeholder="계정 (username)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
     <input id="smbPass" placeholder="비밀번호 (password)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-    <button onclick="upsertSmbSource()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
+    <button id="smbSaveBtn" type="button" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
 </div>
 <div class="flex gap-2 mb-3">
     <input id="smbSyncId" placeholder="동기화할 source_id" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-40" />
-    <button onclick="syncSmbSource()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
-    <button onclick="toggleSmbView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+    <button id="smbSyncBtn" type="button" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
+    <button id="smbToggleBtn" type="button" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
     <span id="smbTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="smbList" class="hidden">
@@ -57,9 +57,9 @@ function renderSmbPagination() {
     const totalPages = Math.max(1, Math.ceil(smbRows.length / SMB_PAGE_SIZE));
     pager.classList.remove("hidden");
     pager.innerHTML = `
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${smbPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${smbPage === 1 ? "disabled" : ""} onclick="changeSmbPage(${smbPage - 1})">이전</button>
+        <button type="button" class="js-smb-page px-3 py-1 rounded border border-gray-500 text-sm ${smbPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${smbPage === 1 ? "disabled" : ""} data-page="${smbPage - 1}">이전</button>
         <span class="text-slate-500 font-semibold">${smbPage} / ${totalPages}</span>
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${smbPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${smbPage === totalPages ? "disabled" : ""} onclick="changeSmbPage(${smbPage + 1})">다음</button>
+        <button type="button" class="js-smb-page px-3 py-1 rounded border border-gray-500 text-sm ${smbPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${smbPage === totalPages ? "disabled" : ""} data-page="${smbPage + 1}">다음</button>
     `;
 }
 
@@ -72,11 +72,57 @@ function renderSmbRows() {
     const start = (smbPage - 1) * SMB_PAGE_SIZE;
     const pageRows = smbRows.slice(start, start + SMB_PAGE_SIZE);
     body.innerHTML = pageRows.map(r => {
-        const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editSmbSource(${r.id},'${(r.name||'').replace(/'/g,"\\'")}','${(r.share_path||'').replace(/'/g,"\\'")}','${(r.username||'').replace(/'/g,"\\'")}')">수정</span>`;
-        const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteSmbSource(${r.id})">삭제</span>`;
-        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.share_path)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_seen_at||r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+        const safeId = Number.isFinite(Number(r.id)) ? Number(r.id) : "";
+        const name = encodeURIComponent(String(r.name || ""));
+        const sharePath = encodeURIComponent(String(r.share_path || ""));
+        const username = encodeURIComponent(String(r.username || ""));
+        const editBtn = isViewer ? '' : `<button type="button" class="text-blue-400 cursor-pointer hover:underline mr-2 btn-smb-edit" data-id="${safeId}" data-name="${name}" data-share-path="${sharePath}" data-username="${username}">수정</button>`;
+        const delBtn = isViewer ? '' : `<button type="button" class="btn-del btn-smb-delete" data-id="${safeId}">삭제</button>`;
+        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.share_path)}</td><td class="p-2">${r.is_active?'<span aria-hidden="true">✅</span>':'<span aria-hidden="true">❌</span>'}</td><td class="p-2">${fmt(r.last_seen_at||r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
     }).join("");
     renderSmbPagination();
+}
+
+function bindSmbActions() {
+    const pager = document.getElementById("smbPagination");
+    if (pager && pager.dataset.bound !== "1") {
+        pager.dataset.bound = "1";
+        pager.addEventListener("click", (event) => {
+            const pageBtn = event.target.closest(".js-smb-page");
+            if (!pageBtn) return;
+            changeSmbPage(Number(pageBtn.dataset.page || 1));
+        });
+    }
+
+    const body = document.getElementById("smbBody");
+    if (!body || body.dataset.actionsBound === "1") return;
+    body.dataset.actionsBound = "1";
+    body.addEventListener("click", (event) => {
+        const editBtn = event.target.closest(".btn-smb-edit");
+        if (editBtn) {
+            const id = Number(editBtn.dataset.id || 0);
+            if (!Number.isFinite(id) || id <= 0) {
+                alert("잘못된 SMB 소스 ID입니다.");
+                return;
+            }
+            editSmbSource(
+                id,
+                decodeURIComponent(editBtn.dataset.name || ""),
+                decodeURIComponent(editBtn.dataset.sharePath || ""),
+                decodeURIComponent(editBtn.dataset.username || "")
+            );
+            return;
+        }
+        const delBtn = event.target.closest(".btn-smb-delete");
+        if (delBtn) {
+            const id = Number(delBtn.dataset.id || 0);
+            if (!Number.isFinite(id) || id <= 0) {
+                alert("잘못된 SMB 소스 ID입니다.");
+                return;
+            }
+            deleteSmbSource(id);
+        }
+    });
 }
 
 async function upsertSmbSource() {
@@ -142,4 +188,8 @@ function editSmbSource(id, name, sharePath, username) {
 }
 
 loadSmbSources();
+bindSmbActions();
+document.getElementById("smbSaveBtn")?.addEventListener("click", upsertSmbSource);
+document.getElementById("smbSyncBtn")?.addEventListener("click", syncSmbSource);
+document.getElementById("smbToggleBtn")?.addEventListener("click", toggleSmbView);
 </script>

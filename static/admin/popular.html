@@ -12,7 +12,7 @@
 
 <!-- 인기검색 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b>🔥 인기검색</b> — 설정 기간 내 가장 많이 검색된 키워드를 순위별로 표시합니다.<br>
+    <b><span aria-hidden="true">🔥</span> 인기검색</b> — 설정 기간 내 가장 많이 검색된 키워드를 순위별로 표시합니다.<br>
     • <b>기간(일)</b>: 집계 기간 설정 (1~365일)<br>
     • <b>표시 개수</b>: 상위 N개만 표시 (1~9개)<br>
     • <b>[적용]</b>: 변경된 설정 즉시 반영<br>
@@ -24,8 +24,8 @@
     <label class="text-sm text-gray-400">표시 개수:</label>
     <input id="popularLimit" type="number" min="1" max="9" placeholder="1~9" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
     <input id="popularSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-72" placeholder="키워드" />
-    <button onclick="saveAndLoadPopular()" class="px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm font-medium">적용</button>
-    <button onclick="loadRecommendKeywords()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">추천 키워드</button>
+    <button id="popularApplyBtn" type="button" class="px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm font-medium">적용</button>
+    <button id="popularRecommendBtn" type="button" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">추천 키워드</button>
     <span id="popularTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="popularConfigNotice" class="hidden mb-3 rounded border px-3 py-2 text-sm"></div>
@@ -71,10 +71,22 @@ function renderPopularPagination() {
     const totalPages = Math.max(1, Math.ceil(popularFilteredRows.length / POPULAR_PAGE_SIZE));
     pager.classList.remove("hidden");
     pager.innerHTML = `
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${popularPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${popularPage === 1 ? "disabled" : ""} onclick="changePopularPage(${popularPage - 1})">이전</button>
+        <button type="button" class="js-popular-page px-3 py-1 rounded border border-gray-500 text-sm ${popularPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${popularPage === 1 ? "disabled" : ""} data-page="${popularPage - 1}">이전</button>
         <span class="text-slate-500 font-semibold">${popularPage} / ${totalPages}</span>
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${popularPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${popularPage === totalPages ? "disabled" : ""} onclick="changePopularPage(${popularPage + 1})">다음</button>
+        <button type="button" class="js-popular-page px-3 py-1 rounded border border-gray-500 text-sm ${popularPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${popularPage === totalPages ? "disabled" : ""} data-page="${popularPage + 1}">다음</button>
     `;
+}
+
+function bindPopularPagination() {
+    const pager = document.getElementById("popularPagination");
+    if (!pager || pager.dataset.bound === "1") return;
+    pager.dataset.bound = "1";
+    pager.addEventListener("click", (event) => {
+        const button = event.target.closest(".js-popular-page");
+        if (!button) return;
+        const nextPage = Number(button.dataset.page || 1);
+        changePopularPage(nextPage);
+    });
 }
 
 async function syncDisplayedPopularCount(days) {
@@ -196,19 +208,22 @@ async function loadRecommendKeywords() {
         });
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
-            container.innerHTML = "<b>💡 추천 키워드:</b> " + data.map(k => `<span class='inline-block bg-indigo-800 text-indigo-200 px-2 py-1 rounded-full text-xs mr-1 mb-1'>${k}</span>`).join("");
+            container.innerHTML = "<b><span aria-hidden=\"true\">💡</span> 추천 키워드:</b> " + data.map(k => `<span class='inline-block bg-indigo-800 text-indigo-200 px-2 py-1 rounded-full text-xs mr-1 mb-1'>${fmt(k)}</span>`).join("");
         } else {
             container.innerHTML = "<span class='text-gray-400'>추천 키워드가 없습니다. 검색 이력이 축적되면 자동으로 생성됩니다.</span>";
         }
     } catch (e) {
-        container.innerHTML = `<span class='text-red-400'>추천 키워드 조회 실패: ${e.message}</span>`;
+        container.innerHTML = `<span class='text-red-400'>추천 키워드 조회 실패: ${fmt(e.message)}</span>`;
     }
 }
 
 document.getElementById("popularDays")?.addEventListener("change", loadPopular);
 document.getElementById("popularSearch")?.addEventListener("input", applyPopularFilter);
+document.getElementById("popularApplyBtn")?.addEventListener("click", saveAndLoadPopular);
+document.getElementById("popularRecommendBtn")?.addEventListener("click", loadRecommendKeywords);
 
 (async function initPopularTab() {
+    bindPopularPagination();
     await loadPopularSettings();
     await loadPopular();
 })();

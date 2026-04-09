@@ -11,7 +11,7 @@
 
 <!-- 볼륨/SSL 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b>🔐 볼륨/SSL 관리란?</b> OpenSearch 인덱스(볼륨) 생성 및 HTTPS 인증서의 만료 상태를 관리합니다.<br>
+    <b><span aria-hidden="true">🔐</span> 볼륨/SSL 관리란?</b> OpenSearch 인덱스(볼륨) 생성 및 HTTPS 인증서의 만료 상태를 관리합니다.<br>
     • <b>볼륨 생성</b>: 커스텀 OpenSearch 인덱스를 생성합니다.<br>
     • <b>인증서 상태</b>: SSL 인증서의 만료일을 모니터링합니다.<br>
     • <b>갱신 스크립트</b>: Let's Encrypt 또는 자체 서명 인증서를 갱신합니다.
@@ -23,11 +23,11 @@
     <input id="renewRunPath" value="scripts/renew_certs.ps1" placeholder="실행 스크립트 경로" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
 </div>
 <div class="flex gap-2 mb-3 flex-wrap">
-    <button onclick="createVolume()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">볼륨 생성</button>
-    <button onclick="scanCertificates()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">인증서 상태</button>
-    <button onclick="generateRenewScript()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 생성</button>
-    <button onclick="runRenewScript()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 실행</button>
-    <button onclick="toggleSslView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+    <button id="sslCreateVolumeBtn" type="button" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">볼륨 생성</button>
+    <button id="sslScanBtn" type="button" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">인증서 상태</button>
+    <button id="sslGenerateBtn" type="button" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 생성</button>
+    <button id="sslRunBtn" type="button" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 실행</button>
+    <button id="sslToggleBtn" type="button" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
     <span id="sslTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="sslList" class="hidden">
@@ -58,10 +58,22 @@ function renderSslPagination() {
     const totalPages = Math.max(1, Math.ceil(sslRows.length / SSL_PAGE_SIZE));
     pager.classList.remove("hidden");
     pager.innerHTML = `
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${sslPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${sslPage === 1 ? "disabled" : ""} onclick="changeSslPage(${sslPage - 1})">이전</button>
+        <button type="button" class="js-ssl-page px-3 py-1 rounded border border-gray-500 text-sm ${sslPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${sslPage === 1 ? "disabled" : ""} data-page="${sslPage - 1}">이전</button>
         <span class="text-slate-500 font-semibold">${sslPage} / ${totalPages}</span>
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${sslPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${sslPage === totalPages ? "disabled" : ""} onclick="changeSslPage(${sslPage + 1})">다음</button>
+        <button type="button" class="js-ssl-page px-3 py-1 rounded border border-gray-500 text-sm ${sslPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${sslPage === totalPages ? "disabled" : ""} data-page="${sslPage + 1}">다음</button>
     `;
+}
+
+function bindSslActions() {
+    const pager = document.getElementById("sslPagination");
+    if (pager && pager.dataset.bound !== "1") {
+        pager.dataset.bound = "1";
+        pager.addEventListener("click", (event) => {
+            const pageBtn = event.target.closest(".js-ssl-page");
+            if (!pageBtn) return;
+            changeSslPage(Number(pageBtn.dataset.page || 1));
+        });
+    }
 }
 
 function renderSslRows() {
@@ -124,4 +136,11 @@ function populateSslList(data) {
     sslPage = 1;
     renderSslRows();
 }
+
+bindSslActions();
+document.getElementById("sslCreateVolumeBtn")?.addEventListener("click", createVolume);
+document.getElementById("sslScanBtn")?.addEventListener("click", scanCertificates);
+document.getElementById("sslGenerateBtn")?.addEventListener("click", generateRenewScript);
+document.getElementById("sslRunBtn")?.addEventListener("click", runRenewScript);
+document.getElementById("sslToggleBtn")?.addEventListener("click", toggleSslView);
 </script>

@@ -71,11 +71,107 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            height: 64px;
-            padding: 0 22px;
+            min-height: 64px;
+            padding: 8px 22px;
             border-bottom: 1px solid var(--line);
             background: rgba(255, 255, 255, 0.9);
             backdrop-filter: blur(8px);
+        }
+
+        .topbar-title {
+            flex: 1;
+            min-width: 0;
+            font-size: 16px;
+            font-weight: 700;
+            color: #334155;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding-right: 12px;
+        }
+
+        .topbar-actions {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-shrink: 0;
+            margin-left: auto;
+        }
+
+        .user-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+            border: 1px solid #d7e3fb;
+            border-radius: 999px;
+            padding: 4px 10px 4px 6px;
+            color: #334155;
+            box-shadow: 0 6px 12px rgba(59, 130, 246, 0.08);
+            min-width: 0;
+        }
+
+        .user-chip-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border-radius: 999px;
+            background: #dbeafe;
+            color: #1e40af;
+            font-size: 12px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .user-chip-name {
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .top-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border-radius: 999px;
+            border: 1px solid #d8dfeb;
+            background: linear-gradient(180deg, #ffffff 0%, #f4f7fc 100%);
+            color: #334155;
+            box-shadow: 0 6px 12px rgba(51, 65, 85, 0.08);
+            padding: 6px 11px;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+            text-decoration: none;
+        }
+
+        .top-action:hover {
+            background: linear-gradient(180deg, #ffffff 0%, #eaf0fb 100%);
+            border-color: #cbd5e1;
+            color: #1f2937;
+        }
+
+        .top-action.search-link {
+            border-color: #cfe0ff;
+            color: #1e40af;
+            background: linear-gradient(180deg, #f7faff 0%, #e8f0ff 100%);
+        }
+
+        .top-action.logout-btn {
+            border-color: #ffd6df;
+            color: #9f1239;
+            background: linear-gradient(180deg, #fff7f9 0%, #ffedf2 100%);
+        }
+
+        .top-action-label {
+            white-space: nowrap;
         }
 
         .content-wrap {
@@ -97,38 +193,114 @@
             gap: 6px;
         }
 
+        #tabMenu .menu-section {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 4px;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+        }
+
+        #tabMenu .menu-section:hover,
+        #tabMenu .menu-section:focus-within {
+            background: #f8faff;
+            border-color: #dbe4ff;
+        }
+
+        #tabMenu .menu-title {
+            margin: 0;
+            padding: 6px 8px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #475569;
+            letter-spacing: 0.02em;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border-radius: 9px;
+            transition: color 0.2s ease;
+        }
+
+        #tabMenu .menu-items {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            pointer-events: none;
+            transform: translateY(-3px);
+            transition: max-height 0.2s ease, opacity 0.16s ease, transform 0.2s ease;
+        }
+
+        #tabMenu .menu-section:hover .menu-title,
+        #tabMenu .menu-section:focus-within .menu-title,
+        #tabMenu .menu-section.section-active .menu-title {
+            color: #1e293b;
+        }
+
+        #tabMenu .menu-section.section-active {
+            background: #eef4ff;
+            border-color: #bfd1ff;
+        }
+
+        #tabMenu .menu-section.section-active .menu-title {
+            background: #e1ebff;
+            color: #334155;
+        }
+
+        #tabMenu .menu-section:hover .menu-items,
+        #tabMenu .menu-section:focus-within .menu-items,
+        #tabMenu .menu-section.section-active .menu-items {
+            max-height: 520px;
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+
         #tabMenu .tab {
             width: 100%;
             border: 1px solid transparent;
             border-radius: 11px;
             text-align: left;
             padding: 10px 12px;
-            color: #5f6b81;
+            color: #334155;
             background: transparent;
-            font-weight: 700;
+            font-weight: 600;
             font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
             transition: all 0.2s ease;
         }
 
         #tabMenu .tab:hover {
-            border-color: #dbe2ef;
-            background: #eef2f9;
-            color: #334155;
+            border-color: #cbd5e1;
+            background: #e9eef7;
+            color: #1e293b;
         }
 
         #tabMenu .tab.active {
-            background: var(--primary-weak);
-            color: var(--primary);
-            border-color: #ded8ff;
+            background: #edf2ff;
+            color: #334155;
+            border-color: #c6d3fb;
+            box-shadow: none;
+        }
+
+        #tabMenu .tab:focus-visible {
+            outline: 3px solid #2563eb;
+            outline-offset: 2px;
         }
 
         button,
         .btn,
         .admin-btn {
-            border-radius: 10px;
-            border: none;
+            border-radius: 999px;
+            border: 1px solid #d8dfeb;
             font-weight: 700;
-            transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+            transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease, background 0.2s ease;
         }
 
         button:hover,
@@ -138,53 +310,65 @@
         }
 
         .btn-primary {
-            background: var(--primary);
-            color: #fff;
-            box-shadow: 0 7px 14px rgba(91, 92, 226, 0.24);
+            background: linear-gradient(180deg, #f8fbff 0%, #e8f0ff 100%);
+            color: #1e40af;
+            border-color: #cfe0ff;
+            box-shadow: 0 6px 12px rgba(59, 130, 246, 0.12);
         }
 
         .btn-secondary {
-            background: #5f6b7a;
-            color: #fff;
-            box-shadow: 0 7px 14px rgba(95, 107, 122, 0.22);
+            background: linear-gradient(180deg, #ffffff 0%, #f4f7fc 100%);
+            color: #334155;
+            border-color: #d8dfeb;
+            box-shadow: 0 6px 12px rgba(51, 65, 85, 0.1);
         }
 
         .btn-success {
-            background: #16a56f;
-            color: #fff;
-            box-shadow: 0 7px 14px rgba(22, 165, 111, 0.22);
+            background: linear-gradient(180deg, #f3fff9 0%, #e3f8ef 100%);
+            color: #0f766e;
+            border-color: #bfe9d6;
+            box-shadow: 0 6px 12px rgba(16, 185, 129, 0.1);
         }
 
         .btn-danger-solid {
-            background: #e53935;
-            color: #fff;
-            box-shadow: 0 7px 14px rgba(229, 57, 53, 0.24);
+            background: linear-gradient(180deg, #fff7f9 0%, #ffedf2 100%);
+            color: #9f1239;
+            border-color: #ffd6df;
+            box-shadow: 0 6px 12px rgba(244, 63, 94, 0.1);
         }
 
         .btn-warning {
-            background: #f6bd16;
-            color: #312700;
-            box-shadow: 0 7px 14px rgba(246, 189, 22, 0.24);
+            background: linear-gradient(180deg, #fffdf5 0%, #fff5d8 100%);
+            color: #92400e;
+            border-color: #fde5a7;
+            box-shadow: 0 6px 12px rgba(245, 158, 11, 0.1);
         }
 
         .btn-info {
-            background: #20b5d6;
-            color: #fff;
-            box-shadow: 0 7px 14px rgba(32, 181, 214, 0.24);
+            background: linear-gradient(180deg, #f4fbff 0%, #e7f5ff 100%);
+            color: #0c4a6e;
+            border-color: #cbe8fb;
+            box-shadow: 0 6px 12px rgba(14, 165, 233, 0.1);
         }
 
         .btn-unified {
-            border-radius: 10px !important;
-            padding: 7px 12px !important;
-            font-weight: 800 !important;
-            border: 1px solid transparent !important;
+            border-radius: 999px !important;
+            padding: 7px 13px !important;
+            font-weight: 700 !important;
+            border: 1px solid #d6dfec !important;
             line-height: 1.2 !important;
+            box-shadow: 0 6px 12px rgba(51, 65, 85, 0.08);
+        }
+
+        .btn-icon {
+            margin-right: 6px;
+            line-height: 1;
         }
 
         .btn-soft {
-            background: #edf1f7;
-            color: #374151;
-            border: 1px solid #d8dee9;
+            background: linear-gradient(180deg, #ffffff 0%, #f3f6fb 100%);
+            color: #334155;
+            border: 1px solid #d6deeb;
         }
 
         .btn-danger {
@@ -216,6 +400,10 @@
             color: #667084;
             font-size: 12px;
             font-weight: 700;
+            max-width: 140px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .metric {
@@ -378,33 +566,64 @@
         }
 
         #tabContent .bg-blue-600,
+        #tabContent .bg-blue-500,
+        #tabContent .hover\:bg-blue-500:hover,
+        #tabContent .hover\:bg-blue-600:hover,
         #tabContent .bg-indigo-600,
+        #tabContent .bg-indigo-500,
+        #tabContent .hover\:bg-indigo-500:hover,
+        #tabContent .hover\:bg-indigo-600:hover,
         #tabContent .bg-purple-600 {
-            background: #5b5ce2 !important;
-            color: #ffffff !important;
-            border: 1px solid #4f50cb !important;
+            background: linear-gradient(180deg, #f8fbff 0%, #e8f0ff 100%) !important;
+            color: #1e40af !important;
+            border: 1px solid #cfe0ff !important;
+            box-shadow: 0 6px 12px rgba(59, 130, 246, 0.12) !important;
         }
 
-        #tabContent .bg-green-600 {
-            background: #16a56f !important;
-            color: #ffffff !important;
-            border: 1px solid #128a5e !important;
+        #tabContent .bg-green-600,
+        #tabContent .bg-green-500,
+        #tabContent .hover\:bg-green-500:hover,
+        #tabContent .hover\:bg-green-600:hover {
+            background: linear-gradient(180deg, #f3fff9 0%, #e3f8ef 100%) !important;
+            color: #0f766e !important;
+            border: 1px solid #bfe9d6 !important;
+            box-shadow: 0 6px 12px rgba(16, 185, 129, 0.1) !important;
         }
 
         #tabContent .bg-red-600,
+        #tabContent .bg-red-500,
         #tabContent .bg-red-700,
         #tabContent .bg-red-800,
-        #tabContent .bg-red-900 {
-            background: #e53935 !important;
-            color: #ffffff !important;
-            border: 1px solid #cf2f2b !important;
+        #tabContent .bg-red-900,
+        #tabContent .hover\:bg-red-500:hover,
+        #tabContent .hover\:bg-red-600:hover,
+        #tabContent .hover\:bg-red-700:hover,
+        #tabContent .hover\:bg-red-800:hover,
+        #tabContent .hover\:bg-red-900:hover {
+            background: linear-gradient(180deg, #fff7f9 0%, #ffedf2 100%) !important;
+            color: #9f1239 !important;
+            border: 1px solid #ffd6df !important;
+            box-shadow: 0 6px 12px rgba(244, 63, 94, 0.1) !important;
         }
 
         #tabContent .bg-yellow-500,
-        #tabContent .bg-yellow-600 {
-            background: #f6bd16 !important;
-            color: #332700 !important;
-            border: 1px solid #e0aa0e !important;
+        #tabContent .bg-yellow-600,
+        #tabContent .hover\:bg-yellow-500:hover,
+        #tabContent .hover\:bg-yellow-600:hover {
+            background: linear-gradient(180deg, #fffdf5 0%, #fff5d8 100%) !important;
+            color: #92400e !important;
+            border: 1px solid #fde5a7 !important;
+            box-shadow: 0 6px 12px rgba(245, 158, 11, 0.1) !important;
+        }
+
+        #tabContent .bg-gray-700,
+        #tabContent .bg-gray-600,
+        #tabContent .hover\:bg-gray-600:hover,
+        #tabContent .hover\:bg-gray-700:hover {
+            background: linear-gradient(180deg, #ffffff 0%, #f4f7fc 100%) !important;
+            color: #334155 !important;
+            border: 1px solid #d8dfeb !important;
+            box-shadow: 0 6px 12px rgba(51, 65, 85, 0.1) !important;
         }
 
         #tabContent button,
@@ -432,21 +651,103 @@
             .side {
                 border-right: 0;
                 border-bottom: 1px solid var(--line);
-                padding-bottom: 8px;
+                padding: 12px 12px 10px;
             }
 
             #tabMenu {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                width: 100%;
+            }
+
+            #tabMenu .menu-items {
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 8px;
+                max-height: none;
+                opacity: 1;
+                overflow: visible;
+                pointer-events: auto;
+                transform: none;
             }
 
             .topbar {
                 position: static;
+                align-items: flex-start;
             }
 
             #tabContent {
                 min-height: 50vh;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .topbar {
+                padding: 8px 10px;
+                gap: 8px;
+            }
+
+            .topbar-title {
+                font-size: 12px;
+                padding-right: 6px;
+            }
+
+            .topbar-actions {
+                gap: 6px;
+            }
+
+            .user-chip {
+                padding: 3px 8px 3px 5px;
+                gap: 6px;
+            }
+
+            .user-chip-icon {
+                width: 20px;
+                height: 20px;
+                font-size: 11px;
+            }
+
+            .user-chip-name {
+                font-size: 11px;
+                max-width: 72px;
+            }
+
+            .top-action {
+                gap: 4px;
+                padding: 5px 8px;
+                font-size: 11px;
+            }
+
+            .side {
+                padding: 10px 10px 8px;
+            }
+
+            .brand {
+                margin-bottom: 10px;
+                padding: 2px 4px;
+            }
+
+            #tabMenu .menu-section {
+                padding: 4px;
+            }
+
+            #tabMenu .menu-items {
+                grid-template-columns: 1fr;
+                gap: 6px;
+            }
+
+            #tabMenu .tab {
+                padding: 9px 10px;
+                font-size: 13px;
+            }
+
+            .content-wrap {
+                padding: 10px;
+            }
+
+            #tabContent {
+                padding: 12px;
             }
         }
     </style>
@@ -454,6 +755,7 @@
 <body>
     <div class="admin-shell">
         <aside class="side">
+    <link rel="icon" type="image/png" href="/static/clever-cloud.png" />
             <div class="brand">
                 <img class="brand-mark" src="/static/clever-cloud.png" alt="CleverSearch logo" loading="eager" />
                 <div>
@@ -466,11 +768,20 @@
 
         <div>
             <header class="topbar">
-                <div class="text-lg font-extrabold tracking-tight">Admin Console</div>
-                <div class="flex items-center gap-2">
-                    <span class="pill" id="loggedInUser">-</span>
-                    <a href="/" class="btn-top px-3 py-2 text-sm">검색 페이지</a>
-                    <button onclick="logoutJwt()" class="btn-top px-3 py-2 text-sm">로그아웃</button>
+                <div id="currentPath" class="topbar-title">🏠 홈</div>
+                <div class="topbar-actions">
+                    <span class="user-chip" aria-label="현재 사용자">
+                        <span class="user-chip-icon" aria-hidden="true">👤</span>
+                        <span class="user-chip-name" id="loggedInUser">admin</span>
+                    </span>
+                    <a href="/" class="top-action search-link" aria-label="검색 페이지로 이동">
+                        <span aria-hidden="true">🔎</span>
+                        <span class="top-action-label">검색 페이지</span>
+                    </a>
+                    <button id="logoutBtn" type="button" class="top-action logout-btn" aria-label="로그아웃">
+                        <span aria-hidden="true">↪</span>
+                        <span class="top-action-label">로그아웃</span>
+                    </button>
                 </div>
             </header>
 
@@ -517,6 +828,12 @@
         let activeTab = "dashboard";
 
         function resolveInitialTab() {
+            const forceDashboard = localStorage.getItem("cleversearch_admin_force_dashboard_once") === "1";
+            if (forceDashboard) {
+                localStorage.removeItem("cleversearch_admin_force_dashboard_once");
+                return "dashboard";
+            }
+
             const fromHash = (window.location.hash || "").replace(/^#/, "").trim();
             if (TAB_NAMES.includes(fromHash)) return fromHash;
 
@@ -562,6 +879,8 @@
             localStorage.removeItem("cleversearch_admin_refresh_token");
             localStorage.removeItem("cleversearch_admin_username");
             localStorage.removeItem("cleversearch_admin_role");
+            localStorage.removeItem("cleversearch_admin_active_tab");
+            localStorage.removeItem("cleversearch_admin_force_dashboard_once");
             forceLoginRedirect();
         }
 
@@ -602,12 +921,53 @@
             }
         }
 
-        function fmt(v) { return (v === null || v === undefined || v === "") ? "-" : v; }
+        function fmt(v) {
+            if (v === null || v === undefined || v === "") return "-";
+            return String(v)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/\"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
         function yesNo(v) { return v ? "Y" : "N"; }
 
         function writeJson(id, payload) {
             const el = document.getElementById(id);
             if (el) el.textContent = JSON.stringify(payload, null, 2);
+        }
+
+        function getFlatText(el) {
+            return String(el?.textContent || "").replace(/\s+/g, " ").trim();
+        }
+
+        function updateCurrentPath(tabName) {
+            const pathEl = document.getElementById("currentPath");
+            if (!pathEl) return;
+
+            let activeButton = null;
+            document.querySelectorAll("#tabMenuContainer .tab").forEach(btn => {
+                if (btn.dataset.tab === tabName) activeButton = btn;
+            });
+
+            const home = "🏠 홈";
+            if (!activeButton) {
+                pathEl.textContent = home;
+                pathEl.title = home;
+                return;
+            }
+
+            const section = activeButton.closest(".menu-section");
+            const sectionTitle = getFlatText(section?.querySelector(".menu-title"));
+            const tabTitle = getFlatText(activeButton);
+
+            const trail = [home];
+            if (sectionTitle) trail.push(sectionTitle);
+            if (tabTitle) trail.push(tabTitle);
+
+            const fullPath = trail.join(" > ");
+            pathEl.textContent = fullPath;
+            pathEl.title = fullPath;
         }
 
         function applyButtonPreset(button, text) {
@@ -634,6 +994,39 @@
             button.classList.add("btn-soft");
         }
 
+        function getButtonIcon(text) {
+            if (/삭제|초기화|중지|복원/.test(text)) return "❌";
+            if (/저장|적용|생성|업로드/.test(text)) return "🛠️";
+            if (/실행|시작|동기화/.test(text)) return "🚀";
+            if (/상태|조회|전환|토글|추천|디버그/.test(text)) return "📡";
+            if (/수정|편집/.test(text)) return "📝";
+            if (/다운로드/.test(text)) return "📥";
+            return "🔹";
+        }
+
+        function decorateButtonLabel(button, text) {
+            if (button.dataset.iconized === "1") return;
+            const icon = getButtonIcon(text);
+            const hasSymbolPrefix = /^[\u2190-\u21FF\u2600-\u27BF\uD83C-\uDBFF\uDC00-\uDFFF]/.test(text);
+            if (hasSymbolPrefix) {
+                button.dataset.iconized = "1";
+                return;
+            }
+
+            const iconSpan = document.createElement("span");
+            iconSpan.className = "btn-icon";
+            iconSpan.setAttribute("aria-hidden", "true");
+            iconSpan.textContent = icon;
+
+            const labelSpan = document.createElement("span");
+            labelSpan.textContent = String(button.textContent || "").trim();
+
+            button.textContent = "";
+            button.appendChild(iconSpan);
+            button.appendChild(labelSpan);
+            button.dataset.iconized = "1";
+        }
+
         function normalizeTabUi(container) {
             container.querySelectorAll("button").forEach(button => {
                 if (button.classList.contains("tab")) return;
@@ -641,6 +1034,7 @@
                 button.classList.add("btn-unified");
                 const text = (button.textContent || "").replace(/\s+/g, "").trim();
                 applyButtonPreset(button, text);
+                decorateButtonLabel(button, text);
             });
         }
 
@@ -651,7 +1045,7 @@
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 return await res.text();
             } catch (e) {
-                return `<div class="text-red-600 p-4">탭 로드 실패: ${tabName} (${e.message})</div>`;
+                return `<div class="text-red-600 p-4">탭 로드 실패: ${fmt(tabName)} (${fmt(e?.message || "error")})</div>`;
             }
         }
 
@@ -662,8 +1056,16 @@
             activeTab = tabName;
             persistActiveTab(tabName);
             document.querySelectorAll("#tabMenuContainer .tab").forEach(btn => {
-                btn.classList.toggle("active", btn.dataset.tab === tabName);
+                const isActive = btn.dataset.tab === tabName;
+                btn.classList.toggle("active", isActive);
+                if (isActive) {
+                    btn.setAttribute("aria-current", "page");
+                } else {
+                    btn.removeAttribute("aria-current");
+                }
             });
+            syncMenuSectionState(tabName);
+            updateCurrentPath(tabName);
 
             const container = document.getElementById("tabContent");
             container.innerHTML = '<div class="text-slate-500 p-4">로딩 중...</div>';
@@ -706,13 +1108,23 @@
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 container.innerHTML = await res.text();
             } catch (e) {
+                const safeError = fmt(e?.message || "error");
                 container.innerHTML = `<div id="tabMenu">${TAB_NAMES.map((name, i) =>
                     `<button class="tab ${i===0?"active":""}" data-tab="${name}">${name}</button>`
-                ).join("")}</div>`;
+                ).join("")}</div><div class="text-xs text-red-500 mt-2">메뉴 로드 실패: ${safeError}</div>`;
             }
 
             container.querySelectorAll(".tab").forEach(btn => {
                 btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+            });
+            syncMenuSectionState(activeTab);
+            updateCurrentPath(activeTab);
+        }
+
+        function syncMenuSectionState(tabName) {
+            document.querySelectorAll("#tabMenuContainer .menu-section").forEach(section => {
+                const hasActiveTab = Array.from(section.querySelectorAll(".tab")).some(btn => btn.dataset.tab === tabName);
+                section.classList.toggle("section-active", hasActiveTab);
             });
         }
 
@@ -767,6 +1179,7 @@
         if (!accessToken) {
             forceLoginRedirect();
         } else {
+            document.getElementById("logoutBtn")?.addEventListener("click", logoutJwt);
             initAdmin();
         }
     </script>

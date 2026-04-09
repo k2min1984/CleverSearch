@@ -211,12 +211,17 @@ def refresh_access_token(refresh_token: str) -> dict:
 
 
 def get_role_from_request(authorization: str | None, x_role: str | None) -> str:
-    # 1순위 JWT, 2순위 X-Role(하위호환)
+    # 1순위 JWT
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
         payload = decode_access_token(token)
         return str(payload.get("role", "viewer")).lower()
-    return (x_role or "viewer").strip().lower()
+
+    # 하위호환: 명시적으로 허용된 환경에서만 X-Role 신뢰
+    if settings.ALLOW_LEGACY_X_ROLE:
+        return (x_role or "viewer").strip().lower()
+
+    raise HTTPException(status_code=401, detail="인증 토큰이 필요합니다")
 
 
 def require_role(min_role: str):

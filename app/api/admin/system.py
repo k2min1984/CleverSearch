@@ -66,7 +66,7 @@ class VolumeRequest(BaseModel):
 
 
 class RenewRunRequest(BaseModel):
-    script_path: str = Field(default="scripts/renew_certs.ps1")
+    script_path: str = Field(default="scripts/renew_certs.ps1", pattern=r"^scripts[\\/]+renew_certs\.ps1$")
 
 
 @router.post("/smb/sources", dependencies=[Depends(require_role("operator"))], summary="SMB 소스 등록/수정")

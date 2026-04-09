@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import json
+import re
 import ssl
 import subprocess
 import tempfile
@@ -190,6 +191,39 @@ class DBIngestionService:
     - 조회 결과를 텍스트로 변환하여 IndexingService로 색인
     """
     @staticmethod
+    def _validate_query_text(query_text: str) -> str:
+        """읽기 전용 SELECT 쿼리만 허용하여 위험한 실행을 차단합니다."""
+        q = (query_text or "").strip()
+        if not q:
+            raise ValueError("query_text는 비어 있을 수 없습니다")
+
+        # 주석 제거 후 검증
+        q_no_comment = re.sub(r"--.*?$", "", q, flags=re.MULTILINE).strip()
+        q_lower = q_no_comment.lower()
+
+        if not q_lower.startswith("select"):
+            raise ValueError("SELECT 쿼리만 허용됩니다")
+
+        forbidden = [
+            ";",
+            "insert ",
+            "update ",
+            "delete ",
+            "drop ",
+            "alter ",
+            "truncate ",
+            "create ",
+            "grant ",
+            "revoke ",
+            "execute ",
+            "call ",
+        ]
+        if any(token in q_lower for token in forbidden):
+            raise ValueError("위험한 SQL 키워드가 포함되어 있습니다")
+
+        return q_no_comment
+
+    @staticmethod
     def list_sources(active_only: bool = False) -> list[dict[str, Any]]:
         """등록된 DB 소스 목록 조회 (active_only=True이면 활성 소스만)"""
         with get_db_session() as db:
@@ -226,13 +260,14 @@ class DBIngestionService:
         - chunk_size: 한 번에 가져올 로우 수 (분할 수집 단위)
         """
         with get_db_session() as db:
+            safe_query_text = DBIngestionService._validate_query_text(query_text)
             row = db.query(DbSource).filter(DbSource.name == name).first()
             now = datetime.now(timezone.utc)
             enc_url = _encrypt(connection_url)
             if row:
                 row.db_type = db_type
                 row.connection_url = enc_url
-                row.query_text = query_text
+                row.query_text = safe_query_text
                 row.title_column = title_column
                 row.chunk_size = chunk_size
                 row.is_active = is_active
@@ -242,7 +277,7 @@ class DBIngestionService:
                     name=name,
                     db_type=db_type,
                     connection_url=enc_url,
-                    query_text=query_text,
+                    query_text=safe_query_text,
                     title_column=title_column,
                     chunk_size=chunk_size,
                     is_active=is_active,
@@ -271,9 +306,10 @@ class DBIngestionService:
             failed = 0
 
             try:
+                safe_query_text = DBIngestionService._validate_query_text(source.query_text)
                 engine = create_engine(_decrypt(source.connection_url))
                 with engine.connect() as conn:
-                    result = conn.execution_options(stream_results=True).execute(text(source.query_text))
+                    result = conn.execution_options(stream_results=True).execute(text(safe_query_text))
                     while indexed + skipped + failed < max_rows:
                         rows = result.fetchmany(source.chunk_size)
                         if not rows:
@@ -668,8 +704,17 @@ Write-Output \"인증서 생성 완료: $certPath\"
         if os.name != "nt":
             return {"status": "fail", "message": "Windows PowerShell 환경에서만 자동 실행 지원"}
 
+        # 실행 가능한 스크립트를 작업공간 내 허용 경로로 제한
+        candidate = Path(script_path).resolve()
+        allowed_dir = Path("scripts").resolve()
+        allowed_name = "renew_certs.ps1"
+        if candidate.name != allowed_name or allowed_dir not in candidate.parents:
+            return {"status": "fail", "message": "허용되지 않은 스크립트 경로입니다"}
+        if not candidate.exists():
+            return {"status": "fail", "message": "스크립트 파일을 찾을 수 없습니다"}
+
         proc = subprocess.run(
-            ["powershell", "-ExecutionPolicy", "Bypass", "-File", script_path],
+            ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(candidate)],
             capture_output=True,
             text=True,
             check=False,

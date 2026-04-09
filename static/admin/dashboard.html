@@ -3,10 +3,11 @@
 # Description
 # CleverSearch 관리자 페이지 - 대시보드 탭
 # 검색 서비스 운영 현황 모니터링 화면
-# 트렌드 차트, 인기 키워드 도넛 차트, 스모크 테스트
+# 트렌드 차트, 인기 키워드 도넛 차트, 운영 카드/리스트
 #
 # Modified History
 # 현승준 / 2026-03-25 / 최초생성
+# Copilot / 2026-04-10 / 차트 축소 + 하단 운영 정보 확장
 ########################################################
 -->
 
@@ -17,11 +18,20 @@
             <h2 class="text-2xl font-extrabold text-slate-800">대시보드</h2>
             <p class="text-sm text-slate-500">운영 현황을 카드/차트 중심으로 확인합니다.</p>
         </div>
-        <div class="flex flex-wrap gap-2">
-            <input id="dashboardDays" type="number" min="1" value="7" class="w-20" />
-            <button onclick="runSmokeFromUI()" class="btn-soft px-3 py-2 text-sm">스모크 실행</button>
-            <button onclick="toggleDashboardDebug()" class="btn-soft px-3 py-2 text-sm">디버그</button>
+        <div class="flex flex-wrap items-center gap-2">
+            <label for="dashboardDays" class="text-xs font-bold text-slate-600">조회일수</label>
+            <input id="dashboardDays" type="number" min="1" value="7" class="w-20" title="최근 조회 일수" aria-label="최근 조회 일수" />
+            <button id="dashboardSmokeBtn" type="button" class="btn-soft px-3 py-2 text-sm">스모크 실행</button>
+            <button id="dashboardDebugBtn" type="button" class="btn-soft px-3 py-2 text-sm">디버그</button>
         </div>
+    </div>
+
+    <div class="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+        <p class="font-bold">운영 대시보드 안내</p>
+        <p>최근 검색/실패/소스/인증서 상태를 요약해 보여줍니다.</p>
+        <p>• 조회일수 입력칸: 최근 N일(기본 7일) 기준으로 통계 범위를 정합니다. 값을 바꾸면 대시보드 지표와 차트가 해당 기간으로 다시 조회됩니다.</p>
+        <p>• 스모크 실행: 클릭 즉시 시스템 점검을 1회 실행하고, 하단 출력창에 결과 JSON이 표시됩니다. `status=success`면 통과, `status=fail`이면 `stderr`에 실패 원인이 표시됩니다. (admin 권한 필요)</p>
+        <p>• 디버그: 클릭할 때마다 하단 디버그 패널(health/summary/trend 원본 JSON)의 표시/숨김이 전환됩니다. 데이터 자체를 변경하지는 않습니다.</p>
     </div>
 
     <div id="alertBadges" class="flex flex-wrap gap-2"></div>
@@ -33,23 +43,110 @@
         <div class="metric"><div class="metric-label">스케줄러 상태</div><div class="metric-value" id="mScheduler">중지됨</div></div>
     </div>
 
-    <div class="grid gap-3 lg:grid-cols-3">
-        <div class="lg:col-span-2 rounded-xl border border-slate-200 bg-white p-4">
+    <div class="grid gap-3 lg:grid-cols-2">
+        <div class="rounded-xl border border-slate-200 bg-white p-4">
             <h4 class="mb-2 text-sm font-extrabold text-slate-700">일별 검색 추이</h4>
             <div id="trendLegend" class="mb-2 flex items-center gap-4 text-sm font-bold text-slate-800"></div>
-            <canvas id="trendChart" height="150"></canvas>
+            <div class="h-40">
+                <canvas id="trendChart" class="h-full"></canvas>
+            </div>
         </div>
         <div class="rounded-xl border border-slate-200 bg-white p-4">
             <h4 class="mb-2 text-sm font-extrabold text-slate-700">인기 검색어 순위</h4>
             <div id="keywordLegend" class="mb-2 flex flex-wrap items-center gap-3 text-sm font-bold text-slate-800"></div>
-            <canvas id="keywordChart" height="150"></canvas>
+            <div class="h-40">
+                <canvas id="keywordChart" class="h-full"></canvas>
+            </div>
         </div>
+    </div>
+
+    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-slate-500">문서 총건수</h5>
+            <p id="cDocTotal" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">문서 리스트 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-slate-500">오늘 신규 색인</h5>
+            <p id="cDocToday" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">당일 등록일시 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-slate-500">실패 키워드 수</h5>
+            <p id="cFailedKeywords" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">기간 필터 반영</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-slate-500">최근 검색어 건수</h5>
+            <p id="cRecentCount" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">최근 검색어 탭 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-slate-500">사전 엔트리 수</h5>
+            <p id="cDictCount" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">활성 사전 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-slate-500">SMB 소스 수</h5>
+            <p id="cSmbCount" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">전체 소스 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-slate-500">DB 소스 수</h5>
+            <p id="cDbCount" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">전체 소스 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-slate-500">SSL 주의 건수</h5>
+            <p id="cSslRisk" class="mt-1 text-2xl font-extrabold text-amber-600">-</p>
+            <p class="text-xs text-slate-500">30일 이내 만료/이상</p>
+        </article>
+    </div>
+
+    <div class="grid gap-3 xl:grid-cols-2">
+        <section class="rounded-xl border border-slate-200 bg-white p-4">
+            <div class="mb-3 flex items-center justify-between gap-2">
+                <h4 class="text-sm font-extrabold text-slate-700">실패 검색어 Top 10</h4>
+                <button type="button" class="btn-soft px-2 py-1 text-xs dashboard-open-tab" data-tab="failed">탭 열기</button>
+            </div>
+            <div class="overflow-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-slate-200 text-left text-slate-500">
+                            <th class="py-2 pr-2">순위</th>
+                            <th class="py-2 pr-2">키워드</th>
+                            <th class="py-2 pr-2">횟수</th>
+                        </tr>
+                    </thead>
+                    <tbody id="failedTopBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="rounded-xl border border-slate-200 bg-white p-4">
+            <div class="mb-3 flex items-center justify-between gap-2">
+                <h4 class="text-sm font-extrabold text-slate-700">최근 오류 로그</h4>
+                <button type="button" class="btn-soft px-2 py-1 text-xs dashboard-open-tab" data-tab="logs">탭 열기</button>
+            </div>
+            <div class="overflow-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-slate-200 text-left text-slate-500">
+                            <th class="py-2 pr-2">시간</th>
+                            <th class="py-2 pr-2">검색어</th>
+                            <th class="py-2 pr-2">상태</th>
+                        </tr>
+                    </thead>
+                    <tbody id="errorLogsBody"></tbody>
+                </table>
+            </div>
+        </section>
     </div>
 
     <pre id="dashboardHealth" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
     <pre id="dashboardSummary" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
     <pre id="dashboardTrend" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
-    <pre id="smokeOutput" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
+    <pre id="smokeOutput" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto whitespace-pre-wrap break-all max-w-full"></pre>
 </section>
 
 <script>
@@ -60,6 +157,36 @@ Chart.defaults.font.weight = "bold";
 let trendChart = null;
 let keywordChart = null;
 
+function esc(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function asArray(value) {
+    if (Array.isArray(value)) return value;
+    if (value && Array.isArray(value.items)) return value.items;
+    return [];
+}
+
+function asNumber(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+}
+
+function todayPrefix() {
+    return new Date().toISOString().slice(0, 10);
+}
+
+function openAdminTab(tabName) {
+    if (typeof switchTab === "function") {
+        switchTab(tabName);
+    }
+}
+
 function toggleDashboardDebug() {
     ["dashboardHealth", "dashboardSummary", "dashboardTrend"].forEach((id) => {
         document.getElementById(id).classList.toggle("hidden");
@@ -68,11 +195,17 @@ function toggleDashboardDebug() {
 
 function renderAlertBadges(rows) {
     const container = document.getElementById("alertBadges");
-    const data = Array.isArray(rows) ? rows : [];
+    const data = (Array.isArray(rows) ? rows : []).filter((row) => {
+        const code = String(row?.code || "").toLowerCase();
+        const message = String(row?.message || "");
+        return code !== "scheduler_stopped" && !message.includes("자동 색인 스케줄러 중지");
+    });
+    const severityAllow = new Set(["info", "warn", "warning", "error", "critical", "success"]);
     container.innerHTML = data.map((row) => {
-        const severity = row.severity || "info";
-        const message = row.message || row.code || "알림";
-        return `<span class="badge ${severity}">${message}</span>`;
+        const severityRaw = String(row?.severity || "info").toLowerCase();
+        const severity = severityAllow.has(severityRaw) ? severityRaw : "info";
+        const message = row?.message || row?.code || "알림";
+        return `<span class="badge ${severity}">${esc(message)}</span>`;
     }).join("");
 }
 
@@ -88,7 +221,7 @@ function drawTrendChart(trendRows) {
             { label: "성공", data: success, backgroundColor: "rgba(34,197,94,0.7)" },
             { label: "실패", data: failed, backgroundColor: "rgba(239,68,68,0.7)" }
         ]},
-        options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: "#1e293b", font: { size: 13, weight: "bold" } } }, y: { ticks: { color: "#1e293b", font: { size: 13, weight: "bold" } } } } }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: "#1e293b", font: { size: 13, weight: "bold" } } }, y: { ticks: { color: "#1e293b", font: { size: 13, weight: "bold" } } } } }
     });
 
     const trendLegend = document.getElementById("trendLegend");
@@ -102,41 +235,132 @@ function drawTrendChart(trendRows) {
 
 function drawKeywordChart(summary) {
     const rows = (summary?.top_keywords || []).slice(0, 5);
-    const labels = rows.map(row => row.keyword);
-    const values = rows.map(row => row.count);
+    const labels = rows.map(row => String(row.keyword || "-"));
+    const values = rows.map(row => asNumber(row.count));
     const ctx = document.getElementById("keywordChart").getContext("2d");
     if (keywordChart) keywordChart.destroy();
     keywordChart = new Chart(ctx, {
         type: "doughnut",
         data: { labels, datasets: [{ data: values, backgroundColor: ["#60a5fa", "#34d399", "#fbbf24", "#f87171", "#a78bfa"] }] },
-        options: { plugins: { legend: { display: false } } }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
     });
 
     const keywordLegend = document.getElementById("keywordLegend");
     if (keywordLegend) {
         const colors = ["#60a5fa", "#34d399", "#fbbf24", "#f87171", "#a78bfa"];
         keywordLegend.innerHTML = labels.map((label, idx) =>
-            `<span class="inline-flex items-center gap-2"><span class="inline-block h-3 w-6 rounded" style="background-color: ${colors[idx]};"></span>${fmt(label)}</span>`
+            `<span class="inline-flex items-center gap-2"><span class="inline-block h-3 w-6 rounded" style="background-color: ${colors[idx]};"></span>${esc(label)}</span>`
         ).join("");
     }
 }
 
+function renderFailedTop(rows) {
+    const body = document.getElementById("failedTopBody");
+    if (!body) return;
+    const topRows = asArray(rows).slice(0, 10);
+    body.innerHTML = topRows.map((row, idx) => {
+        const keyword = row.keyword || row.query || row.term || "-";
+        const count = asNumber(row.count || row.hits || row.total || 0);
+        return `<tr class="border-b border-slate-100"><td class="py-2 pr-2">${idx + 1}</td><td class="py-2 pr-2">${esc(keyword)}</td><td class="py-2 pr-2">${count}</td></tr>`;
+    }).join("") || '<tr><td class="py-2 text-slate-400" colspan="3">데이터 없음</td></tr>';
+}
+
+function renderErrorLogs(rows) {
+    const body = document.getElementById("errorLogsBody");
+    if (!body) return;
+    const list = asArray(rows).slice(0, 10);
+    body.innerHTML = list.map((row) => {
+        const at = row.created_at || row.timestamp || row.logged_at || "-";
+        const query = row.query || row.keyword || "-";
+        const status = row.status || row.status_code || row.result || (row.success === false ? "fail" : "-");
+        return `<tr class="border-b border-slate-100"><td class="py-2 pr-2">${esc(String(at).slice(0, 19))}</td><td class="py-2 pr-2">${esc(query)}</td><td class="py-2 pr-2">${esc(status)}</td></tr>`;
+    }).join("") || '<tr><td class="py-2 text-slate-400" colspan="3">오류 로그 없음</td></tr>';
+}
+
+function setMetric(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerText = String(value);
+}
+
 async function loadDashboard() {
     const days = document.getElementById("dashboardDays").value || 7;
-    const health = await apiFetch(`${SYS_API}/health/overview`, { method: "GET" });
-    const summary = await apiFetch(`${SYS_API}/dashboard/summary?days=${days}`, { method: "GET" });
-    const trend = await apiFetch(`${SYS_API}/dashboard/trend?days=${days}`, { method: "GET" });
-    const alerts = await apiFetch(`${SYS_API}/dashboard/alerts?cert_warn_days=7&spike_ratio=1.5`, { method: "GET" });
+    const [
+        health,
+        summary,
+        trend,
+        alerts,
+        docsRes,
+        failedRes,
+        recentRes,
+        logsRes,
+        dictRes,
+        smbRes,
+        dbRes,
+        sslRes,
+    ] = await Promise.all([
+        apiFetch(`${SYS_API}/health/overview`, { method: "GET" }),
+        apiFetch(`${SYS_API}/dashboard/summary?days=${days}`, { method: "GET" }),
+        apiFetch(`${SYS_API}/dashboard/trend?days=${days}`, { method: "GET" }),
+        apiFetch(`${SYS_API}/dashboard/alerts?cert_warn_days=7&spike_ratio=1.5`, { method: "GET" }),
+        apiFetch(`${API}/indexed-documents?skip=0&limit=200`, { method: "GET" }),
+        apiFetch(`${API}/failed-keywords?days=${days}&limit=200`, { method: "GET" }),
+        apiFetch(`${API}/recent-searches?skip=0&limit=200`, { method: "GET" }),
+        apiFetch(`${API}/search-logs?skip=0&limit=500`, { method: "GET" }),
+        apiFetch(`${SYS_API}/dictionary/entries?active_only=true`, { method: "GET" }),
+        apiFetch(`${SYS_API}/smb/sources?active_only=false`, { method: "GET" }),
+        apiFetch(`${SYS_API}/db/sources?active_only=false`, { method: "GET" }),
+        apiFetch(`${SYS_API}/ssl/certificates?cert_dir=cert&warn_days=30`, { method: "GET" }),
+    ]);
+
     writeJson("dashboardHealth", health.data);
     writeJson("dashboardSummary", summary.data);
     writeJson("dashboardTrend", trend.data);
     renderAlertBadges(alerts.data || []);
-    document.getElementById("mTotalLogs").innerText = String(summary.data?.total_logs || 0);
-    document.getElementById("mFailedLogs").innerText = String(summary.data?.failed_logs || 0);
-    document.getElementById("mFailureRate").innerText = `${((summary.data?.failure_rate || 0) * 100).toFixed(1)}%`;
-    document.getElementById("mScheduler").innerText = (health.data?.scheduler?.running ? "실행 중" : "중지됨");
+
+    setMetric("mTotalLogs", summary.data?.total_logs || 0);
+    setMetric("mFailedLogs", summary.data?.failed_logs || 0);
+    setMetric("mFailureRate", `${((summary.data?.failure_rate || 0) * 100).toFixed(1)}%`);
+    setMetric("mScheduler", health.data?.scheduler?.running ? "실행 중" : "중지됨");
+
     drawTrendChart(trend.data || []);
     drawKeywordChart(summary.data || {});
+
+    const docItems = asArray(docsRes.data);
+    const docTotal = asNumber(docsRes.data?.total, docItems.length);
+    const todayCount = docItems.filter(row => String(row.indexed_at || "").startsWith(todayPrefix())).length;
+    const failedRows = asArray(failedRes.data);
+    const recentRows = asArray(recentRes.data);
+    const logsRows = asArray(logsRes.data);
+    const dictRows = asArray(dictRes.data);
+    const smbRows = asArray(smbRes.data);
+    const dbRows = asArray(dbRes.data);
+    const sslRows = asArray(sslRes.data);
+    const sslRisk = sslRows.filter((row) => {
+        const daysLeft = asNumber(row.days_left, 9999);
+        const status = String(row.health_status || "").toLowerCase();
+        return daysLeft <= 30 || (status && status !== "ok");
+    }).length;
+
+    setMetric("cDocTotal", docTotal);
+    setMetric("cDocToday", todayCount);
+    setMetric("cFailedKeywords", failedRows.length);
+    setMetric("cRecentCount", recentRows.length);
+    setMetric("cDictCount", dictRows.length);
+    setMetric("cSmbCount", smbRows.length);
+    setMetric("cDbCount", dbRows.length);
+    setMetric("cSslRisk", sslRisk);
+
+    const errorRows = logsRows.filter((row) => {
+        const status = asNumber(row.status || row.status_code || row.http_status, 0);
+        const successFlag = row.success;
+        const isSuccessFlag = row.is_success;
+        if (successFlag === false || isSuccessFlag === false) return true;
+        return status >= 400;
+    });
+
+    renderFailedTop(failedRows);
+    renderErrorLogs(errorRows);
 }
 
 async function runSmokeFromUI() {
@@ -145,4 +369,9 @@ async function runSmokeFromUI() {
 }
 
 document.getElementById("dashboardDays")?.addEventListener("change", loadDashboard);
+document.getElementById("dashboardSmokeBtn")?.addEventListener("click", runSmokeFromUI);
+document.getElementById("dashboardDebugBtn")?.addEventListener("click", toggleDashboardDebug);
+document.querySelectorAll(".dashboard-open-tab").forEach((button) => {
+    button.addEventListener("click", () => openAdminTab(button.dataset.tab));
+});
 </script>

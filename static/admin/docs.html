@@ -12,7 +12,7 @@
 <!-- 문서 목록 탭 -->
 <section class="space-y-4">
     <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 text-sm text-blue-200">
-        <b>📄 문서 목록</b> - OpenSearch에 색인된 문서를 조회하고 필요한 경우 삭제할 수 있습니다.<br>
+        <b><span aria-hidden="true">📄</span> 문서 목록</b> - OpenSearch에 색인된 문서를 조회하고 필요한 경우 삭제할 수 있습니다.<br>
         • 제목/파일명/카테고리로 목록 검색 가능
     </div>
 
@@ -83,10 +83,33 @@ function renderDocsPagination() {
     const totalPages = Math.max(1, Math.ceil(docsFilteredRows.length / DOCS_PAGE_SIZE));
     pager.classList.remove("hidden");
     pager.innerHTML = `
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${docsPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${docsPage === 1 ? "disabled" : ""} onclick="changeDocsPage(${docsPage - 1})">이전</button>
+        <button type="button" class="js-docs-page px-3 py-1 rounded border border-gray-500 text-sm ${docsPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${docsPage === 1 ? "disabled" : ""} data-page="${docsPage - 1}">이전</button>
         <span class="text-slate-500 font-semibold">${docsPage} / ${totalPages}</span>
-        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${docsPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${docsPage === totalPages ? "disabled" : ""} onclick="changeDocsPage(${docsPage + 1})">다음</button>
+        <button type="button" class="js-docs-page px-3 py-1 rounded border border-gray-500 text-sm ${docsPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${docsPage === totalPages ? "disabled" : ""} data-page="${docsPage + 1}">다음</button>
     `;
+}
+
+function bindDocsActions() {
+    const pager = document.getElementById("docsPagination");
+    if (pager && pager.dataset.bound !== "1") {
+        pager.dataset.bound = "1";
+        pager.addEventListener("click", (event) => {
+            const button = event.target.closest(".js-docs-page");
+            if (!button) return;
+            changeDocsPage(Number(button.dataset.page || 1));
+        });
+    }
+
+    const body = document.getElementById("docsBody");
+    if (body && body.dataset.bound !== "1") {
+        body.dataset.bound = "1";
+        body.addEventListener("click", (event) => {
+            const deleteBtn = event.target.closest(".js-doc-delete");
+            if (!deleteBtn) return;
+            const docId = Number(deleteBtn.dataset.id || 0);
+            deleteDoc(docId);
+        });
+    }
 }
 
 function renderDocsRows(rows) {
@@ -97,8 +120,9 @@ function renderDocsRows(rows) {
     const start = (docsPage - 1) * DOCS_PAGE_SIZE;
     const pageRows = docsFilteredRows.slice(start, start + DOCS_PAGE_SIZE);
 
-    body.innerHTML = pageRows.map((row) =>
-        `<tr class="border-t border-gray-700">
+    body.innerHTML = pageRows.map((row) => {
+        const safeId = Number.isFinite(Number(row.id)) ? Number(row.id) : 0;
+        return `<tr class="border-t border-gray-700">
             <td class="p-2">${fmt(row.id)}</td>
             <td class="p-2">${fmt(row.title)}</td>
             <td class="p-2">${fmt(row.origin_file)}</td>
@@ -106,9 +130,9 @@ function renderDocsRows(rows) {
             <td class="p-2">${fmt(row.doc_category)}</td>
             <td class="p-2">${fmt(row.indexed_at)}</td>
             <td class="p-2 max-w-xs truncate text-slate-500">${fmt(row.text_preview)}</td>
-            <td class="p-2">${loggedInRole === "viewer" ? '<span class="text-gray-600 opacity-40">삭제</span>' : '<span class="btn-del" onclick="deleteDoc(' + row.id + ')">삭제</span>'}</td>
-        </tr>`
-    ).join("") || '<tr><td class="p-2" colspan="8">데이터 없음</td></tr>';
+            <td class="p-2">${loggedInRole === "viewer" ? '<span class="text-gray-600 opacity-40">삭제</span>' : (safeId > 0 ? '<button type="button" class="btn-del js-doc-delete" data-id="' + safeId + '">삭제</button>' : '<span class="text-gray-600 opacity-40">삭제</span>')}</td>
+        </tr>`;
+    }).join("") || '<tr><td class="p-2" colspan="8">데이터 없음</td></tr>';
 
     renderDocsPagination();
 }
@@ -123,6 +147,10 @@ async function loadDocs() {
 }
 
 async function deleteDoc(docId) {
+    if (!Number.isFinite(Number(docId)) || Number(docId) <= 0) {
+        alert("잘못된 문서 ID입니다.");
+        return;
+    }
     if (!confirm(`문서 ID ${docId}를 삭제하시겠습니까?`)) return;
     const headers = {};
     if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
@@ -137,4 +165,5 @@ async function deleteDoc(docId) {
 }
 
 document.getElementById("docSearch")?.addEventListener("input", applyDocFilter);
+bindDocsActions();
 </script>

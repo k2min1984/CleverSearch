@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CleverSearch Admin Login</title>
+    <link rel="icon" type="image/png" href="/static/clever-cloud.png" />
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -135,7 +136,9 @@
                 localStorage.setItem("cleversearch_admin_refresh_token", payload.refresh_token || "");
                 localStorage.setItem("cleversearch_admin_username", payload.username || username);
                 localStorage.setItem("cleversearch_admin_role", payload.role || "viewer");
-                window.location.replace("/admin");
+                localStorage.setItem("cleversearch_admin_active_tab", "dashboard");
+                localStorage.setItem("cleversearch_admin_force_dashboard_once", "1");
+                window.location.replace("/admin#dashboard");
             } catch (error) {
                 errEl.textContent = "서버 연결 실패";
                 errEl.classList.remove("hidden");

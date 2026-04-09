@@ -161,6 +161,11 @@ class Settings:
     AUTH_RATE_LIMIT_MAX_ATTEMPTS = int(os.getenv("AUTH_RATE_LIMIT_MAX_ATTEMPTS", "5"))
     AUTH_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "300"))
     AUTH_RATE_LIMIT_BLOCK_SECONDS = int(os.getenv("AUTH_RATE_LIMIT_BLOCK_SECONDS", "900"))
+    # 하위호환 X-Role 헤더 허용 여부 (기본: dev/local/test만 허용)
+    ALLOW_LEGACY_X_ROLE = _get_bool_env(
+        "ALLOW_LEGACY_X_ROLE",
+        "true" if APP_ENV in {"dev", "local", "test"} else "false",
+    )
 
     # 검색 파이프라인 점진 전환 플래그 (기본: 기존 동작 유지)
     SEARCH_PIPELINE_VERSION = os.getenv("SEARCH_PIPELINE_VERSION", "v1").strip().lower()
