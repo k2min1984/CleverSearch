@@ -30,8 +30,19 @@
         <p class="font-bold">운영 대시보드 안내</p>
         <p>최근 검색/실패/소스/인증서 상태를 요약해 보여줍니다.</p>
         <p>• 조회일수 입력칸: 최근 N일(기본 7일) 기준으로 통계 범위를 정합니다. 값을 바꾸면 대시보드 지표와 차트가 해당 기간으로 다시 조회됩니다.</p>
+        <p>• 스모크 실행의 이점: 배포 전후 핵심 API/권한/연동 상태를 한 번에 점검해 장애를 조기에 발견할 수 있습니다.</p>
         <p>• 스모크 실행: 클릭 즉시 시스템 점검을 1회 실행하고, 하단 출력창에 결과 JSON이 표시됩니다. `status=success`면 통과, `status=fail`이면 `stderr`에 실패 원인이 표시됩니다. (admin 권한 필요)</p>
         <p>• 디버그: 클릭할 때마다 하단 디버그 패널(health/summary/trend 원본 JSON)의 표시/숨김이 전환됩니다. 데이터 자체를 변경하지는 않습니다.</p>
+    </div>
+
+    <div id="smokeRunningOverlay" class="hidden" style="position: fixed; inset: 0; z-index: 99999; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(1px); margin: 0 !important;">
+        <div class="flex min-h-full items-center justify-center p-4" style="min-height: 100vh;">
+            <div class="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-2xl text-center">
+                <div class="mx-auto mb-3 h-7 w-7 animate-spin rounded-full border-4 border-slate-300 border-t-indigo-600"></div>
+                <p class="text-base font-extrabold text-slate-800">스모크 테스트 실행 중</p>
+                <p class="mt-1 text-sm text-slate-500">잠시만 기다려 주세요. 실행 완료 후 결과가 자동 표시됩니다.</p>
+            </div>
+        </div>
     </div>
 
     <div id="alertBadges" class="flex flex-wrap gap-2"></div>
@@ -150,12 +161,15 @@
 </section>
 
 <script>
-Chart.defaults.color = "#1e293b";
-Chart.defaults.font.size = 13;
-Chart.defaults.font.weight = "bold";
+var hasChart = typeof window.Chart !== "undefined";
+if (hasChart) {
+    Chart.defaults.color = "#1e293b";
+    Chart.defaults.font.size = 13;
+    Chart.defaults.font.weight = "bold";
+}
 
-let trendChart = null;
-let keywordChart = null;
+var trendChart = null;
+var keywordChart = null;
 
 function esc(value) {
     return String(value ?? "")
@@ -210,6 +224,11 @@ function renderAlertBadges(rows) {
 }
 
 function drawTrendChart(trendRows) {
+    if (!hasChart) {
+        const trendLegend = document.getElementById("trendLegend");
+        if (trendLegend) trendLegend.innerHTML = '<span class="text-slate-500">차트 라이브러리 미로드: 요약 수치만 표시됩니다.</span>';
+        return;
+    }
     const labels = (trendRows || []).map(row => row.date);
     const success = (trendRows || []).map(row => row.success || 0);
     const failed = (trendRows || []).map(row => row.failed || 0);
@@ -234,6 +253,11 @@ function drawTrendChart(trendRows) {
 }
 
 function drawKeywordChart(summary) {
+    if (!hasChart) {
+        const keywordLegend = document.getElementById("keywordLegend");
+        if (keywordLegend) keywordLegend.innerHTML = '<span class="text-slate-500">차트 라이브러리 미로드: 표/카드 지표로 확인하세요.</span>';
+        return;
+    }
     const rows = (summary?.top_keywords || []).slice(0, 5);
     const labels = rows.map(row => String(row.keyword || "-"));
     const values = rows.map(row => asNumber(row.count));
@@ -281,6 +305,21 @@ function setMetric(id, value) {
     const el = document.getElementById(id);
     if (!el) return;
     el.innerText = String(value);
+}
+
+function setSmokeRunning(isRunning) {
+    const overlay = document.getElementById("smokeRunningOverlay");
+    const smokeBtn = document.getElementById("dashboardSmokeBtn");
+    if (overlay) {
+        overlay.style.display = isRunning ? "block" : "none";
+        overlay.setAttribute("aria-hidden", isRunning ? "false" : "true");
+    }
+    if (smokeBtn) {
+        smokeBtn.disabled = isRunning;
+        smokeBtn.classList.toggle("opacity-50", isRunning);
+        smokeBtn.classList.toggle("cursor-not-allowed", isRunning);
+        smokeBtn.textContent = isRunning ? "스모크 실행 중..." : "스모크 실행";
+    }
 }
 
 async function loadDashboard() {
@@ -364,8 +403,13 @@ async function loadDashboard() {
 }
 
 async function runSmokeFromUI() {
-    const result = await apiFetch(`${SYS_API}/ops/run-smoke-test`, { method: "POST" });
-    writeJson("smokeOutput", result.data || result);
+    setSmokeRunning(true);
+    try {
+        const result = await apiFetch(`${SYS_API}/ops/run-smoke-test`, { method: "POST" });
+        writeJson("smokeOutput", result.data || result);
+    } finally {
+        setSmokeRunning(false);
+    }
 }
 
 document.getElementById("dashboardDays")?.addEventListener("change", loadDashboard);
