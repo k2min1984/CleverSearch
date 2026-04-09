@@ -11,51 +11,93 @@
 
 <!-- 문서 목록 탭 -->
 <section class="space-y-4">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-            <h2 class="text-2xl font-extrabold text-slate-800">Data Tables</h2>
-            <p class="text-sm text-slate-500">색인 문서 목록을 조회하고 필요 시 즉시 삭제합니다.</p>
-        </div>
-        <div class="flex items-center gap-2">
-            <span id="docTotal" class="text-sm font-bold text-slate-500"></span>
-        </div>
+    <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 text-sm text-blue-200">
+        <b>📄 문서 목록</b> - OpenSearch에 색인된 문서를 조회하고 필요한 경우 삭제할 수 있습니다.<br>
+        • 제목/파일명/카테고리로 목록 검색 가능
     </div>
 
-    <div class="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 class="mb-3 text-xl font-bold text-slate-800">Bootstrap Data Table</h3>
-        <div class="mb-3 flex flex-wrap gap-2 text-sm text-slate-500">
-            <span>Search:</span>
-            <input type="text" class="w-56" placeholder="Search..." disabled />
-        </div>
-
-        <div class="overflow-auto rounded-lg border border-slate-200">
-            <table class="text-sm">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>제목</th>
-                        <th>파일명</th>
-                        <th>확장자</th>
-                        <th>카테고리</th>
-                        <th>등록일시</th>
-                        <th>미리보기</th>
-                        <th>삭제</th>
-                    </tr>
-                </thead>
-                <tbody id="docsBody"></tbody>
-            </table>
-        </div>
+    <div class="flex flex-wrap items-center gap-2">
+        <input id="docSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-72" placeholder="제목 / 파일명 / 카테고리" />
+        <span id="docTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
     </div>
+
+    <div class="overflow-auto border border-gray-700 rounded">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-800">
+                <tr>
+                    <th class="p-2 text-left">ID</th>
+                    <th class="p-2 text-left">제목</th>
+                    <th class="p-2 text-left">파일명</th>
+                    <th class="p-2 text-left">확장자</th>
+                    <th class="p-2 text-left">카테고리</th>
+                    <th class="p-2 text-left">등록일시</th>
+                    <th class="p-2 text-left">미리보기</th>
+                    <th class="p-2 text-left">삭제</th>
+                </tr>
+            </thead>
+            <tbody id="docsBody"></tbody>
+        </table>
+    </div>
+    <div id="docsPagination" class="hidden flex items-center justify-center gap-2 text-sm"></div>
 </section>
 
 <script>
-async function loadDocs() {
-    const result = await apiFetch(`${API}/indexed-documents?skip=0&limit=200`, { method: "GET" });
-    const data = result.data;
-    const items = data.items || [];
-    document.getElementById("docTotal").textContent = `총 ${data.total || 0}건`;
+let docsRows = [];
+let docsFilteredRows = [];
+let docsPage = 1;
+const DOCS_PAGE_SIZE = 10;
+
+function applyDocFilter() {
+    const keyword = (document.getElementById("docSearch")?.value || "").trim().toLowerCase();
+    docsPage = 1;
+    if (!keyword) {
+        renderDocsRows(docsRows);
+        return;
+    }
+
+    const filtered = docsRows.filter((row) => {
+        const title = String(row.title || "").toLowerCase();
+        const fileName = String(row.origin_file || "").toLowerCase();
+        const category = String(row.doc_category || "").toLowerCase();
+        return title.includes(keyword) || fileName.includes(keyword) || category.includes(keyword);
+    });
+    renderDocsRows(filtered);
+}
+
+function changeDocsPage(nextPage) {
+    const totalPages = Math.max(1, Math.ceil(docsFilteredRows.length / DOCS_PAGE_SIZE));
+    docsPage = Math.max(1, Math.min(totalPages, nextPage));
+    renderDocsRows(docsFilteredRows);
+}
+
+function renderDocsPagination() {
+    const pager = document.getElementById("docsPagination");
+    if (!pager) return;
+
+    if (docsFilteredRows.length <= DOCS_PAGE_SIZE) {
+        pager.classList.add("hidden");
+        pager.innerHTML = "";
+        return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(docsFilteredRows.length / DOCS_PAGE_SIZE));
+    pager.classList.remove("hidden");
+    pager.innerHTML = `
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${docsPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${docsPage === 1 ? "disabled" : ""} onclick="changeDocsPage(${docsPage - 1})">이전</button>
+        <span class="text-slate-500 font-semibold">${docsPage} / ${totalPages}</span>
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${docsPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${docsPage === totalPages ? "disabled" : ""} onclick="changeDocsPage(${docsPage + 1})">다음</button>
+    `;
+}
+
+function renderDocsRows(rows) {
     const body = document.getElementById("docsBody");
-    body.innerHTML = items.map((row) =>
+    docsFilteredRows = Array.isArray(rows) ? rows : [];
+    const totalPages = Math.max(1, Math.ceil(docsFilteredRows.length / DOCS_PAGE_SIZE));
+    docsPage = Math.max(1, Math.min(totalPages, docsPage));
+    const start = (docsPage - 1) * DOCS_PAGE_SIZE;
+    const pageRows = docsFilteredRows.slice(start, start + DOCS_PAGE_SIZE);
+
+    body.innerHTML = pageRows.map((row) =>
         `<tr class="border-t border-gray-700">
             <td class="p-2">${fmt(row.id)}</td>
             <td class="p-2">${fmt(row.title)}</td>
@@ -67,6 +109,17 @@ async function loadDocs() {
             <td class="p-2">${loggedInRole === "viewer" ? '<span class="text-gray-600 opacity-40">삭제</span>' : '<span class="btn-del" onclick="deleteDoc(' + row.id + ')">삭제</span>'}</td>
         </tr>`
     ).join("") || '<tr><td class="p-2" colspan="8">데이터 없음</td></tr>';
+
+    renderDocsPagination();
+}
+
+async function loadDocs() {
+    const result = await apiFetch(`${API}/indexed-documents?skip=0&limit=200`, { method: "GET" });
+    const data = result.data;
+    docsRows = data.items || [];
+    docsPage = 1;
+    document.getElementById("docTotal").textContent = `총 ${data.total || docsRows.length || 0}건`;
+    applyDocFilter();
 }
 
 async function deleteDoc(docId) {
@@ -82,4 +135,6 @@ async function deleteDoc(docId) {
         alert("삭제 실패: 네트워크 오류");
     }
 }
+
+document.getElementById("docSearch")?.addEventListener("input", applyDocFilter);
 </script>

@@ -20,11 +20,6 @@
     • 동일 파일 재업로드 시 <b>Hash 중복 방지</b>로 자동 차단됩니다.
 </div>
 
-<!-- ★ input을 dropZone 바깥에 배치하여 클릭 버블링 원천 차단 -->
-<input type="file" id="fileInput" multiple
-       accept=".hwp,.hwpx,.pdf,.docx,.pptx,.xlsx,.xls,.jpg,.jpeg,.png"
-       style="display:none" />
-
 <div class="drop-zone mb-4" id="dropZone">
     <p class="text-gray-400 mb-2" id="dropZoneText">파일을 여기에 드래그하거나 클릭하여 선택</p>
     <p class="text-xs text-gray-500">지원 형식: hwp, pdf, docx, pptx, xlsx, xls, hwpx, jpg, jpeg, png (최대 100MB)</p>
@@ -59,23 +54,14 @@ function pickFilesFromDialog() {
 
 function setupUpload() {
     const dropZone = document.getElementById("dropZone");
-    const fileInput = document.getElementById("fileInput");
-    if (!dropZone || !fileInput) return;
+    if (!dropZone) return;
 
     _uploadBusy = false;
-    fileInput.multiple = true;
 
     /* ── 클릭으로 파일 선택 ── */
     dropZone.onclick = () => {
         if (_uploadBusy) return;
         pickFilesFromDialog();
-    };
-
-    /* ── 파일 선택 완료: 즉시 Array로 복사 후 input 리셋 ── */
-    fileInput.onchange = () => {
-        const captured = Array.from(fileInput.files || []);
-        fileInput.value = "";
-        if (captured.length > 0) handleFiles(captured);
     };
 
     /* ── 드래그 & 드롭 ── */

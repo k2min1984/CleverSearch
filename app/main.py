@@ -160,8 +160,12 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
-if settings.ALLOWED_HOSTS:
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.ALLOWED_HOSTS)
+allowed_hosts = list(settings.ALLOWED_HOSTS or [])
+if settings.APP_ENV in {"dev", "test", "local"} and "testserver" not in allowed_hosts:
+    allowed_hosts.append("testserver")
+
+if allowed_hosts:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 
 @app.middleware("http")
@@ -177,6 +181,7 @@ async def add_security_headers(request: Request, call_next):
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
             "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
+            "font-src 'self' data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
             "img-src 'self' data: blob:; "
             "connect-src 'self' https:; "
             "frame-ancestors 'none';",

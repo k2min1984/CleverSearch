@@ -10,6 +10,7 @@
 """
 
 from fastapi import APIRouter, HTTPException
+from app.core.config import settings
 from app.core.opensearch import get_client
 # 설정 파일이 필요하다면 사용하되, 현재 로직에서는 직접 명시하여 직관성을 높였습니다.
 # from app.core.config import settings 
@@ -19,8 +20,7 @@ router = APIRouter()
 # OpenSearch 클라이언트 객체 생성
 client = get_client()
 
-# 솔루션 표준 인덱스 명칭 (file.py와 동일하게 맞춤)
-INDEX_NAME = "cleversearch-docs"
+INDEX_NAME = settings.OPENSEARCH_INDEX
 
 @router.get("/all-data", summary="색인된 전체 데이터 조회")
 async def get_all_indexed_data():

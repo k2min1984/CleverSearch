@@ -24,7 +24,7 @@ class SearchRequest(BaseModel):
         ..., 
         title="검색어",
         description="사용자가 입력한 메인 검색 키워드", 
-        example="인공지능",
+        json_schema_extra={"example": "인공지능"},
         max_length=200
     )
 
@@ -48,14 +48,14 @@ class SearchRequest(BaseModel):
         default=None, 
         title="시작 날짜",
         description="검색 기간 시작일 (Format: ISO8601 or YYYY-MM-DD)",
-        example="2026-01-01"
+        json_schema_extra={"example": "2026-01-01"}
     )
     
     end_date: Optional[str] = Field(
         default=None, 
         title="종료 날짜",
         description="검색 기간 종료일 (Format: YYYY-MM-DD)",
-        example="2026-12-31"
+        json_schema_extra={"example": "2026-12-31"}
     )
 
     # 4. 카테고리 필터 (중요: 탭 기능 연동)
@@ -64,7 +64,7 @@ class SearchRequest(BaseModel):
         default=None,
         title="문서 카테고리",
         description="특정 카테고리 탭 필터링 (예: PLAN, REPORT, RULE)",
-        example="PLAN"
+        json_schema_extra={"example": "PLAN"}
     )
 
     # 5. 확장자 필터
@@ -72,7 +72,7 @@ class SearchRequest(BaseModel):
         default=None,
         title="확장자 필터",
         description="특정 확장자만 검색 (예: pdf, hwp, docx)",
-        example="pdf"
+        json_schema_extra={"example": "pdf"}
     )
 
     # 6. [추가] 시스템 정밀도: 최소 매칭 점수 (1순위 대응)

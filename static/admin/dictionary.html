@@ -16,25 +16,67 @@
     • <b>stopword (불용어)</b>: 검색에서 무시할 조사/접속사를 등록합니다. 예) 에, 은, 는<br>
     • <b>user (사용자사전)</b>: 오타를 올바른 단어로 교정합니다. 예) 계휙서 → 계획서
 </div>
-<div class="grid md:grid-cols-4 gap-2 mb-3">
-    <select id="dictType" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
+<div class="flex flex-wrap items-center gap-2 mb-3">
+    <select id="dictType" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-48">
         <option value="synonym">synonym (동의어)</option>
         <option value="stopword">stopword (불용어)</option>
         <option value="user">user (사용자사전)</option>
     </select>
-    <input id="dictTerm" placeholder="원본 단어 (term)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-    <input id="dictReplacement" placeholder="대체 단어 (replacement)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-    <button onclick="upsertDictionaryEntry()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">단건 저장</button>
+    <input id="dictTerm" placeholder="원본 단어 (term)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-56" />
+    <input id="dictReplacement" placeholder="대체 단어 (replacement)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-56" />
+    <button onclick="upsertDictionaryEntry()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm whitespace-nowrap">단건 저장</button>
+    <span id="dictTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
-<div class="flex gap-2 mb-3">
-    <button onclick="toggleDictView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
-</div>
-<div id="dictionaryList" class="hidden">
+<div id="dictionaryList">
     <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">유형</th><th class="p-2">원본</th><th class="p-2">대체</th><th class="p-2">활성</th><th class="p-2">관리</th></tr></thead><tbody id="dictBody"></tbody></table>
 </div>
-<pre id="dictionaryOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
+<div id="dictPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
+<pre id="dictionaryOutput" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
+let dictRows = [];
+let dictPage = 1;
+const DICT_PAGE_SIZE = 10;
+
+function changeDictPage(nextPage) {
+    const totalPages = Math.max(1, Math.ceil(dictRows.length / DICT_PAGE_SIZE));
+    dictPage = Math.max(1, Math.min(totalPages, nextPage));
+    renderDictRows();
+}
+
+function renderDictPagination() {
+    const pager = document.getElementById("dictPagination");
+    if (!pager) return;
+    if (dictRows.length <= DICT_PAGE_SIZE) {
+        pager.classList.add("hidden");
+        pager.innerHTML = "";
+        return;
+    }
+    const totalPages = Math.max(1, Math.ceil(dictRows.length / DICT_PAGE_SIZE));
+    pager.classList.remove("hidden");
+    pager.innerHTML = `
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${dictPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${dictPage === 1 ? "disabled" : ""} onclick="changeDictPage(${dictPage - 1})">이전</button>
+        <span class="text-slate-500 font-semibold">${dictPage} / ${totalPages}</span>
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${dictPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${dictPage === totalPages ? "disabled" : ""} onclick="changeDictPage(${dictPage + 1})">다음</button>
+    `;
+}
+
+function renderDictRows() {
+    const body = document.getElementById("dictBody");
+    if (!body) return;
+    const isViewer = loggedInRole === "viewer";
+    const totalPages = Math.max(1, Math.ceil(dictRows.length / DICT_PAGE_SIZE));
+    dictPage = Math.max(1, Math.min(totalPages, dictPage));
+    const start = (dictPage - 1) * DICT_PAGE_SIZE;
+    const pageRows = dictRows.slice(start, start + DICT_PAGE_SIZE);
+    body.innerHTML = pageRows.map(r => {
+        const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editDictEntry('${(r.dict_type||'').replace(/'/g,"\\'")}','${(r.term||'').replace(/'/g,"\\'")}','${(r.replacement||'').replace(/'/g,"\\'")}')">수정</span>`;
+        const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteDictEntry(${r.id})">삭제</span>`;
+        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.dict_type)}</td><td class="p-2">${fmt(r.term)}</td><td class="p-2">${fmt(r.replacement||"-")}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+    }).join("") || '<tr><td class="p-2" colspan="6">데이터 없음</td></tr>';
+    renderDictPagination();
+}
+
 async function upsertDictionaryEntry() {
     const dictType = document.getElementById("dictType").value;
     const term = document.getElementById("dictTerm").value;
@@ -49,23 +91,15 @@ async function upsertDictionaryEntry() {
 async function loadDictionaryEntries() {
     const result = await apiFetch(`${SYS_API}/dictionary/entries?active_only=true`, { method: "GET" });
     writeJson("dictionaryOutput", result.data);
+    const rows = Array.isArray(result.data) ? result.data : [];
+    document.getElementById("dictTotal").textContent = `총 ${rows.length}건`;
     populateDictList(result.data);
 }
 
-function toggleDictView() {
-    document.getElementById("dictionaryOutput").classList.toggle("hidden");
-    document.getElementById("dictionaryList").classList.toggle("hidden");
-}
-
 function populateDictList(data) {
-    const body = document.getElementById("dictBody");
-    if (!body || !Array.isArray(data)) return;
-    const isViewer = loggedInRole === "viewer";
-    body.innerHTML = data.map(r => {
-        const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editDictEntry('${(r.dict_type||'').replace(/'/g,"\\'")}','${(r.term||'').replace(/'/g,"\\'")}','${(r.replacement||'').replace(/'/g,"\\'")}')">수정</span>`;
-        const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteDictEntry(${r.id})">삭제</span>`;
-        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.dict_type)}</td><td class="p-2">${fmt(r.term)}</td><td class="p-2">${fmt(r.replacement||"-")}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
-    }).join("");
+    dictRows = Array.isArray(data) ? data : [];
+    dictPage = 1;
+    renderDictRows();
 }
 
 async function deleteDictEntry(entryId) {

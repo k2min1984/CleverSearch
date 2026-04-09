@@ -2,6 +2,32 @@
 
 목표: 개발/운영 기동 경로를 분리하고, startup 로그를 기준으로 원인-조치를 빠르게 판단한다.
 
+## 0. 다운로드 직후(처음 사용자) 빠른 시작
+
+사전 준비:
+
+- Windows + PowerShell 7 (`pwsh`)
+- Python 3.10+
+- Docker Desktop (OpenSearch/PostgreSQL 컨테이너 사용 시)
+
+인프라 기동(권장):
+
+```powershell
+docker compose up -d postgres opensearch
+```
+
+앱 기동(개발):
+
+```powershell
+pwsh -File scripts/start_dev.ps1
+```
+
+설명:
+
+- `start_dev.ps1`는 `.venv`가 없으면 자동 생성합니다.
+- `requirements.txt` 기반 패키지 설치/업데이트를 자동 실행합니다.
+- 기본 환경파일은 `.env.example`을 사용합니다.
+
 ## 1. 실행 스크립트
 
 - 개발 기동: scripts/start_dev.ps1
@@ -24,6 +50,7 @@ pwsh -File scripts/start_dev.ps1 -CheckOnly
 
 - 개발은 기본적으로 HTTP + reload를 사용한다.
 - SSL 테스트는 reload 없이 별도 점검을 권장한다.
+- 실행 시 가상환경/의존성 자동 점검을 수행한다.
 
 ## 3. 운영 기동 (preflight + non-reload)
 
@@ -42,6 +69,7 @@ pwsh -File scripts/start_prod.ps1 -EnvFile .env.production -CheckOnly
 
 - 실행 전 scripts/security_preflight.py를 강제 수행한다.
 - preflight 실패 시 서버 기동을 중단한다.
+- `.env.production`이 없으면 `.env.production.example`을 대체로 사용한다.
 
 ## 4. startup 로그 표준
 

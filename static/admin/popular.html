@@ -14,7 +14,7 @@
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
     <b>🔥 인기검색</b> — 설정 기간 내 가장 많이 검색된 키워드를 순위별로 표시합니다.<br>
     • <b>기간(일)</b>: 집계 기간 설정 (1~365일)<br>
-    • <b>표시 개수</b>: 상위 N개만 표시 (1~50개)<br>
+    • <b>표시 개수</b>: 상위 N개만 표시 (1~9개)<br>
     • <b>[적용]</b>: 변경된 설정 즉시 반영<br>
     • <b>[추천 키워드]</b>: 검색 빈도 기반 추천 키워드 조회
 </div>
@@ -22,10 +22,13 @@
     <label class="text-sm text-gray-400">기간(일):</label>
     <input id="popularDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" />
     <label class="text-sm text-gray-400">표시 개수:</label>
-    <input id="popularLimit" type="number" min="1" max="50" value="10" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" />
+    <input id="popularLimit" type="number" min="1" max="9" placeholder="1~9" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+    <input id="popularSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-72" placeholder="키워드" />
     <button onclick="saveAndLoadPopular()" class="px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm font-medium">적용</button>
     <button onclick="loadRecommendKeywords()" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">추천 키워드</button>
+    <span id="popularTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
+<div id="popularConfigNotice" class="hidden mb-3 rounded border px-3 py-2 text-sm"></div>
 <div id="recommendResult" class="hidden mb-3 bg-indigo-900/30 border border-indigo-700 rounded-lg p-3 text-sm text-indigo-200"></div>
 <div class="overflow-auto border border-gray-700 rounded">
     <table class="w-full text-sm">
@@ -33,37 +36,154 @@
         <tbody id="popularBody"></tbody>
     </table>
 </div>
-
+<div id="popularPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 <script>
+let popularRows = [];
+let popularFilteredRows = [];
+let popularPage = 1;
+const POPULAR_PAGE_SIZE = 10;
+
+function applyPopularFilter() {
+    const keyword = (document.getElementById("popularSearch")?.value || "").trim().toLowerCase();
+    popularPage = 1;
+    if (!keyword) {
+        renderPopularRows(popularRows);
+        return;
+    }
+    const filtered = popularRows.filter((row) => String(row?.keyword || "").toLowerCase().includes(keyword));
+    renderPopularRows(filtered);
+}
+
+function changePopularPage(nextPage) {
+    const totalPages = Math.max(1, Math.ceil(popularFilteredRows.length / POPULAR_PAGE_SIZE));
+    popularPage = Math.max(1, Math.min(totalPages, nextPage));
+    renderPopularRows(popularFilteredRows);
+}
+
+function renderPopularPagination() {
+    const pager = document.getElementById("popularPagination");
+    if (!pager) return;
+    if (popularFilteredRows.length <= POPULAR_PAGE_SIZE) {
+        pager.classList.add("hidden");
+        pager.innerHTML = "";
+        return;
+    }
+    const totalPages = Math.max(1, Math.ceil(popularFilteredRows.length / POPULAR_PAGE_SIZE));
+    pager.classList.remove("hidden");
+    pager.innerHTML = `
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${popularPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${popularPage === 1 ? "disabled" : ""} onclick="changePopularPage(${popularPage - 1})">이전</button>
+        <span class="text-slate-500 font-semibold">${popularPage} / ${totalPages}</span>
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${popularPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${popularPage === totalPages ? "disabled" : ""} onclick="changePopularPage(${popularPage + 1})">다음</button>
+    `;
+}
+
+async function syncDisplayedPopularCount(days) {
+    try {
+        const displayed = await apiFetch(`${API.replace('/admin','/search')}/popular?days=${days}`, { method: "GET" });
+        const rows = Array.isArray(displayed.data) ? displayed.data : [];
+        const limitInput = document.getElementById("popularLimit");
+        if (!limitInput) return;
+
+        // 프론트에 실제 노출되는 인기검색 개수를 입력칸에 반영합니다.
+        if (rows.length > 0) {
+            limitInput.value = String(Math.min(9, rows.length));
+        } else {
+            limitInput.value = "";
+        }
+    } catch (e) {
+        // 조회 실패 시 기존 입력값을 유지합니다.
+    }
+}
+
 async function loadPopularSettings() {
     try {
         const result = await apiFetch(`${API.replace('/admin','/system')}/popular/settings`, { method: "GET" });
         if (result.data) {
-            document.getElementById("popularDays").value = result.data.days || 7;
-            document.getElementById("popularLimit").value = result.data.limit || 10;
+            const days = result.data.days || 7;
+            document.getElementById("popularDays").value = days;
+            const savedLimit = result.data.limit;
+            if (Number.isInteger(savedLimit)) {
+                document.getElementById("popularLimit").value = String(savedLimit);
+            } else {
+                await syncDisplayedPopularCount(days);
+            }
         }
     } catch(e) { /* 실패 시 기존값 유지 */ }
 }
 async function saveAndLoadPopular() {
-    const days = parseInt(document.getElementById("popularDays").value) || 7;
-    const limit = parseInt(document.getElementById("popularLimit").value) || 10;
-    await apiFetch(`${API.replace('/admin','/system')}/popular/settings`, {
+    const daysInput = document.getElementById("popularDays");
+    const limitInput = document.getElementById("popularLimit");
+    const notice = document.getElementById("popularConfigNotice");
+    const days = Math.min(365, Math.max(1, parseInt(daysInput.value, 10) || 7));
+    const parsedLimit = parseInt(limitInput.value, 10);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 9) {
+        notice.className = "mb-3 rounded-lg border px-3 py-2 text-sm font-semibold";
+        notice.style.cssText = "border-color:#f59e0b;background:#fffbeb;color:#92400e;";
+        notice.textContent = "표시 개수는 1~9 사이 숫자만 입력할 수 있습니다.";
+        notice.classList.remove("hidden");
+        limitInput.focus();
+        return;
+    }
+    const limit = parsedLimit;
+    daysInput.value = days;
+    limitInput.value = limit;
+    const saveResult = await apiFetch(`${API.replace('/admin','/system')}/popular/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ days, limit })
     });
+
+    if (!saveResult.ok) {
+        const detail = saveResult?.data?.detail ? ` (${saveResult.data.detail})` : "";
+        notice.className = "mb-3 rounded-lg border px-3 py-2 text-sm font-semibold";
+        notice.style.cssText = "border-color:#f87171;background:#fef2f2;color:#991b1b;";
+        notice.textContent = `표시 개수 저장에 실패했습니다. 권한/세션 상태를 확인해 주세요.${detail}`;
+        notice.classList.remove("hidden");
+        return;
+    }
+
+    // 저장 성공 시 서버가 실제 반영한 값을 다시 입력칸에 동기화합니다.
+    const persistedDays = parseInt(saveResult?.data?.days, 10);
+    const persistedLimit = parseInt(saveResult?.data?.limit, 10);
+    if (Number.isInteger(persistedDays)) {
+        daysInput.value = persistedDays;
+    }
+    if (Number.isInteger(persistedLimit)) {
+        limitInput.value = persistedLimit;
+    }
+
+    notice.className = "mb-3 rounded-lg border px-3 py-2 text-sm font-semibold";
+    notice.style.cssText = "border-color:#34d399;background:#ecfdf5;color:#065f46;";
+    notice.textContent = `저장 완료: 기간 ${daysInput.value}일, 표시 개수 ${limitInput.value}`;
+    notice.classList.remove("hidden");
+
+    await loadPopularSettings();
     await loadPopular();
 }
 async function loadPopular() {
-    await loadPopularSettings();
     const days = document.getElementById("popularDays").value || 7;
-    const limit = document.getElementById("popularLimit").value || 10;
-    const result = await apiFetch(`${API}/popular-keywords?days=${days}&limit=${limit}`, { method: "GET" });
+    // 관리자 상세 리스트는 표시 개수와 분리하여 전체를 조회합니다.
+    const result = await apiFetch(`${API}/popular-keywords?days=${days}`, { method: "GET" });
     const data = result.data;
+    popularRows = Array.isArray(data) ? data : [];
+    popularPage = 1;
+    document.getElementById("popularTotal").textContent = `총 ${popularRows.length}건`;
+    applyPopularFilter();
+}
+
+function renderPopularRows(rows) {
     const body = document.getElementById("popularBody");
-    body.innerHTML = (data || []).map((row, i) =>
-        `<tr class="border-t border-gray-700"><td class="p-2">${i + 1}</td><td class="p-2">${fmt(row.keyword)}</td><td class="p-2">${fmt(row.count)}</td></tr>`
+    popularFilteredRows = Array.isArray(rows) ? rows : [];
+    const totalPages = Math.max(1, Math.ceil(popularFilteredRows.length / POPULAR_PAGE_SIZE));
+    popularPage = Math.max(1, Math.min(totalPages, popularPage));
+    const start = (popularPage - 1) * POPULAR_PAGE_SIZE;
+    const pageRows = popularFilteredRows.slice(start, start + POPULAR_PAGE_SIZE);
+
+    body.innerHTML = pageRows.map((row, idx) =>
+        `<tr class="border-t border-gray-700"><td class="p-2">${start + idx + 1}</td><td class="p-2">${fmt(row.keyword)}</td><td class="p-2">${fmt(row.count)}</td></tr>`
     ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
+
+    renderPopularPagination();
 }
 
 async function loadRecommendKeywords() {
@@ -86,5 +206,10 @@ async function loadRecommendKeywords() {
 }
 
 document.getElementById("popularDays")?.addEventListener("change", loadPopular);
-document.getElementById("popularLimit")?.addEventListener("change", loadPopular);
+document.getElementById("popularSearch")?.addEventListener("input", applyPopularFilter);
+
+(async function initPopularTab() {
+    await loadPopularSettings();
+    await loadPopular();
+})();
 </script>

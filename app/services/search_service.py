@@ -18,6 +18,9 @@
 """
 
 import re
+import hashlib
+import json
+import os
 from datetime import datetime
 from app.core.opensearch import get_client
 from app.schemas.search_schema import SearchRequest
@@ -89,7 +92,7 @@ def contains_exact_keyword(source: dict, keyword: str) -> bool:
         return False
     needle = keyword.strip().lower()
     title = (source.get("Title") or "").lower()
-    body = (source.get("all_text") or "").lower()
+    body = (source.get("all_text") or source.get("alltext") or "").lower()
     return needle in title or needle in body
 
 
@@ -129,6 +132,102 @@ def normalize_common_typos(query: str) -> str:
     return q
 
 
+# 호환 자모 -> 한글 음절 복원용 테이블
+COMPAT_CHO = ["ㄱ", "ㄲ", "ㄴ", "ㄷ", "ㄸ", "ㄹ", "ㅁ", "ㅂ", "ㅃ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅉ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
+COMPAT_JUNG = ["ㅏ", "ㅐ", "ㅑ", "ㅒ", "ㅓ", "ㅔ", "ㅕ", "ㅖ", "ㅗ", "ㅘ", "ㅙ", "ㅚ", "ㅛ", "ㅜ", "ㅝ", "ㅞ", "ㅟ", "ㅠ", "ㅡ", "ㅢ", "ㅣ"]
+COMPAT_JONG = ["", "ㄱ", "ㄲ", "ㄳ", "ㄴ", "ㄵ", "ㄶ", "ㄷ", "ㄹ", "ㄺ", "ㄻ", "ㄼ", "ㄽ", "ㄾ", "ㄿ", "ㅀ", "ㅁ", "ㅂ", "ㅄ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
+CHO_SET = set(COMPAT_CHO)
+JUNG_SET = set(["ㅏ", "ㅐ", "ㅑ", "ㅒ", "ㅓ", "ㅔ", "ㅕ", "ㅖ", "ㅗ", "ㅛ", "ㅜ", "ㅠ", "ㅡ", "ㅣ"]) | set(COMPAT_JUNG)
+JONG_INDEX = {ch: idx for idx, ch in enumerate(COMPAT_JONG) if ch}
+JUNG_COMBINE = {
+    ("ㅗ", "ㅏ"): "ㅘ",
+    ("ㅗ", "ㅐ"): "ㅙ",
+    ("ㅗ", "ㅣ"): "ㅚ",
+    ("ㅜ", "ㅓ"): "ㅝ",
+    ("ㅜ", "ㅔ"): "ㅞ",
+    ("ㅜ", "ㅣ"): "ㅟ",
+    ("ㅡ", "ㅣ"): "ㅢ",
+}
+JONG_COMBINE = {
+    ("ㄱ", "ㅅ"): "ㄳ",
+    ("ㄴ", "ㅈ"): "ㄵ",
+    ("ㄴ", "ㅎ"): "ㄶ",
+    ("ㄹ", "ㄱ"): "ㄺ",
+    ("ㄹ", "ㅁ"): "ㄻ",
+    ("ㄹ", "ㅂ"): "ㄼ",
+    ("ㄹ", "ㅅ"): "ㄽ",
+    ("ㄹ", "ㅌ"): "ㄾ",
+    ("ㄹ", "ㅍ"): "ㄿ",
+    ("ㄹ", "ㅎ"): "ㅀ",
+    ("ㅂ", "ㅅ"): "ㅄ",
+}
+
+
+def compose_hangul_from_compat_jamo(query: str) -> str:
+    """자모(ㄱ-ㅎ/ㅏ-ㅣ) 입력을 가능한 범위에서 한글 음절로 복원한다."""
+    src = [ch for ch in (query or "") if ch != " " and ch != "|"]
+    if not src:
+        return ""
+
+    out = []
+    i = 0
+    n = len(src)
+    while i < n:
+        ch = src[i]
+
+        # 모음으로 시작하면 초성을 ㅇ으로 보정
+        if ch in JUNG_SET:
+            cho = "ㅇ"
+            jung = ch
+            i += 1
+        elif ch in CHO_SET and i + 1 < n and src[i + 1] in JUNG_SET:
+            cho = ch
+            i += 1
+            jung = src[i]
+            i += 1
+        else:
+            out.append(ch)
+            i += 1
+            continue
+
+        # 복합 중성 결합
+        if i < n and (jung, src[i]) in JUNG_COMBINE:
+            jung = JUNG_COMBINE[(jung, src[i])]
+            i += 1
+
+        jong = ""
+        if i < n and src[i] in CHO_SET:
+            # 다음이 모음이면 현재 음절 종성이 아니라 다음 음절 초성으로 본다.
+            if i + 1 < n and src[i + 1] in JUNG_SET:
+                jong = ""
+            else:
+                # 복합 종성 가능성 확인
+                if i + 1 < n and (src[i], src[i + 1]) in JONG_COMBINE:
+                    pair = JONG_COMBINE[(src[i], src[i + 1])]
+                    if i + 2 >= n or src[i + 2] not in JUNG_SET:
+                        jong = pair
+                        i += 2
+                    else:
+                        jong = src[i]
+                        i += 1
+                else:
+                    jong = src[i]
+                    i += 1
+
+        if cho in CHO_SET and jung in COMPAT_JUNG:
+            cho_idx = COMPAT_CHO.index(cho)
+            jung_idx = COMPAT_JUNG.index(jung)
+            jong_idx = JONG_INDEX.get(jong, 0)
+            syllable = chr(0xAC00 + (cho_idx * 21 + jung_idx) * 28 + jong_idx)
+            out.append(syllable)
+        else:
+            out.extend([cho, jung])
+            if jong:
+                out.append(jong)
+
+    return "".join(out)
+
+
 def apply_runtime_dictionary(query: str) -> tuple[str, list[str]]:
     # 시스템 사전(엑셀 업로드 포함)을 검색 전처리에 즉시 반영합니다.
     try:
@@ -137,6 +236,247 @@ def apply_runtime_dictionary(query: str) -> tuple[str, list[str]]:
         return query, []
 
 class SearchService:
+
+    @staticmethod
+    def _normalize_chosung_keyword(keyword: str) -> str:
+        return (keyword or "").strip().replace(" ", "")
+
+    @staticmethod
+    def _build_chosung_clause(keyword: str, boost: float) -> dict:
+        mode = (settings.SEARCH_CHOSUNG_QUERY_MODE or "wildcard").lower()
+        raw = (keyword or "").strip()
+        normalized = SearchService._normalize_chosung_keyword(raw)
+
+        wildcard_clause = {
+            "bool": {
+                "should": [
+                    {"wildcard": {"chosung_text": {"value": f"*{raw}*", "boost": boost}}},
+                    {"wildcard": {"chosungtext": {"value": f"*{raw}*", "boost": boost}}},
+                ],
+                "minimum_should_match": 1,
+            }
+        }
+        ngram_clause = {
+            "match": {
+                "chosung_text_ngram": {
+                    "query": normalized,
+                    "operator": "and",
+                    "boost": boost,
+                }
+            }
+        }
+
+        if mode == "ngram":
+            return ngram_clause
+        if mode == "hybrid":
+            return {
+                "bool": {
+                    "should": [ngram_clause, wildcard_clause],
+                    "minimum_should_match": 1,
+                }
+            }
+        return wildcard_clause
+
+    @staticmethod
+    def _clone_search_request(req: SearchRequest) -> SearchRequest:
+        if hasattr(req, "model_copy"):
+            return req.model_copy(deep=True)
+        if hasattr(req, "copy"):
+            return req.copy(deep=True)
+        return req
+
+    @staticmethod
+    def _normalize_file_ext(ext: str) -> str:
+        return (ext or "").strip().lower().lstrip(".")
+
+    @staticmethod
+    def _build_file_ext_filter(ext: str):
+        normalized = SearchService._normalize_file_ext(ext)
+        if not normalized:
+            return None
+
+        variants = [
+            normalized,
+            normalized.upper(),
+            f".{normalized}",
+            f".{normalized.upper()}",
+        ]
+        should = []
+        for field in ("file_ext", "fileext"):
+            should.extend({"term": {field: v}} for v in variants)
+
+        # 과거 색인에서 확장자 필드 값 포맷이 달라도 필터가 동작하도록 보완
+        for field in ("file_ext", "fileext"):
+            should.extend([
+                {"wildcard": {field: {"value": f"*.{normalized}", "case_insensitive": True}}},
+                {"wildcard": {field: {"value": f"*{normalized}", "case_insensitive": True}}},
+            ])
+
+        return {
+            "bool": {
+                "should": should,
+                "minimum_should_match": 1,
+            }
+        }
+
+    @staticmethod
+    def _build_date_range_filter(gte: str = None, lte: str = None):
+        if not gte and not lte:
+            return None
+
+        should = []
+        for field in ("indexed_at", "indexedat"):
+            spec = {}
+            if gte:
+                spec["gte"] = gte
+            if lte:
+                spec["lte"] = lte
+            should.append({"range": {field: spec}})
+
+        return {
+            "bool": {
+                "should": should,
+                "minimum_should_match": 1,
+            }
+        }
+
+    @staticmethod
+    def _result_signature(payload: dict) -> str:
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        top_titles = []
+        for item in items[:10]:
+            content = item.get("content", {}) if isinstance(item, dict) else {}
+            top_titles.append(content.get("Title", ""))
+        raw = "|".join(top_titles)
+        return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
+
+    @staticmethod
+    def _extract_top_ids(payload: dict, k: int = 10) -> list[str]:
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        top_ids = []
+        for item in items[:k]:
+            doc_id = item.get("id") if isinstance(item, dict) else None
+            top_ids.append(str(doc_id or ""))
+        return top_ids
+
+    @staticmethod
+    def _compute_overlap_at_k(primary: dict, shadow: dict, k: int = 10) -> float:
+        p = set([x for x in SearchService._extract_top_ids(primary, k) if x])
+        s = set([x for x in SearchService._extract_top_ids(shadow, k) if x])
+        if not p and not s:
+            return 1.0
+        if not p:
+            return 0.0
+        return len(p.intersection(s)) / max(1, len(p))
+
+    @staticmethod
+    def _append_shadow_log(row: dict) -> None:
+        path = (settings.SEARCH_SHADOW_LOG_FILE or "").strip()
+        if not path:
+            return
+        try:
+            abs_path = path if os.path.isabs(path) else os.path.abspath(path)
+            folder = os.path.dirname(abs_path)
+            if folder:
+                os.makedirs(folder, exist_ok=True)
+            with open(abs_path, "a", encoding="utf-8") as fp:
+                fp.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception as log_err:
+            print(f"[SEARCH][SHADOW-LOG-ERROR] {log_err}")
+
+    @staticmethod
+    def _rerank_items_v2(items: list[dict], query: str, popular_terms: set[str]) -> list[dict]:
+        needle = (query or "").strip().lower()
+        reranked = []
+        for item in items:
+            content = item.get("content", {}) if isinstance(item, dict) else {}
+            title = str(content.get("Title", "")).lower()
+            body = str(content.get("all_text", "")).lower()
+
+            score = float(item.get("score", 0.0) or 0.0)
+            bonus = 0.0
+            if needle:
+                if needle in title:
+                    bonus += settings.SEARCH_V2_EXACT_TITLE_BOOST
+                if needle in body:
+                    bonus += settings.SEARCH_V2_EXACT_BODY_BOOST
+
+            if settings.SEARCH_V2_ENABLE_POPULAR_BOOST and needle and popular_terms:
+                if needle in popular_terms:
+                    bonus += settings.SEARCH_V2_POPULAR_BOOST
+
+            enriched = dict(item)
+            enriched["score"] = score + bonus
+            reranked.append(enriched)
+
+        reranked.sort(key=lambda x: float(x.get("score", 0.0) or 0.0), reverse=True)
+        return reranked
+
+    @staticmethod
+    async def _execute_search_v2(req: SearchRequest):
+        # v2는 v1 결과를 기반으로 재정렬/인기 신호를 점진적으로 적용합니다.
+        base = await SearchService._execute_search_v1(req)
+        if not settings.SEARCH_V2_ENABLE_RERANK:
+            return base
+
+        items = base.get("items", []) if isinstance(base, dict) else []
+        if not items:
+            return base
+
+        popular_terms = set()
+        if settings.SEARCH_V2_ENABLE_POPULAR_BOOST:
+            try:
+                popular_list = DBService.get_popular_keywords(days=settings.SEARCH_V2_POPULAR_DAYS, limit=50)
+                popular_terms = set([(kw or "").strip().lower() for kw in popular_list if kw])
+            except Exception:
+                popular_terms = set()
+
+        reranked = SearchService._rerank_items_v2(items, req.query, popular_terms)
+        upgraded = dict(base)
+        upgraded["items"] = reranked
+        return upgraded
+
+    @staticmethod
+    async def execute_search(req: SearchRequest):
+        """파이프라인 선택/그림자 비교 래퍼. 기본값은 항상 기존 v1 동작입니다."""
+        pipeline = (settings.SEARCH_PIPELINE_VERSION or "v1").lower()
+
+        primary_req = SearchService._clone_search_request(req)
+        if pipeline == "v2":
+            primary = await SearchService._execute_search_v2(primary_req)
+            shadow_name = "v1"
+        else:
+            primary = await SearchService._execute_search_v1(primary_req)
+            shadow_name = "v2"
+
+        if not settings.SEARCH_SHADOW_COMPARE:
+            return primary
+
+        try:
+            shadow_req = SearchService._clone_search_request(req)
+            shadow = await (SearchService._execute_search_v1(shadow_req) if shadow_name == "v1" else SearchService._execute_search_v2(shadow_req))
+            p_sig = SearchService._result_signature(primary)
+            s_sig = SearchService._result_signature(shadow)
+            overlap10 = SearchService._compute_overlap_at_k(primary, shadow, k=10)
+            log_row = {
+                "ts": datetime.now().isoformat(),
+                "query": (req.query or ""),
+                "primary": pipeline,
+                "shadow": shadow_name,
+                "primary_total": primary.get("total", 0) if isinstance(primary, dict) else 0,
+                "shadow_total": shadow.get("total", 0) if isinstance(shadow, dict) else 0,
+                "overlap_at_10": overlap10,
+                "same_signature": (p_sig == s_sig),
+            }
+            SearchService._append_shadow_log(log_row)
+            if p_sig != s_sig:
+                p_total = primary.get("total", 0) if isinstance(primary, dict) else 0
+                s_total = shadow.get("total", 0) if isinstance(shadow, dict) else 0
+                print(f"[SEARCH][SHADOW-DIFF] primary={pipeline} shadow={shadow_name} total={p_total}/{s_total} overlap@10={overlap10:.3f}")
+        except Exception as shadow_err:
+            print(f"[SEARCH][SHADOW-ERROR] {shadow_err}")
+
+        return primary
     
     # --- [3순위] 검색 실패 추적을 위한 로그 기록 함수 ---
     @staticmethod
@@ -166,7 +506,7 @@ class SearchService:
             print(f"앱 DB 로그 저장 실패: {e}")
 
     @staticmethod
-    async def execute_search(req: SearchRequest):
+    async def _execute_search_v1(req: SearchRequest):
         """
         하이브리드 검색 실행 (키워드 Bool + 벡터 KNN 결합)
 
@@ -210,17 +550,24 @@ class SearchService:
             clean_query = normalize_common_typos(clean_query)
         is_typo_corrected = (clean_query != original_query)
 
-        # 2. 검색어 확장 (동의어)
+        # ---------------------------------------------------------
+        # 🚀 [추가됨] 3. 쿼리 빌드 및 AI 벡터 변환 (하이브리드 장착)
+        # ---------------------------------------------------------
+        is_jamo_query = bool(re.match(r'^[ㄱ-ㅎㅏ-ㅣ| ]+$', clean_query))
+        if is_jamo_query:
+            composed = compose_hangul_from_compat_jamo(clean_query)
+            # 모음/자모 혼합 입력은 일반 한글 질의로 복원해 검색 성공률을 높인다.
+            if composed and re.search(r'[가-힣]', composed):
+                clean_query = composed
+
+        is_chosung = bool(re.match(r'^[ㄱ-ㅎ| ]+$', clean_query))
+
+        # 2. 검색어 확장 (동의어) - 자모 복원까지 완료된 최종 clean_query 기준
         target_keywords = [clean_query]
         for key, synonyms in SYNONYM_DICT.items():
             if key.lower() in clean_query.lower():
                 target_keywords.extend(synonyms)
         target_keywords.extend(dict_expanded_keywords)
-        
-        # ---------------------------------------------------------
-        # 🚀 [추가됨] 3. 쿼리 빌드 및 AI 벡터 변환 (하이브리드 장착)
-        # ---------------------------------------------------------
-        is_chosung = bool(re.match(r'^[ㄱ-ㅎ| ]+$', clean_query))
         
         # 프론트엔드에서 넘어온 검색어를 768차원 AI 숫자로 변환
         query_vector = []
@@ -239,14 +586,16 @@ class SearchService:
             """
             w = ScoringConfigService.get_weights()
             if is_chosung:
-                return { "wildcard": { "chosung_text": { "value": f"*{keyword}*", "boost": w["chosung"] } } }
+                return SearchService._build_chosung_clause(keyword, w["chosung"])
             return {
                 "bool": {
                     "should": [
                         { "match_phrase": { "Title": { "query": keyword, "boost": w["title_phrase"] } } }, 
                         { "match": { "Title": { "query": keyword, "boost": w["title_and"], "operator": "and" } } },
                         { "match_phrase": { "all_text": { "query": keyword, "boost": w["content_phrase"] } } },
-                        { "match": { "all_text": { "query": keyword, "boost": w["content_and"], "operator": "and" } } }
+                        { "match": { "all_text": { "query": keyword, "boost": w["content_and"], "operator": "and" } } },
+                        { "match_phrase": { "alltext": { "query": keyword, "boost": w["content_phrase"] } } },
+                        { "match": { "alltext": { "query": keyword, "boost": w["content_and"], "operator": "and" } } }
                     ]
                 }
             }
@@ -301,14 +650,28 @@ class SearchService:
         # --- [1순위] 상세 필터 로직 강화 ---
         filters = query_body["query"]["bool"]["filter"]
         if req.start_date:
-            filters.append({"range": {"indexed_at": {"gte": req.start_date}}})
+            date_filter = SearchService._build_date_range_filter(gte=req.start_date)
+            if date_filter:
+                filters.append(date_filter)
         if req.file_ext:
-            filters.append({"term": {"file_ext": req.file_ext.lower()}})
+            file_ext_filter = SearchService._build_file_ext_filter(req.file_ext)
+            if file_ext_filter:
+                filters.append(file_ext_filter)
         if req.doc_category:
-            filters.append({"term": {"doc_category": req.doc_category}})
+            filters.append({
+                "bool": {
+                    "should": [
+                        {"term": {"doc_category": req.doc_category}},
+                        {"term": {"doccategory": req.doc_category}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            })
 
         if req.end_date:
-            filters.append({"range": {"indexed_at": {"lte": req.end_date}}})
+            date_filter = SearchService._build_date_range_filter(lte=req.end_date)
+            if date_filter:
+                filters.append(date_filter)
 
         if req.include_keywords:
             for keyword in req.include_keywords:
@@ -319,6 +682,7 @@ class SearchService:
                         "bool": {
                             "should": [
                                 {"match_phrase": {"all_text": safe_kw}},
+                                {"match_phrase": {"alltext": safe_kw}},
                                 {"match_phrase": {"Title": safe_kw}},
                             ],
                             "minimum_should_match": 1,
@@ -335,6 +699,7 @@ class SearchService:
                         "bool": {
                             "should": [
                                 {"match_phrase": {"all_text": safe_kw}},
+                                {"match_phrase": {"alltext": safe_kw}},
                                 {"match_phrase": {"Title": safe_kw}},
                             ],
                             "minimum_should_match": 1,
@@ -359,13 +724,15 @@ class SearchService:
                 print(f"👉 [점수 확인] '{req.query}' 검색 ➡️ 최고 점수: {response['hits']['hits'][0]['_score']}")            
 
             # --- [3순위] 검색 실패 및 통계 추적 로그 남기기 ---
-            # 벡터 단독 매칭을 제외하고, 정확 구문(제목/본문) 기준으로 실패 여부를 엄격 판정
+            # 운영 통계의 성공/실패는 사용자 체감과 동일하게 total_hits 기준으로 판정합니다.
+            # strict_hits는 품질 진단 참고용으로만 계산합니다.
             try:
                 strict_phrase_query = {
                     "bool": {
                         "should": [
                             {"match_phrase": {"Title": clean_query}},
                             {"match_phrase": {"all_text": clean_query}},
+                            {"match_phrase": {"alltext": clean_query}},
                         ],
                         "minimum_should_match": 1,
                     }
@@ -376,7 +743,7 @@ class SearchService:
                 strict_hits = strict_count_resp.get("count", 0)
             except Exception:
                 strict_hits = 0
-            is_failed_flag = (strict_hits == 0)
+            is_failed_flag = (total_hits == 0)
 
             await SearchService.log_search_event(clean_query, total_hits, req.user_id or "anonymous", is_failed=is_failed_flag)
             
@@ -398,7 +765,8 @@ class SearchService:
 
                     recalc_stats = {}
                     for hit in raw_hits:
-                        cat = (hit.get('_source', {}) or {}).get('doc_category')
+                        src = (hit.get('_source', {}) or {})
+                        cat = src.get('doc_category') or src.get('doccategory')
                         if cat:
                             recalc_stats[cat] = recalc_stats.get(cat, 0) + 1
                     category_stats = recalc_stats
@@ -413,7 +781,8 @@ class SearchService:
 
                 recalc_stats = {}
                 for hit in raw_hits:
-                    cat = (hit.get('_source', {}) or {}).get('doc_category')
+                    src = (hit.get('_source', {}) or {})
+                    cat = src.get('doc_category') or src.get('doccategory')
                     if cat:
                         recalc_stats[cat] = recalc_stats.get(cat, 0) + 1
                 category_stats = recalc_stats
@@ -424,7 +793,7 @@ class SearchService:
                 # [추가] 모든 문서의 실제 점수를 터미널에 까발려라!
                 print(f"📄 문서: {hit['_source'].get('Title')} ➡️ 점수: {hit['_score']}")
                 source = hit['_source']
-                raw_text = source.get("all_text", "")
+                raw_text = source.get("all_text") or source.get("alltext") or ""
                 summary, page_num = None, "1"
                 if is_chosung:
                     summary, page_num = manual_chosung_highlight(raw_text, clean_query)
@@ -442,7 +811,7 @@ class SearchService:
                     "content": source,
                     "summary": summary,
                     "score": hit["_score"],
-                    "indexed_at": source.get("indexed_at", "")
+                    "indexed_at": source.get("indexed_at") or source.get("indexedat") or ""
                 })
 
             return {
@@ -480,16 +849,32 @@ class SearchService:
         index_name = settings.OPENSEARCH_INDEX
         safe_q = DocumentUtils.sanitize_text(q)
         if not safe_q: return []
+
+        is_jamo_query = bool(re.match(r'^[ㄱ-ㅎㅏ-ㅣ| ]+$', safe_q))
+        if is_jamo_query:
+            composed = compose_hangul_from_compat_jamo(safe_q)
+            if composed and re.search(r'[가-힣]', composed):
+                safe_q = composed
         
         is_chosung = bool(re.match(r'^[ㄱ-ㅎ| ]+$', safe_q))
         if is_chosung:
-            query = { "query": { "wildcard": { "chosung_text": f"*{safe_q}*" } } }
+            query = {"query": SearchService._build_chosung_clause(safe_q, 1.0)}
         else:
             query = { "query": { "match_phrase_prefix": { "Title": safe_q } } }
         
         try:
             res = client.search(index=index_name, body={**query, "size": 5, "_source": ["Title"]})
-            return list(set([h['_source']['Title'] for h in res['hits']['hits'] if h['_source'].get('Title')]))
+            titles = list(set([h['_source']['Title'] for h in res['hits']['hits'] if h['_source'].get('Title')]))
+            if not settings.SEARCH_V2_AUTOCOMPLETE_POPULAR_BOOST:
+                return titles
+
+            try:
+                popular = DBService.get_popular_keywords(days=settings.SEARCH_V2_POPULAR_DAYS, limit=100)
+                popular_rank = {kw: idx for idx, kw in enumerate(popular)}
+                titles.sort(key=lambda t: popular_rank.get(t, 10_000))
+            except Exception:
+                pass
+            return titles
         except:
             return []
         
@@ -499,9 +884,11 @@ class SearchService:
         """앱 DB에서 최근 검색 로그를 기준으로 인기 검색어를 반환"""
         try:
             from app.services.system_service import PopularConfigService
-            settings = PopularConfigService.get_settings()
-            days = settings["days"]
-            return DBService.get_popular_keywords(days=days, limit=limit)
+            config = PopularConfigService.get_settings()
+            days = int(config.get("days", 7))
+            config_limit = int(config.get("limit", 9))
+            effective_limit = int(limit) if limit is not None else config_limit
+            return DBService.get_popular_keywords(days=days, limit=effective_limit)
         except Exception as e:
             print(f"인기 검색어 추출 에러: {e}")
             return []

@@ -468,7 +468,6 @@
             <header class="topbar">
                 <div class="text-lg font-extrabold tracking-tight">Admin Console</div>
                 <div class="flex items-center gap-2">
-                    <span class="pill" id="authStatus">JWT Session</span>
                     <span class="pill" id="loggedInUser">-</span>
                     <a href="/" class="btn-top px-3 py-2 text-sm">검색 페이지</a>
                     <button onclick="logoutJwt()" class="btn-top px-3 py-2 text-sm">로그아웃</button>
@@ -516,7 +515,6 @@
         };
 
         let activeTab = "dashboard";
-        const tabCache = {};
 
         function resolveInitialTab() {
             const fromHash = (window.location.hash || "").replace(/^#/, "").trim();
@@ -647,17 +645,11 @@
         }
 
         async function loadTabHtml(tabName) {
-            const isHotTab = tabName === "upload";
-            if (!isHotTab && tabCache[tabName]) return tabCache[tabName];
             try {
-                const tabUrl = isHotTab
-                    ? `/static/admin/${encodeURIComponent(tabName)}.html?v=${Date.now()}`
-                    : `/static/admin/${encodeURIComponent(tabName)}.html`;
-                const res = await fetch(tabUrl, { cache: isHotTab ? "no-store" : "default" });
+                const tabUrl = `/static/admin/${encodeURIComponent(tabName)}.html?v=${Date.now()}`;
+                const res = await fetch(tabUrl, { cache: "no-store" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const html = await res.text();
-                if (!isHotTab) tabCache[tabName] = html;
-                return html;
+                return await res.text();
             } catch (e) {
                 return `<div class="text-red-600 p-4">탭 로드 실패: ${tabName} (${e.message})</div>`;
             }

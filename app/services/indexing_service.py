@@ -19,12 +19,12 @@ import hashlib
 
 from app.common.embedding import embedder
 from app.common.utils import DocumentUtils
+from app.core.config import settings
 from app.core.file import excel, hwp, image, office, pdf
 from app.core.opensearch import get_client
 from app.services.db_service import DBService
 
 
-INDEX_NAME = "cleversearch-docs"
 ALLOWED_EXTENSIONS = {"xlsx", "xls", "hwp", "hwpx", "pdf", "docx", "pptx", "jpg", "jpeg", "png", "txt"}
 
 
@@ -32,26 +32,38 @@ class IndexingService:
     @staticmethod
     def ensure_index() -> None:
         client = get_client()
-        if client.indices.exists(index=INDEX_NAME):
+        index_name = settings.OPENSEARCH_INDEX
+        if client.indices.exists(index=index_name):
             return
 
         index_body = {
             "settings": {
                 "index": {
                     "knn": True,
+                    "max_ngram_diff": 18,
                     "analysis": {
                         "analyzer": {
                             "korean_analyzer": {
                                 "type": "custom",
                                 "tokenizer": "nori_tokenizer",
                                 "filter": ["lowercase", "nori_readingform", "my_stop_filter"],
-                            }
+                            },
+                            "chosung_ngram_analyzer": {
+                                "type": "custom",
+                                "tokenizer": "keyword",
+                                "filter": ["lowercase", "chosung_ngram_filter"],
+                            },
                         },
                         "filter": {
                             "my_stop_filter": {
                                 "type": "stop",
                                 "stopwords": ["에", "대해서", "해주세요", "알려주세요", "의", "를", "은", "는"],
-                            }
+                            },
+                            "chosung_ngram_filter": {
+                                "type": "ngram",
+                                "min_gram": 2,
+                                "max_gram": 20,
+                            },
                         },
                     },
                 }
@@ -62,6 +74,11 @@ class IndexingService:
                     "all_text": {"type": "text", "analyzer": "korean_analyzer"},
                     "doc_category": {"type": "keyword"},
                     "chosung_text": {"type": "text", "analyzer": "whitespace"},
+                    "chosung_text_ngram": {
+                        "type": "text",
+                        "analyzer": "chosung_ngram_analyzer",
+                        "search_analyzer": "chosung_ngram_analyzer",
+                    },
                     "origin_file": {"type": "keyword"},
                     "file_ext": {"type": "keyword"},
                     "content_hash": {"type": "keyword"},
@@ -70,7 +87,7 @@ class IndexingService:
                 }
             },
         }
-        client.indices.create(index=INDEX_NAME, body=index_body)
+        client.indices.create(index=index_name, body=index_body)
 
     @staticmethod
     def _extract_text(filename: str, content: bytes) -> tuple[str, str]:
@@ -98,6 +115,7 @@ class IndexingService:
     def index_bytes(filename: str, content: bytes, source_label: str = "upload") -> dict:
         IndexingService.ensure_index()
         client = get_client()
+        index_name = settings.OPENSEARCH_INDEX
 
         safe_filename = DocumentUtils.sanitize_text(filename)
         text_content, ext = IndexingService._extract_text(safe_filename, content)
@@ -139,9 +157,9 @@ class IndexingService:
                 "content_hash": content_digest,
             }
 
-        is_dup, existing_file = DocumentUtils.check_duplicate_content(client, INDEX_NAME, content_digest)
+        is_dup, existing_file = DocumentUtils.check_duplicate_content(client, index_name, content_digest)
         if (not is_dup) and (legacy_text_digest != content_digest):
-            is_dup, existing_file = DocumentUtils.check_duplicate_content(client, INDEX_NAME, legacy_text_digest)
+            is_dup, existing_file = DocumentUtils.check_duplicate_content(client, index_name, legacy_text_digest)
         if is_dup:
             return {
                 "status": "skipped",
@@ -161,6 +179,7 @@ class IndexingService:
             "all_text": clean_body_text,
             "doc_category": category,
             "chosung_text": DocumentUtils.convert_to_chosung(clean_body_text),
+            "chosung_text_ngram": DocumentUtils.convert_to_chosung(clean_body_text).replace(" ", ""),
             "content_hash": str(content_digest),
             "Title": safe_filename,
             "file_ext": ext,
@@ -170,7 +189,7 @@ class IndexingService:
         }
 
         safe_doc = DocumentUtils.sanitize_for_opensearch(doc_source)
-        index_res = client.index(index=INDEX_NAME, body=safe_doc, refresh=True)
+        index_res = client.index(index=index_name, body=safe_doc, refresh=True)
         DBService.save_indexed_document(
             os_doc_id=index_res.get("_id", ""),
             origin_file=safe_filename,

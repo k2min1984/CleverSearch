@@ -22,6 +22,11 @@ def _get_csv_env(name: str, default: str) -> list[str]:
     raw = os.getenv(name, default)
     return [item.strip() for item in raw.split(",") if item.strip()]
 
+
+def _get_port_env(name: str) -> str:
+    raw = (os.getenv(name, "") or "").split("#", 1)[0].strip()
+    return raw if raw.isdigit() else ""
+
 # .env 파일이 존재할 경우 내용을 로드하여 환경 변수로 설정합니다.
 # Docker Compose 사용 시에는 docker-compose.yml의 environment 설정이 우선순위를 가집니다.
 load_dotenv()
@@ -68,7 +73,7 @@ class Settings:
 
     # 개별 접속 정보 (DATABASE_URL 미지정 시 이 값으로 자동 조립)
     DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_PORT = os.getenv("DB_PORT", "")          # 빈 값이면 DB_TYPE별 기본 포트 사용
+    DB_PORT = _get_port_env("DB_PORT")          # 빈 값이면 DB_TYPE별 기본 포트 사용
     DB_NAME = os.getenv("DB_NAME", "cleversearch")
     DB_USER = os.getenv("DB_USER", "cleversearch")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "cleversearch123")
@@ -145,7 +150,7 @@ class Settings:
         "CORS_ALLOWED_ORIGINS",
         "https://localhost:8000,http://localhost:8000,https://127.0.0.1:8000,http://127.0.0.1:8000,https://localhost:8443,http://localhost:8443,https://127.0.0.1:8443,http://127.0.0.1:8443",
     )
-    ALLOWED_HOSTS = _get_csv_env("ALLOWED_HOSTS", "localhost,127.0.0.1")
+    ALLOWED_HOSTS = _get_csv_env("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
     ENABLE_API_DOCS = _get_bool_env(
         "ENABLE_API_DOCS",
         "true" if APP_ENV in {"dev", "local", "test"} else "false",
@@ -156,6 +161,25 @@ class Settings:
     AUTH_RATE_LIMIT_MAX_ATTEMPTS = int(os.getenv("AUTH_RATE_LIMIT_MAX_ATTEMPTS", "5"))
     AUTH_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "300"))
     AUTH_RATE_LIMIT_BLOCK_SECONDS = int(os.getenv("AUTH_RATE_LIMIT_BLOCK_SECONDS", "900"))
+
+    # 검색 파이프라인 점진 전환 플래그 (기본: 기존 동작 유지)
+    SEARCH_PIPELINE_VERSION = os.getenv("SEARCH_PIPELINE_VERSION", "v1").strip().lower()
+    SEARCH_SHADOW_COMPARE = _get_bool_env("SEARCH_SHADOW_COMPARE", "false")
+    SEARCH_SHADOW_LOG_FILE = os.getenv("SEARCH_SHADOW_LOG_FILE", "").strip()
+
+    # v2 실험 플래그 (기본 OFF: 기존 서비스 영향 없음)
+    SEARCH_V2_ENABLE_RERANK = _get_bool_env("SEARCH_V2_ENABLE_RERANK", "false")
+    SEARCH_V2_EXACT_TITLE_BOOST = float(os.getenv("SEARCH_V2_EXACT_TITLE_BOOST", "0.35"))
+    SEARCH_V2_EXACT_BODY_BOOST = float(os.getenv("SEARCH_V2_EXACT_BODY_BOOST", "0.15"))
+    SEARCH_V2_ENABLE_POPULAR_BOOST = _get_bool_env("SEARCH_V2_ENABLE_POPULAR_BOOST", "false")
+    SEARCH_V2_POPULAR_BOOST = float(os.getenv("SEARCH_V2_POPULAR_BOOST", "0.10"))
+    SEARCH_V2_POPULAR_DAYS = int(os.getenv("SEARCH_V2_POPULAR_DAYS", "14"))
+
+    # 자동완성 v2 실험 플래그 (기본 OFF)
+    SEARCH_V2_AUTOCOMPLETE_POPULAR_BOOST = _get_bool_env("SEARCH_V2_AUTOCOMPLETE_POPULAR_BOOST", "false")
+
+    # 초성 검색 모드: wildcard(기본), ngram, hybrid
+    SEARCH_CHOSUNG_QUERY_MODE = os.getenv("SEARCH_CHOSUNG_QUERY_MODE", "wildcard").strip().lower()
 
 # 전역에서 import하여 사용할 수 있도록 인스턴스 생성
 settings = Settings()

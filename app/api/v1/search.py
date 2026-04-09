@@ -54,7 +54,7 @@ async def autocomplete(q: str = Query(..., min_length=1)):
     return await SearchService.get_autocomplete(safe_q)
 
 @router.get("/popular", summary="실시간 인기 검색어 조회")
-async def get_popular(limit: int = Query(None, ge=1, le=50)):
+async def get_popular(limit: int = Query(None, ge=1, le=9)):
     """
     현재 색인된 문서들 중 가장 빈도가 높은 키워드를 반환합니다.
     화면 상단의 인기 검색어 해시태그에 연동됩니다.
@@ -63,7 +63,7 @@ async def get_popular(limit: int = Query(None, ge=1, le=50)):
     if limit is None:
         from app.services.system_service import PopularConfigService
         settings = PopularConfigService.get_settings()
-        limit = settings["limit"]
+        limit = settings.get("limit") or 9
     return await SearchService.get_popular_keywords(limit=limit)
 
 

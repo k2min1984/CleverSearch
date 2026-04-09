@@ -229,7 +229,7 @@ async def run_system_smoke_test():
 
 class PopularSettingsRequest(BaseModel):
     days: int = Field(default=7, ge=1, le=365)
-    limit: int = Field(default=10, ge=1, le=50)
+    limit: int = Field(..., ge=1, le=9)
 
 
 @router.get("/popular/settings", dependencies=[Depends(require_role("viewer"))], summary="인기검색 표시 설정 조회")

@@ -130,29 +130,30 @@ class DBService:
             return [DBService._safe_str(r[0]) for r in rows]
 
     @staticmethod
-    def get_popular_keyword_stats(days: int = 7, limit: int = 20):
+    def get_popular_keyword_stats(days: int = 7, limit: int | None = 20):
         """인기 검색어 + 건수를 함께 반환 (관리자 대시보드 도넛 차트용)"""
         # 관리자 화면에서는 집계 결과와 카운트를 함께 보여주기 위해 별도 메서드를 둡니다.
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         with get_db_session() as db:
-            rows = (
+            query = (
                 db.query(SearchLog.query, func.count(SearchLog.id).label("count"))
                 .filter(SearchLog.created_at >= cutoff)
                 .group_by(SearchLog.query)
                 .order_by(desc("count"), SearchLog.query.asc())
-                .limit(limit)
-                .all()
             )
+            if limit is not None:
+                query = query.limit(limit)
+            rows = query.all()
             return [{"keyword": DBService._safe_str(query), "count": count} for query, count in rows]
 
     @staticmethod
     def get_failed_keywords(days: int = 7, limit: int = 10):
-        """최근 N일간 검색 결과 0건(is_failed=True)인 실패 검색어 빈도순 반환"""
+        """최근 N일간 검색 결과 0건(total_hits=0)인 실패 검색어 빈도순 반환"""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         with get_db_session() as db:
             rows = (
                 db.query(SearchLog.query, func.count(SearchLog.id).label("cnt"))
-                .filter(SearchLog.created_at >= cutoff, SearchLog.is_failed.is_(True))
+                .filter(SearchLog.created_at >= cutoff, SearchLog.total_hits <= 0)
                 .group_by(SearchLog.query)
                 .order_by(desc("cnt"), SearchLog.query.asc())
                 .limit(limit)
@@ -376,13 +377,15 @@ class DBService:
 
             items = []
             for row in rows:
+                # 과거 데이터의 is_failed 오염 가능성을 고려하여 표시용 실패값은 total_hits 기준으로 계산
+                effective_failed = (int(row.total_hits or 0) == 0)
                 items.append(
                     {
                         "id": row.id,
                         "user_id": row.user_id,
                         "query": row.query,
                         "total_hits": row.total_hits,
-                        "is_failed": row.is_failed,
+                        "is_failed": effective_failed,
                         "search_type": row.search_type,
                         "created_at": row.created_at.isoformat() if row.created_at else None,
                     }

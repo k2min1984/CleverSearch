@@ -16,7 +16,8 @@
     • 비워두면 전체 사용자의 최근 검색어를 표시합니다.
 </div>
 <div class="flex gap-2 mb-3">
-    <input id="recentUserId" type="text" placeholder="user_id (선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-48" />
+    <input id="recentSearch" type="text" placeholder="사용자 / 검색어" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-72" />
+    <span id="recentTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div class="overflow-auto border border-gray-700 rounded">
     <table class="w-full text-sm">
@@ -24,26 +25,75 @@
         <tbody id="recentBody"></tbody>
     </table>
 </div>
+<div id="recentPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 
 <script>
-async function loadRecent() {
-    const userId = document.getElementById("recentUserId").value.trim();
-    const query = userId ? `?skip=0&limit=100&user_id=${encodeURIComponent(userId)}` : "?skip=0&limit=100";
-    const result = await apiFetch(`${API}/recent-searches${query}`, { method: "GET" });
-    const data = result.data;
-    const items = data.items || [];
-    const body = document.getElementById("recentBody");
-    body.innerHTML = items.map((row) =>
-        `<tr class="border-t border-gray-700"><td class="p-2">${fmt(row.id)}</td><td class="p-2">${fmt(row.user_id)}</td><td class="p-2">${fmt(row.query)}</td><td class="p-2">${fmt(row.created_at)}</td></tr>`
-    ).join("") || '<tr><td class="p-2" colspan="4">데이터 없음</td></tr>';
+let recentRows = [];
+let recentFilteredRows = [];
+let recentPage = 1;
+const RECENT_PAGE_SIZE = 10;
+
+function applyRecentFilter() {
+    const keyword = (document.getElementById("recentSearch")?.value || "").trim().toLowerCase();
+    recentPage = 1;
+    if (!keyword) {
+        renderRecentRows(recentRows);
+        return;
+    }
+    const filtered = recentRows.filter((row) => {
+        const user = String(row?.user_id || "").toLowerCase();
+        const query = String(row?.query || "").toLowerCase();
+        return user.includes(keyword) || query.includes(keyword);
+    });
+    renderRecentRows(filtered);
 }
 
-const recentUserInput = document.getElementById("recentUserId");
-recentUserInput?.addEventListener("change", loadRecent);
-recentUserInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-        e.preventDefault();
-        loadRecent();
+function changeRecentPage(nextPage) {
+    const totalPages = Math.max(1, Math.ceil(recentFilteredRows.length / RECENT_PAGE_SIZE));
+    recentPage = Math.max(1, Math.min(totalPages, nextPage));
+    renderRecentRows(recentFilteredRows);
+}
+
+function renderRecentPagination() {
+    const pager = document.getElementById("recentPagination");
+    if (!pager) return;
+    if (recentFilteredRows.length <= RECENT_PAGE_SIZE) {
+        pager.classList.add("hidden");
+        pager.innerHTML = "";
+        return;
     }
-});
+    const totalPages = Math.max(1, Math.ceil(recentFilteredRows.length / RECENT_PAGE_SIZE));
+    pager.classList.remove("hidden");
+    pager.innerHTML = `
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${recentPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${recentPage === 1 ? "disabled" : ""} onclick="changeRecentPage(${recentPage - 1})">이전</button>
+        <span class="text-slate-500 font-semibold">${recentPage} / ${totalPages}</span>
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${recentPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${recentPage === totalPages ? "disabled" : ""} onclick="changeRecentPage(${recentPage + 1})">다음</button>
+    `;
+}
+
+function renderRecentRows(rows) {
+    const body = document.getElementById("recentBody");
+    recentFilteredRows = Array.isArray(rows) ? rows : [];
+    const totalPages = Math.max(1, Math.ceil(recentFilteredRows.length / RECENT_PAGE_SIZE));
+    recentPage = Math.max(1, Math.min(totalPages, recentPage));
+    const start = (recentPage - 1) * RECENT_PAGE_SIZE;
+    const pageRows = recentFilteredRows.slice(start, start + RECENT_PAGE_SIZE);
+
+    body.innerHTML = pageRows.map((row) =>
+        `<tr class="border-t border-gray-700"><td class="p-2">${fmt(row.id)}</td><td class="p-2">${fmt(row.user_id)}</td><td class="p-2">${fmt(row.query)}</td><td class="p-2">${fmt(row.created_at)}</td></tr>`
+    ).join("") || '<tr><td class="p-2" colspan="4">데이터 없음</td></tr>';
+
+    renderRecentPagination();
+}
+
+async function loadRecent() {
+    const result = await apiFetch(`${API}/recent-searches?skip=0&limit=500`, { method: "GET" });
+    const data = result.data;
+    recentRows = data.items || [];
+    recentPage = 1;
+    document.getElementById("recentTotal").textContent = `총 ${data.total || recentRows.length || 0}건`;
+    applyRecentFilter();
+}
+
+document.getElementById("recentSearch")?.addEventListener("input", applyRecentFilter);
 </script>

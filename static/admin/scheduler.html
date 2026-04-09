@@ -21,13 +21,57 @@
     <button onclick="startScheduler()" class="admin-write px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
     <button onclick="stopScheduler()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">중지</button>
     <button onclick="toggleSchedulerView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+    <span id="schedulerTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="schedulerList" class="hidden">
     <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">항목</th><th class="p-2">값</th></tr></thead><tbody id="schedulerBody"></tbody></table>
 </div>
+<div id="schedulerPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 <pre id="schedulerOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
+let schedulerRows = [];
+let schedulerPage = 1;
+const SCHEDULER_PAGE_SIZE = 10;
+
+function changeSchedulerPage(nextPage) {
+    const totalPages = Math.max(1, Math.ceil(schedulerRows.length / SCHEDULER_PAGE_SIZE));
+    schedulerPage = Math.max(1, Math.min(totalPages, nextPage));
+    renderSchedulerRows();
+}
+
+function renderSchedulerPagination() {
+    const pager = document.getElementById("schedulerPagination");
+    if (!pager) return;
+    if (schedulerRows.length <= SCHEDULER_PAGE_SIZE) {
+        pager.classList.add("hidden");
+        pager.innerHTML = "";
+        return;
+    }
+    const totalPages = Math.max(1, Math.ceil(schedulerRows.length / SCHEDULER_PAGE_SIZE));
+    pager.classList.remove("hidden");
+    pager.innerHTML = `
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${schedulerPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${schedulerPage === 1 ? "disabled" : ""} onclick="changeSchedulerPage(${schedulerPage - 1})">이전</button>
+        <span class="text-slate-500 font-semibold">${schedulerPage} / ${totalPages}</span>
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${schedulerPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${schedulerPage === totalPages ? "disabled" : ""} onclick="changeSchedulerPage(${schedulerPage + 1})">다음</button>
+    `;
+}
+
+function renderSchedulerRows() {
+    const body = document.getElementById("schedulerBody");
+    if (!body) return;
+    const totalPages = Math.max(1, Math.ceil(schedulerRows.length / SCHEDULER_PAGE_SIZE));
+    schedulerPage = Math.max(1, Math.min(totalPages, schedulerPage));
+    const start = (schedulerPage - 1) * SCHEDULER_PAGE_SIZE;
+    const pageRows = schedulerRows.slice(start, start + SCHEDULER_PAGE_SIZE);
+
+    body.innerHTML = pageRows.map(([k, v]) =>
+        `<tr class="border-t border-gray-700"><td class="p-2 font-medium">${k}</td><td class="p-2">${JSON.stringify(v)}</td></tr>`
+    ).join("") || '<tr><td class="p-2" colspan="2">데이터 없음</td></tr>';
+
+    renderSchedulerPagination();
+}
+
 async function startScheduler() {
     const interval = Number(document.getElementById("schedulerInterval").value || 120);
     const result = await apiFetch(`${SYS_API}/scheduler/start?interval_seconds=${interval}`, { method: "POST" });
@@ -58,11 +102,17 @@ function toggleSchedulerView() {
 
 function populateSchedulerList(data) {
     const body = document.getElementById("schedulerBody");
-    if (!body || !data) return;
-    const rows = Object.entries(data).map(([k, v]) =>
-        `<tr class="border-t border-gray-700"><td class="p-2 font-medium">${k}</td><td class="p-2">${JSON.stringify(v)}</td></tr>`
-    ).join("");
-    body.innerHTML = rows || '<tr><td class="p-2" colspan="2">데이터 없음</td></tr>';
+    if (!body || !data) {
+        document.getElementById("schedulerTotal").textContent = "총 0건";
+        schedulerRows = [];
+        renderSchedulerRows();
+        return;
+    }
+    const entries = Object.entries(data);
+    document.getElementById("schedulerTotal").textContent = `총 ${entries.length}건`;
+    schedulerRows = entries;
+    schedulerPage = 1;
+    renderSchedulerRows();
 }
 
 loadSchedulerStatus();

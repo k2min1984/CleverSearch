@@ -13,9 +13,11 @@
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
     <b>📊 검색 로그</b> — 모든 검색 이력을 시간순으로 표시합니다.<br>
     • 검색어, 결과 수, 성공/실패 여부, 사용자 ID, 시각 등을 확인할 수 있습니다.<br>
-    • 실패(is_failed=Y)는 결과가 0건인 검색을 의미합니다.
+    • 실패는 결과수(total_hits)가 0건인 검색을 의미합니다.
 </div>
 <div class="flex gap-2 mb-3">
+    <input id="logsSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-72" placeholder="사용자 / 검색어" />
+    <span id="logsTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div class="overflow-auto border border-gray-700 rounded">
     <table class="w-full text-sm">
@@ -23,15 +25,78 @@
         <tbody id="logsBody"></tbody>
     </table>
 </div>
+<div id="logsPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 
 <script>
-async function loadLogs() {
-    const result = await apiFetch(`${API}/search-logs?skip=0&limit=100`, { method: "GET" });
-    const data = result.data;
-    const items = data.items || [];
-    const body = document.getElementById("logsBody");
-    body.innerHTML = items.map((row) =>
-        `<tr class="border-t border-gray-700"><td class="p-2">${fmt(row.id)}</td><td class="p-2">${fmt(row.user_id)}</td><td class="p-2">${fmt(row.query)}</td><td class="p-2">${fmt(row.total_hits)}</td><td class="p-2">${yesNo(row.is_failed)}</td><td class="p-2">${fmt(row.created_at)}</td></tr>`
-    ).join("") || '<tr><td class="p-2" colspan="6">데이터 없음</td></tr>';
+let logsRows = [];
+let logsFilteredRows = [];
+let logsPage = 1;
+const LOGS_PAGE_SIZE = 10;
+
+function applyLogsFilter() {
+    const keyword = (document.getElementById("logsSearch")?.value || "").trim().toLowerCase();
+    logsPage = 1;
+    if (!keyword) {
+        renderLogsRows(logsRows);
+        return;
+    }
+    const filtered = logsRows.filter((row) => {
+        const user = String(row?.user_id || "").toLowerCase();
+        const query = String(row?.query || "").toLowerCase();
+        return user.includes(keyword) || query.includes(keyword);
+    });
+    renderLogsRows(filtered);
 }
+
+function changeLogsPage(nextPage) {
+    const totalPages = Math.max(1, Math.ceil(logsFilteredRows.length / LOGS_PAGE_SIZE));
+    logsPage = Math.max(1, Math.min(totalPages, nextPage));
+    renderLogsRows(logsFilteredRows);
+}
+
+function renderLogsPagination() {
+    const pager = document.getElementById("logsPagination");
+    if (!pager) return;
+    if (logsFilteredRows.length <= LOGS_PAGE_SIZE) {
+        pager.classList.add("hidden");
+        pager.innerHTML = "";
+        return;
+    }
+    const totalPages = Math.max(1, Math.ceil(logsFilteredRows.length / LOGS_PAGE_SIZE));
+    pager.classList.remove("hidden");
+    pager.innerHTML = `
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${logsPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${logsPage === 1 ? "disabled" : ""} onclick="changeLogsPage(${logsPage - 1})">이전</button>
+        <span class="text-slate-500 font-semibold">${logsPage} / ${totalPages}</span>
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${logsPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${logsPage === totalPages ? "disabled" : ""} onclick="changeLogsPage(${logsPage + 1})">다음</button>
+    `;
+}
+
+function renderLogsRows(rows) {
+    const body = document.getElementById("logsBody");
+
+    // 과거 데이터/호환 이슈와 무관하게 화면 표시는 total_hits 기준으로 통일합니다.
+    const isFailedByTotalHits = (row) => Number(row?.total_hits ?? 0) <= 0;
+    logsFilteredRows = Array.isArray(rows) ? rows : [];
+    const totalPages = Math.max(1, Math.ceil(logsFilteredRows.length / LOGS_PAGE_SIZE));
+    logsPage = Math.max(1, Math.min(totalPages, logsPage));
+    const start = (logsPage - 1) * LOGS_PAGE_SIZE;
+    const pageRows = logsFilteredRows.slice(start, start + LOGS_PAGE_SIZE);
+
+    body.innerHTML = pageRows.map((row) =>
+        `<tr class="border-t border-gray-700"><td class="p-2">${fmt(row.id)}</td><td class="p-2">${fmt(row.user_id)}</td><td class="p-2">${fmt(row.query)}</td><td class="p-2">${fmt(row.total_hits)}</td><td class="p-2">${yesNo(isFailedByTotalHits(row))}</td><td class="p-2">${fmt(row.created_at)}</td></tr>`
+    ).join("") || '<tr><td class="p-2" colspan="6">데이터 없음</td></tr>';
+
+    renderLogsPagination();
+}
+
+async function loadLogs() {
+    const result = await apiFetch(`${API}/search-logs?skip=0&limit=500`, { method: "GET" });
+    const data = result.data;
+    logsRows = data.items || [];
+    logsPage = 1;
+    document.getElementById("logsTotal").textContent = `총 ${data.total || logsRows.length || 0}건`;
+    applyLogsFilter();
+}
+
+document.getElementById("logsSearch")?.addEventListener("input", applyLogsFilter);
 </script>

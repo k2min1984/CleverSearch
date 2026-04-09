@@ -13,6 +13,7 @@
 ########################################################
 """
 import io
+import importlib
 import logging
 import numpy as np
 from PIL import Image, UnidentifiedImageError
@@ -29,7 +30,8 @@ def _get_paddle_ocr():
     global _paddle_ocr
     if _paddle_ocr is None:
         try:
-            from paddleocr import PaddleOCR
+            paddle_module = importlib.import_module("paddleocr")
+            PaddleOCR = getattr(paddle_module, "PaddleOCR")
             _paddle_ocr = PaddleOCR(
                 use_angle_cls=True,
                 lang="korean",

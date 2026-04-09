@@ -398,7 +398,7 @@ class DashboardService:
         failed = DBService.get_failed_keywords(days=days, limit=10)
         with get_db_session() as db:
             total_logs = db.query(SearchLog).count()
-            failed_logs = db.query(SearchLog).filter(SearchLog.is_failed.is_(True)).count()
+            failed_logs = db.query(SearchLog).filter(SearchLog.total_hits <= 0).count()
 
         return {
             "days": days,
@@ -421,7 +421,7 @@ class DashboardService:
                 if key not in buckets:
                     buckets[key] = {"total": 0, "failed": 0}
                 buckets[key]["total"] += 1
-                if row.is_failed:
+                if (row.total_hits or 0) <= 0:
                     buckets[key]["failed"] += 1
 
         return [
@@ -500,8 +500,8 @@ class DashboardService:
 
             last_total = len(last_rows)
             prev_total = len(prev_rows)
-            last_fail_count = sum(1 for row in last_rows if row.is_failed)
-            prev_fail_count = sum(1 for row in prev_rows if row.is_failed)
+            last_fail_count = sum(1 for row in last_rows if (row.total_hits or 0) <= 0)
+            prev_fail_count = sum(1 for row in prev_rows if (row.total_hits or 0) <= 0)
 
         scheduler_running = IngestionSchedulerService.status().get("running", False)
         if not scheduler_running:
@@ -689,7 +689,6 @@ _POPULAR_CONFIG_PATH = Path("popular_settings.json")
 
 _DEFAULT_POPULAR = {
     "days": 7,
-    "limit": 10,
 }
 
 
@@ -697,14 +696,26 @@ class PopularConfigService:
     """인기검색 표시 설정 (JSON 파일 기반) — 관리자가 저장한 days/limit을 유지"""
 
     @staticmethod
+    def _sanitize_settings(data: dict | None) -> dict:
+        merged = {**_DEFAULT_POPULAR, **(data or {})}
+        days = int(merged.get("days", _DEFAULT_POPULAR["days"]))
+        sanitized = {
+            "days": max(1, min(365, days)),
+        }
+        if merged.get("limit") is not None:
+            limit = int(merged.get("limit"))
+            sanitized["limit"] = max(1, min(9, limit))
+        return sanitized
+
+    @staticmethod
     def get_settings() -> dict:
         if _POPULAR_CONFIG_PATH.exists():
             try:
                 data = json.loads(_POPULAR_CONFIG_PATH.read_text(encoding="utf-8"))
-                return {**_DEFAULT_POPULAR, **data}
+                return PopularConfigService._sanitize_settings(data)
             except Exception:
                 pass
-        return dict(_DEFAULT_POPULAR)
+        return PopularConfigService._sanitize_settings(None)
 
     @staticmethod
     def update_settings(new_settings: dict) -> dict:
@@ -713,6 +724,7 @@ class PopularConfigService:
             current["days"] = int(new_settings["days"])
         if "limit" in new_settings:
             current["limit"] = int(new_settings["limit"])
+        current = PopularConfigService._sanitize_settings(current)
         _POPULAR_CONFIG_PATH.write_text(
             json.dumps(current, ensure_ascii=False, indent=2),
             encoding="utf-8",

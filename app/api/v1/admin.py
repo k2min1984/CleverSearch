@@ -24,7 +24,7 @@ router = APIRouter(dependencies=[Depends(require_role("viewer"))])
 @router.get("/popular-keywords", summary="인기 검색어 카운팅 목록")
 async def get_popular_keyword_stats(
     days: int = Query(7, ge=1, le=365),
-    limit: int = Query(30, ge=1, le=200),
+    limit: int | None = Query(None, ge=1, le=5000),
 ):
     # 인기검색 탭은 search_logs 테이블을 집계한 결과를 보여줍니다.
     return DBService.get_popular_keyword_stats(days=days, limit=limit)

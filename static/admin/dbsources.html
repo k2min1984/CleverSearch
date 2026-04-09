@@ -30,13 +30,58 @@
     <button onclick="upsertDbSource()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
     <button onclick="syncDbSource()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
     <button onclick="toggleDbView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+    <span id="dbTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="dbList" class="hidden">
     <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">이름</th><th class="p-2">DB타입</th><th class="p-2">활성</th><th class="p-2">최근 동기화</th><th class="p-2">관리</th></tr></thead><tbody id="dbBody"></tbody></table>
 </div>
+<div id="dbPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 <pre id="dbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
+let dbRows = [];
+let dbPage = 1;
+const DB_PAGE_SIZE = 10;
+
+function changeDbPage(nextPage) {
+    const totalPages = Math.max(1, Math.ceil(dbRows.length / DB_PAGE_SIZE));
+    dbPage = Math.max(1, Math.min(totalPages, nextPage));
+    renderDbRows();
+}
+
+function renderDbPagination() {
+    const pager = document.getElementById("dbPagination");
+    if (!pager) return;
+    if (dbRows.length <= DB_PAGE_SIZE) {
+        pager.classList.add("hidden");
+        pager.innerHTML = "";
+        return;
+    }
+    const totalPages = Math.max(1, Math.ceil(dbRows.length / DB_PAGE_SIZE));
+    pager.classList.remove("hidden");
+    pager.innerHTML = `
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${dbPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${dbPage === 1 ? "disabled" : ""} onclick="changeDbPage(${dbPage - 1})">이전</button>
+        <span class="text-slate-500 font-semibold">${dbPage} / ${totalPages}</span>
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${dbPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${dbPage === totalPages ? "disabled" : ""} onclick="changeDbPage(${dbPage + 1})">다음</button>
+    `;
+}
+
+function renderDbRows() {
+    const body = document.getElementById("dbBody");
+    if (!body) return;
+    const isViewer = loggedInRole === "viewer";
+    const totalPages = Math.max(1, Math.ceil(dbRows.length / DB_PAGE_SIZE));
+    dbPage = Math.max(1, Math.min(totalPages, dbPage));
+    const start = (dbPage - 1) * DB_PAGE_SIZE;
+    const pageRows = dbRows.slice(start, start + DB_PAGE_SIZE);
+    body.innerHTML = pageRows.map(r => {
+        const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editDbSource(${r.id},'${(r.name||'').replace(/'/g,"\\'")}','${(r.db_type||'').replace(/'/g,"\\'")}')">수정</span>`;
+        const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteDbSource(${r.id})">삭제</span>`;
+        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.db_type)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+    }).join("");
+    renderDbPagination();
+}
+
 async function upsertDbSource() {
     const payload = {
         name: document.getElementById("dbName").value,
@@ -75,14 +120,16 @@ function toggleDbView() {
 }
 
 function populateDbList(data) {
-    const body = document.getElementById("dbBody");
-    if (!body || !Array.isArray(data)) return;
-    const isViewer = loggedInRole === "viewer";
-    body.innerHTML = data.map(r => {
-        const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editDbSource(${r.id},'${(r.name||'').replace(/'/g,"\\'")}','${(r.db_type||'').replace(/'/g,"\\'")}')">수정</span>`;
-        const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteDbSource(${r.id})">삭제</span>`;
-        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.db_type)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
-    }).join("");
+    if (!Array.isArray(data)) {
+        document.getElementById("dbTotal").textContent = "총 0건";
+        dbRows = [];
+        renderDbRows();
+        return;
+    }
+    document.getElementById("dbTotal").textContent = `총 ${data.length}건`;
+    dbRows = data;
+    dbPage = 1;
+    renderDbRows();
 }
 
 async function deleteDbSource(sourceId) {

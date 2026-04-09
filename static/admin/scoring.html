@@ -11,51 +11,50 @@
 
 <!-- 검색 품질 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b>📊 검색 품질 관리란?</b> 검색 결과의 순위(Scoring)를 결정하는 가중치를 실시간으로 조정하고, 검색 품질을 평가합니다.<br>
-    • <b>제목 구문</b>: 검색어가 제목에 정확히 포함될 때 부여하는 점수 (기본 20)<br>
-    • <b>제목 AND</b>: 검색어 단어가 제목에 모두 존재할 때 점수 (기본 10)<br>
-    • <b>본문 구문</b>: 검색어가 본문에 정확히 포함될 때 점수 (기본 5)<br>
-    • <b>본문 AND</b>: 검색어 단어가 본문에 모두 존재할 때 점수 (기본 1)<br>
-    • <b>AI 벡터</b>: 의미 유사도 기반 벡터 검색 가중치 (기본 1.0)<br>
-    • <b>초성</b>: 초성 검색 매칭 가중치 (기본 10)
+    <b>📊 검색 품질 관리란?</b> 검색 결과의 순서를 정하는 점수 규칙(가중치)을 조정하는 메뉴입니다.<br>
+    • <b>제목 가중치 ↑</b>: 제목에 검색어가 있는 문서가 더 위로 올라옵니다.<br>
+    • <b>본문 가중치 ↑</b>: 본문 일치 문서가 더 위로 올라옵니다.<br>
+    • <b>AI 벡터 ↑</b>: 의미가 비슷한 문서가 더 위로 올라옵니다.<br>
+    • <b>최소 점수(min_score) ↑</b>: 관련도 낮은 문서를 더 많이 걸러냅니다.<br>
+    • <b>한 줄 요약</b>: 가중치를 바꾸면 어떤 문서를 상단에 보여줄지가 달라집니다.
 </div>
 
 <div class="grid md:grid-cols-2 gap-4 mb-4">
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
-        <h3 class="text-sm font-bold mb-3 text-yellow-300">가중치 설정</h3>
-        <div class="space-y-2 text-sm">
+        <h3 class="text-lg font-extrabold mb-4 text-yellow-400">가중치 설정</h3>
+        <div class="space-y-3 text-sm">
             <div class="flex items-center gap-2">
-                <label class="w-28 text-gray-300">제목 구문</label>
+                <label class="w-28 text-gray-100 font-medium">제목 구문</label>
                 <input id="w_title_phrase" type="number" min="0" max="100" step="1" value="20" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
                 <input type="range" min="0" max="100" step="1" value="20" class="flex-1" oninput="document.getElementById('w_title_phrase').value=this.value" />
             </div>
             <div class="flex items-center gap-2">
-                <label class="w-28 text-gray-300">제목 AND</label>
+                <label class="w-28 text-gray-100 font-medium">제목 AND</label>
                 <input id="w_title_and" type="number" min="0" max="100" step="1" value="10" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
                 <input type="range" min="0" max="100" step="1" value="10" class="flex-1" oninput="document.getElementById('w_title_and').value=this.value" />
             </div>
             <div class="flex items-center gap-2">
-                <label class="w-28 text-gray-300">본문 구문</label>
+                <label class="w-28 text-gray-100 font-medium">본문 구문</label>
                 <input id="w_content_phrase" type="number" min="0" max="100" step="1" value="5" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
                 <input type="range" min="0" max="100" step="1" value="5" class="flex-1" oninput="document.getElementById('w_content_phrase').value=this.value" />
             </div>
             <div class="flex items-center gap-2">
-                <label class="w-28 text-gray-300">본문 AND</label>
+                <label class="w-28 text-gray-100 font-medium">본문 AND</label>
                 <input id="w_content_and" type="number" min="0" max="100" step="1" value="1" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
                 <input type="range" min="0" max="100" step="1" value="1" class="flex-1" oninput="document.getElementById('w_content_and').value=this.value" />
             </div>
             <div class="flex items-center gap-2">
-                <label class="w-28 text-gray-300">AI 벡터</label>
+                <label class="w-28 text-gray-100 font-medium">AI 벡터</label>
                 <input id="w_vector" type="number" min="0" max="50" step="0.1" value="1.0" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
                 <input type="range" min="0" max="50" step="0.1" value="1.0" class="flex-1" oninput="document.getElementById('w_vector').value=this.value" />
             </div>
             <div class="flex items-center gap-2">
-                <label class="w-28 text-gray-300">초성</label>
+                <label class="w-28 text-gray-100 font-medium">초성</label>
                 <input id="w_chosung" type="number" min="0" max="100" step="1" value="10" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
                 <input type="range" min="0" max="100" step="1" value="10" class="flex-1" oninput="document.getElementById('w_chosung').value=this.value" />
             </div>
             <div class="flex items-center gap-2">
-                <label class="w-28 text-gray-300">최소 점수</label>
+                <label class="w-28 text-gray-100 font-medium">최소 점수</label>
                 <input id="w_min_score" type="number" min="0" max="10" step="0.0001" value="0.0058" class="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-20 text-sm" />
             </div>
         </div>
@@ -66,7 +65,7 @@
     </div>
 
     <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
-        <h3 class="text-sm font-bold mb-3 text-green-300">검색 품질 평가</h3>
+        <h3 class="text-lg font-extrabold mb-4 text-green-400">검색 품질 평가</h3>
         <p class="text-xs text-gray-400 mb-2">검색어와 기대 결과를 입력하고 평가를 실행합니다.</p>
         <textarea id="scoringTestCases" rows="8" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-xs font-mono" placeholder='[
   {"query": "연구개발계획서", "expected_title": "연구개발계획서"},

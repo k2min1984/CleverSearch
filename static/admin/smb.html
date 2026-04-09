@@ -27,13 +27,58 @@
     <input id="smbSyncId" placeholder="동기화할 source_id" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-40" />
     <button onclick="syncSmbSource()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
     <button onclick="toggleSmbView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+    <span id="smbTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="smbList" class="hidden">
     <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">이름</th><th class="p-2">경로</th><th class="p-2">활성</th><th class="p-2">최근 동기화</th><th class="p-2">관리</th></tr></thead><tbody id="smbBody"></tbody></table>
 </div>
+<div id="smbPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 <pre id="smbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
+let smbRows = [];
+let smbPage = 1;
+const SMB_PAGE_SIZE = 10;
+
+function changeSmbPage(nextPage) {
+    const totalPages = Math.max(1, Math.ceil(smbRows.length / SMB_PAGE_SIZE));
+    smbPage = Math.max(1, Math.min(totalPages, nextPage));
+    renderSmbRows();
+}
+
+function renderSmbPagination() {
+    const pager = document.getElementById("smbPagination");
+    if (!pager) return;
+    if (smbRows.length <= SMB_PAGE_SIZE) {
+        pager.classList.add("hidden");
+        pager.innerHTML = "";
+        return;
+    }
+    const totalPages = Math.max(1, Math.ceil(smbRows.length / SMB_PAGE_SIZE));
+    pager.classList.remove("hidden");
+    pager.innerHTML = `
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${smbPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${smbPage === 1 ? "disabled" : ""} onclick="changeSmbPage(${smbPage - 1})">이전</button>
+        <span class="text-slate-500 font-semibold">${smbPage} / ${totalPages}</span>
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${smbPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${smbPage === totalPages ? "disabled" : ""} onclick="changeSmbPage(${smbPage + 1})">다음</button>
+    `;
+}
+
+function renderSmbRows() {
+    const body = document.getElementById("smbBody");
+    if (!body) return;
+    const isViewer = loggedInRole === "viewer";
+    const totalPages = Math.max(1, Math.ceil(smbRows.length / SMB_PAGE_SIZE));
+    smbPage = Math.max(1, Math.min(totalPages, smbPage));
+    const start = (smbPage - 1) * SMB_PAGE_SIZE;
+    const pageRows = smbRows.slice(start, start + SMB_PAGE_SIZE);
+    body.innerHTML = pageRows.map(r => {
+        const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editSmbSource(${r.id},'${(r.name||'').replace(/'/g,"\\'")}','${(r.share_path||'').replace(/'/g,"\\'")}','${(r.username||'').replace(/'/g,"\\'")}')">수정</span>`;
+        const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteSmbSource(${r.id})">삭제</span>`;
+        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.share_path)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_seen_at||r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+    }).join("");
+    renderSmbPagination();
+}
+
 async function upsertSmbSource() {
     const payload = {
         name: document.getElementById("smbName").value,
@@ -70,14 +115,16 @@ function toggleSmbView() {
 }
 
 function populateSmbList(data) {
-    const body = document.getElementById("smbBody");
-    if (!body || !Array.isArray(data)) return;
-    const isViewer = loggedInRole === "viewer";
-    body.innerHTML = data.map(r => {
-        const editBtn = isViewer ? '' : `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="editSmbSource(${r.id},'${(r.name||'').replace(/'/g,"\\'")}','${(r.share_path||'').replace(/'/g,"\\'")}','${(r.username||'').replace(/'/g,"\\'")}')">수정</span>`;
-        const delBtn = isViewer ? '' : `<span class="btn-del" onclick="deleteSmbSource(${r.id})">삭제</span>`;
-        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.share_path)}</td><td class="p-2">${r.is_active?"✅":"❌"}</td><td class="p-2">${fmt(r.last_seen_at||r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
-    }).join("");
+    if (!Array.isArray(data)) {
+        document.getElementById("smbTotal").textContent = "총 0건";
+        smbRows = [];
+        renderSmbRows();
+        return;
+    }
+    document.getElementById("smbTotal").textContent = `총 ${data.length}건`;
+    smbRows = data;
+    smbPage = 1;
+    renderSmbRows();
 }
 
 async function deleteSmbSource(sourceId) {

@@ -27,19 +27,30 @@ def create_index():
         "settings": {
             "index": {
                 "knn": True,
+                "max_ngram_diff": 18,
                 "analysis": {
                     "analyzer": {
                         "korean_analyzer": {
                             "type": "custom",
                             "tokenizer": "nori_tokenizer",
                             "filter": ["lowercase", "nori_readingform", "my_stop_filter"],
-                        }
+                        },
+                        "chosung_ngram_analyzer": {
+                            "type": "custom",
+                            "tokenizer": "keyword",
+                            "filter": ["lowercase", "chosung_ngram_filter"],
+                        },
                     },
                     "filter": {
                         "my_stop_filter": {
                             "type": "stop",
                             "stopwords": ["에", "대해서", "해주세요", "알려주세요", "의", "를", "은", "는"],
-                        }
+                        },
+                        "chosung_ngram_filter": {
+                            "type": "ngram",
+                            "min_gram": 2,
+                            "max_gram": 20,
+                        },
                     },
                 },
             }
@@ -50,6 +61,11 @@ def create_index():
                 "all_text": {"type": "text", "analyzer": "korean_analyzer"},
                 "doc_category": {"type": "keyword"},
                 "chosung_text": {"type": "text", "analyzer": "whitespace"},
+                "chosung_text_ngram": {
+                    "type": "text",
+                    "analyzer": "chosung_ngram_analyzer",
+                    "search_analyzer": "chosung_ngram_analyzer",
+                },
                 "origin_file": {"type": "keyword"},
                 "file_ext": {"type": "keyword"},
                 "content_hash": {"type": "keyword"},

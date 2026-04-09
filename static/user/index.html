@@ -33,9 +33,11 @@
         /* 탭 스크롤바 숨기기 */
         #categoryTabs::-webkit-scrollbar { display: none; }
         #categoryTabs { -ms-overflow-style: none; scrollbar-width: none; }
-        /* 문서 미리보기 팝업 */
-        .preview-popup { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; background: #f8fbff; border: 1px solid #bfd0ea; border-radius: 0.75rem; padding: 0.75rem; font-size: 0.8rem; color: #334155; max-height: 200px; overflow-y: auto; display: none; box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12); }
-        .result-card:hover .preview-popup { display: block; }
+        /* 파일 위치 기준 문서 미리보기 팝업 */
+        .preview-anchor { position: relative; display: inline-flex; align-items: center; }
+        .preview-popup { position: absolute; left: 0; top: calc(100% + 8px); z-index: 120; background: #f8fbff; border: 1px solid #bfd0ea; border-radius: 0.75rem; padding: 0.75rem; font-size: 0.8rem; color: #334155; width: min(720px, calc(100vw - 40px)); max-height: 320px; overflow-y: auto; display: none; box-shadow: 0 8px 22px rgba(15, 23, 42, 0.16); }
+        .preview-anchor:hover .preview-popup,
+        .preview-anchor:focus-within .preview-popup { display: block; }
         .result-card { position: relative; }
         /* 인기검색어 가로 배치 */
         #popularTags { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
@@ -162,7 +164,7 @@
 
         async function loadPopularTags() {
             try {
-                const response = await fetch(`${API_BASE}/popular`);
+                const response = await fetch(`${API_BASE}/popular`, { cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const tags = await response.json();
                 const container = document.getElementById('popularTags');
@@ -389,6 +391,21 @@
         let currentCategory = 'all';
         let currentPage = 1;
         let totalPages = 1;
+        let lastExecutedQuery = '';
+
+        function clearDetailFilters() {
+            document.getElementById('dateFilter').value = 'all';
+            document.getElementById('extFilter').value = 'all';
+            document.getElementById('includeFilter').value = '';
+            document.getElementById('excludeFilter').value = '';
+            currentCategory = 'all';
+            document.querySelectorAll('.category-tab').forEach(tab => {
+                tab.classList.remove('border-blue-500', 'text-blue-500', 'font-bold');
+                tab.classList.add('border-transparent');
+            });
+            const allTab = document.getElementById('tab-all');
+            if (allTab) allTab.classList.add('border-blue-500', 'text-blue-500', 'font-bold');
+        }
 
         // [기능 1] 자동완성
         searchInput.addEventListener('input', async (e) => {
@@ -439,19 +456,12 @@
             performSearch(); 
         }
 
-        // 검색 버튼 클릭 시 필터 초기화 후 검색
+        // 검색 버튼 클릭 시 현재 필터를 유지한 채 검색
         function resetFiltersAndSearch() {
-            document.getElementById('dateFilter').value = 'all';
-            document.getElementById('extFilter').value = 'all';
-            document.getElementById('includeFilter').value = '';
-            document.getElementById('excludeFilter').value = '';
-            currentCategory = 'all';
-            document.querySelectorAll('.category-tab').forEach(tab => {
-                tab.classList.remove('border-blue-500', 'text-blue-500', 'font-bold');
-                tab.classList.add('border-transparent');
-            });
-            const allTab = document.getElementById('tab-all');
-            if (allTab) allTab.classList.add('border-blue-500', 'text-blue-500', 'font-bold');
+            const query = searchInput.value.trim();
+            if (query && lastExecutedQuery && query !== lastExecutedQuery) {
+                clearDetailFilters();
+            }
             currentPage = 1;
             performSearch(1);
         }
@@ -514,6 +524,7 @@
                 }
 
                 const data = await response.json();
+                lastExecutedQuery = query;
 
                 // 오타 교정이 적용되면 사용자에게 명확히 보여줍니다.
                 const correctionNotice = document.getElementById('correctionNotice');
@@ -600,8 +611,13 @@
             data.items.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'result-card group bg-[#303134] p-6 rounded-xl border border-[#5f6368] hover:border-indigo-400 transition-all shadow-md mb-4';
-                
-                const previewText = (item.summary || '').substring(0, 300) + ((item.summary || '').length > 300 ? '...' : '');
+
+                const summaryText = item.summary || '내용 없음';
+                const cardPreviewText = summaryText.substring(0, 300) + (summaryText.length > 300 ? '...' : '');
+                const popupFullText = item.content?.all_text || item.content?.alltext || summaryText;
+                const originFile = item.content?.origin_file || item.content?.originfile || '-';
+                const indexedDate = item.indexed_at || item.content?.indexed_at || item.content?.indexedat || '';
+                const titleText = item.content?.Title || originFile || '제목 없음';
 
                 card.innerHTML = `
                     <div class="flex justify-between items-start mb-2">
@@ -610,22 +626,24 @@
                                 <i class="far fa-file-alt mr-1"></i> ${item.location}
                             </div>
                             <h3 class="text-xl text-indigo-700 group-hover:underline font-medium cursor-pointer">
-                                ${item.content.Title || item.content.origin_file}
+                                ${titleText}
                             </h3>
                         </div>
                         <button class="text-slate-400 hover:text-slate-700 transition px-2 py-1">
                             <i class="fas fa-ellipsis-v"></i>
                         </button>
                     </div>
-                    <p class="text-slate-600 text-sm leading-relaxed mb-4">${item.summary}</p>
+                    <p class="text-slate-600 text-sm leading-relaxed mb-4">${cardPreviewText}</p>
                     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 border-t border-slate-200 pt-3">
-                        <span><i class="far fa-hdd mr-1"></i> ${item.content.origin_file}</span>
-                        <span><i class="far fa-calendar-alt mr-1"></i> ${item.indexed_at ? item.indexed_at.substring(0,10) : '2026.01.20'}</span>
+                        <span class="preview-anchor" tabindex="0" role="button" aria-label="본문 미리보기">
+                            <i class="far fa-hdd mr-1"></i> ${originFile}
+                            <div class="preview-popup">
+                                <div class="text-xs text-indigo-600 font-bold mb-1">본문 미리보기</div>
+                                <div class="text-slate-600 whitespace-pre-wrap">${popupFullText || '미리보기 데이터 없음'}</div>
+                            </div>
+                        </span>
+                        <span><i class="far fa-calendar-alt mr-1"></i> ${indexedDate ? indexedDate.substring(0,10) : '-'}</span>
                         <span class="sm:ml-auto bg-slate-100 px-2 py-0.5 rounded italic">Score: ${item.score.toFixed(2)}</span>
-                    </div>
-                    <div class="preview-popup">
-                        <div class="text-xs text-indigo-600 font-bold mb-1">📄 본문 미리보기</div>
-                        <div class="text-slate-600 whitespace-pre-wrap">${previewText || '미리보기 데이터 없음'}</div>
                     </div>
                 `;
                 
@@ -633,6 +651,13 @@
                     const osDocId = item.id;
                     openDocumentView(osDocId, item);
                 };
+
+                const previewAnchor = card.querySelector('.preview-anchor');
+                if (previewAnchor) {
+                    previewAnchor.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                    });
+                }
 
                 resultList.appendChild(card);
             });
@@ -644,12 +669,12 @@
                 const res = await fetch(`${SEARCH_API}/read/${docId}`);
                 const data = await res.json();
                 const c = data.content || data._source || data;
-                const title = c.Title || c.origin_file || item.content?.origin_file || '문서';
-                const origin = c.origin_file || '';
-                const category = c.doc_category || '';
-                const ext = c.file_ext || '';
-                const text = c.all_text || c.text || item.summary || '';
-                const indexed = c.indexed_at || data.indexed_at || '';
+                const title = c.Title || c.origin_file || c.originfile || item.content?.origin_file || item.content?.originfile || '문서';
+                const origin = c.origin_file || c.originfile || item.content?.origin_file || item.content?.originfile || '-';
+                const category = c.doc_category || c.doccategory || item.content?.doc_category || item.content?.doccategory || '-';
+                const ext = c.file_ext || c.fileext || item.content?.file_ext || item.content?.fileext || '-';
+                const text = c.all_text || c.alltext || c.text || item.content?.all_text || item.content?.alltext || '';
+                const indexed = c.indexed_at || c.indexedat || data.indexed_at || data.indexedat || '';
 
                 const win = window.open('', '_blank');
                 win.document.write(`<!DOCTYPE html>
@@ -669,7 +694,7 @@
     <span>📁 파일명: ${origin}</span>
     <span>📂 카테고리: ${category}</span>
     <span>📋 확장자: ${ext}</span>
-    <span>📅 색인일: ${indexed ? indexed.substring(0, 19) : '-'}</span>
+    <span>📅 색인일: ${indexed ? indexed.substring(0, 10) : '-'}</span>
   </div>
   <div class="content">${text || '본문 데이터 없음'}</div>
   <span class="back" onclick="window.close()">← 닫기</span>

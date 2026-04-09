@@ -28,13 +28,64 @@
     <button onclick="generateRenewScript()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 생성</button>
     <button onclick="runRenewScript()" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">갱신 스크립트 실행</button>
     <button onclick="toggleSslView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+    <span id="sslTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="sslList" class="hidden">
     <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">파일명</th><th class="p-2">발급대상</th><th class="p-2">만료일</th><th class="p-2">남은일수</th><th class="p-2">상태</th></tr></thead><tbody id="sslBody"></tbody></table>
 </div>
+<div id="sslPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 <pre id="sslOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
+let sslRows = [];
+let sslPage = 1;
+const SSL_PAGE_SIZE = 10;
+
+function changeSslPage(nextPage) {
+    const totalPages = Math.max(1, Math.ceil(sslRows.length / SSL_PAGE_SIZE));
+    sslPage = Math.max(1, Math.min(totalPages, nextPage));
+    renderSslRows();
+}
+
+function renderSslPagination() {
+    const pager = document.getElementById("sslPagination");
+    if (!pager) return;
+    if (sslRows.length <= SSL_PAGE_SIZE) {
+        pager.classList.add("hidden");
+        pager.innerHTML = "";
+        return;
+    }
+    const totalPages = Math.max(1, Math.ceil(sslRows.length / SSL_PAGE_SIZE));
+    pager.classList.remove("hidden");
+    pager.innerHTML = `
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${sslPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${sslPage === 1 ? "disabled" : ""} onclick="changeSslPage(${sslPage - 1})">이전</button>
+        <span class="text-slate-500 font-semibold">${sslPage} / ${totalPages}</span>
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${sslPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${sslPage === totalPages ? "disabled" : ""} onclick="changeSslPage(${sslPage + 1})">다음</button>
+    `;
+}
+
+function renderSslRows() {
+    const body = document.getElementById("sslBody");
+    if (!body) return;
+    const totalPages = Math.max(1, Math.ceil(sslRows.length / SSL_PAGE_SIZE));
+    sslPage = Math.max(1, Math.min(totalPages, sslPage));
+    const start = (sslPage - 1) * SSL_PAGE_SIZE;
+    const pageRows = sslRows.slice(start, start + SSL_PAGE_SIZE);
+
+    if (!pageRows.length) {
+        body.innerHTML = '<tr><td class="p-2" colspan="5">인증서 데이터 없음</td></tr>';
+        renderSslPagination();
+        return;
+    }
+
+    body.innerHTML = pageRows.map(r => {
+        const statusColor = r.status === "healthy" ? "text-green-400" : r.status === "warning" ? "text-yellow-400" : "text-red-400";
+        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.file||r.filename)}</td><td class="p-2">${fmt(r.subject||r.cn||"-")}</td><td class="p-2">${fmt(r.expires||r.not_after||"-")}</td><td class="p-2">${fmt(r.days_left??"-")}</td><td class="p-2 ${statusColor} font-bold">${fmt(r.status||"-")}</td></tr>`;
+    }).join("");
+
+    renderSslPagination();
+}
+
 async function createVolume() {
     const indexName = document.getElementById("volumeName").value || "cleversearch-volume-ui";
     const payload = { index_name: indexName, shards: 1, replicas: 1 };
@@ -67,13 +118,10 @@ function toggleSslView() {
 }
 
 function populateSslList(data) {
-    const body = document.getElementById("sslBody");
-    if (!body) return;
     const certs = Array.isArray(data) ? data : (data?.certificates || []);
-    if (!certs.length) { body.innerHTML = '<tr><td class="p-2" colspan="5">인증서 데이터 없음</td></tr>'; return; }
-    body.innerHTML = certs.map(r => {
-        const statusColor = r.status === "healthy" ? "text-green-400" : r.status === "warning" ? "text-yellow-400" : "text-red-400";
-        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.file||r.filename)}</td><td class="p-2">${fmt(r.subject||r.cn||"-")}</td><td class="p-2">${fmt(r.expires||r.not_after||"-")}</td><td class="p-2">${fmt(r.days_left??"-")}</td><td class="p-2 ${statusColor} font-bold">${fmt(r.status||"-")}</td></tr>`;
-    }).join("");
+    document.getElementById("sslTotal").textContent = `총 ${certs.length}건`;
+    sslRows = certs;
+    sslPage = 1;
+    renderSslRows();
 }
 </script>

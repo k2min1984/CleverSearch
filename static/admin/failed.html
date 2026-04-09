@@ -17,6 +17,8 @@
 </div>
 <div class="flex gap-2 mb-3">
     <input id="failedDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+    <input id="failedSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-72" placeholder="키워드" />
+    <span id="failedTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div class="overflow-auto border border-gray-700 rounded">
     <table class="w-full text-sm">
@@ -24,17 +26,73 @@
         <tbody id="failedBody"></tbody>
     </table>
 </div>
+<div id="failedPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 
 <script>
+let failedRows = [];
+let failedFilteredRows = [];
+let failedPage = 1;
+const FAILED_PAGE_SIZE = 10;
+
+function applyFailedFilter() {
+    const keyword = (document.getElementById("failedSearch")?.value || "").trim().toLowerCase();
+    failedPage = 1;
+    if (!keyword) {
+        renderFailedRows(failedRows);
+        return;
+    }
+    const filtered = failedRows.filter((row) => String(row?.keyword || "").toLowerCase().includes(keyword));
+    renderFailedRows(filtered);
+}
+
+function changeFailedPage(nextPage) {
+    const totalPages = Math.max(1, Math.ceil(failedFilteredRows.length / FAILED_PAGE_SIZE));
+    failedPage = Math.max(1, Math.min(totalPages, nextPage));
+    renderFailedRows(failedFilteredRows);
+}
+
+function renderFailedPagination() {
+    const pager = document.getElementById("failedPagination");
+    if (!pager) return;
+    if (failedFilteredRows.length <= FAILED_PAGE_SIZE) {
+        pager.classList.add("hidden");
+        pager.innerHTML = "";
+        return;
+    }
+    const totalPages = Math.max(1, Math.ceil(failedFilteredRows.length / FAILED_PAGE_SIZE));
+    pager.classList.remove("hidden");
+    pager.innerHTML = `
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${failedPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${failedPage === 1 ? "disabled" : ""} onclick="changeFailedPage(${failedPage - 1})">이전</button>
+        <span class="text-slate-500 font-semibold">${failedPage} / ${totalPages}</span>
+        <button class="px-3 py-1 rounded border border-gray-500 text-sm ${failedPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${failedPage === totalPages ? "disabled" : ""} onclick="changeFailedPage(${failedPage + 1})">다음</button>
+    `;
+}
+
+function renderFailedRows(rows) {
+    const body = document.getElementById("failedBody");
+    failedFilteredRows = Array.isArray(rows) ? rows : [];
+    const totalPages = Math.max(1, Math.ceil(failedFilteredRows.length / FAILED_PAGE_SIZE));
+    failedPage = Math.max(1, Math.min(totalPages, failedPage));
+    const start = (failedPage - 1) * FAILED_PAGE_SIZE;
+    const pageRows = failedFilteredRows.slice(start, start + FAILED_PAGE_SIZE);
+
+    body.innerHTML = pageRows.map((row, idx) =>
+        `<tr class="border-t border-gray-700"><td class="p-2">${start + idx + 1}</td><td class="p-2">${fmt(row.keyword)}</td><td class="p-2">${fmt(row.count)}</td></tr>`
+    ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
+
+    renderFailedPagination();
+}
+
 async function loadFailed() {
     const days = document.getElementById("failedDays").value || 7;
-    const result = await apiFetch(`${API}/failed-keywords?days=${days}&limit=50`, { method: "GET" });
+    const result = await apiFetch(`${API}/failed-keywords?days=${days}&limit=200`, { method: "GET" });
     const data = result.data;
-    const body = document.getElementById("failedBody");
-    body.innerHTML = (data || []).map((row, i) =>
-        `<tr class="border-t border-gray-700"><td class="p-2">${i + 1}</td><td class="p-2">${fmt(row.keyword)}</td><td class="p-2">${fmt(row.count)}</td></tr>`
-    ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
+    failedRows = Array.isArray(data) ? data : [];
+    failedPage = 1;
+    document.getElementById("failedTotal").textContent = `총 ${failedRows.length}건`;
+    applyFailedFilter();
 }
 
 document.getElementById("failedDays")?.addEventListener("change", loadFailed);
+document.getElementById("failedSearch")?.addEventListener("input", applyFailedFilter);
 </script>
