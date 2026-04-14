@@ -26,6 +26,24 @@
 </div>
 <div id="uploadQueue" class="space-y-2 mb-4"></div>
 
+<!-- 업로드 진행 상태 오버레이 -->
+<div id="uploadRunningOverlay" class="hidden" style="position: fixed; inset: 0; z-index: 99999; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(2px); margin: 0 !important;">
+    <div class="flex min-h-full items-center justify-center p-4" style="min-height: 100vh;">
+        <div class="w-full max-w-md rounded-xl border border-slate-700 bg-gray-800 p-6 shadow-2xl text-center">
+            <div class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-slate-600 border-t-blue-500"></div>
+            <p class="text-lg font-extrabold text-white mb-2">파일 업로드 진행 중</p>
+            <p class="text-sm text-gray-400 mb-5">화면을 닫거나 이동하지 마세요.</p>
+            <div class="w-full bg-gray-700 rounded-full h-3 mb-2 overflow-hidden">
+                <div id="uploadProgressBar" class="bg-blue-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+            <div class="flex justify-between text-xs text-gray-300 font-bold">
+                <span id="uploadProgressText">0% (0 / 0)</span>
+                <span id="uploadEtaText">총 남은 시간: 계산 중...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 /* ── 업로드 잠금 플래그 (전역이 아니라 탭 스코프) ── */
 var _uploadBusy = false;
@@ -109,6 +127,40 @@ function setUploadLock(locked) {
     }
 }
 
+/* ── 프로그래스 바 및 남은 시간 업데이트 ── */
+function updateUploadProgress(current, total, currentBytes, totalBytes, startTime) {
+    const overlay = document.getElementById("uploadRunningOverlay");
+    const bar = document.getElementById("uploadProgressBar");
+    const pText = document.getElementById("uploadProgressText");
+    const eText = document.getElementById("uploadEtaText");
+
+    if (!overlay) return;
+    if (total === 0) {
+        overlay.classList.add("hidden");
+        return;
+    }
+
+    overlay.classList.remove("hidden");
+    // 파일 개수가 아닌 전체 용량(Byte) 기준으로 퍼센트를 계산하여 훨씬 안정적이고 정확하게 표시합니다.
+    const percent = totalBytes > 0 ? Math.round((currentBytes / totalBytes) * 100) : Math.round((current / total) * 100);
+    bar.style.width = `${percent}%`;
+    pText.textContent = `${percent}% (${current} / ${total} 개 완료)`;
+
+    if (currentBytes > 0 && currentBytes < totalBytes) {
+        const elapsedMs = Date.now() - startTime;
+        const byteRate = currentBytes / elapsedMs; // 밀리초당 업로드된 평균 바이트 속도
+        const remainingBytes = totalBytes - currentBytes; // 남은 총 용량
+        const etaSec = Math.ceil((remainingBytes / byteRate) / 1000); // 총 남은 예상 시간(초)
+        const m = Math.floor(etaSec / 60);
+        const s = etaSec % 60;
+        eText.textContent = `총 남은 시간: ${m}분 ${s.toString().padStart(2, '0')}초`;
+    } else if (current === total) {
+        eText.textContent = `완료 처리 중...`;
+    } else {
+        eText.textContent = `총 남은 시간: 계산 중...`;
+    }
+}
+
 /* ── 다중 파일 처리 (순차 단건 업로드 — 가장 안정적) ── */
 async function handleFiles(files) {
     if (!files || files.length === 0) return;
@@ -148,6 +200,13 @@ async function handleFiles(files) {
         rows.push({ file, key: item.key, row });
     }
 
+    const totalFiles = rows.length;
+    const totalBytes = rows.reduce((sum, item) => sum + item.file.size, 0);
+    let currentCompleted = 0;
+    let currentBytes = 0;
+    const uploadStartTime = Date.now();
+    updateUploadProgress(currentCompleted, totalFiles, currentBytes, totalBytes, uploadStartTime);
+
     /* 순차 업로드 — 원래 동작과 동일하게 한 건씩 확실히 처리 */
     for (const { file, key, row } of rows) {
         const badge = row.querySelector("span:last-child");
@@ -157,9 +216,15 @@ async function handleFiles(files) {
         if (status === "success" || status === "skipped") {
             _localUploadSeen.add(key);
         }
+        currentCompleted++;
+        currentBytes += file.size; // 처리된 파일의 용량을 누적
+        updateUploadProgress(currentCompleted, totalFiles, currentBytes, totalBytes, uploadStartTime);
     }
 
-    setUploadLock(false);
+    setTimeout(() => {
+        document.getElementById("uploadRunningOverlay")?.classList.add("hidden");
+        setUploadLock(false);
+    }, 600); // 100% 꽉 찬 화면을 0.6초간 보여준 뒤 닫음
 }
 
 /* ── 단건 업로드 ── */

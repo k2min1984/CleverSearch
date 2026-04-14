@@ -28,10 +28,10 @@
 <div id="recentPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 
 <script>
-let recentRows = [];
-let recentFilteredRows = [];
-let recentPage = 1;
-const RECENT_PAGE_SIZE = 10;
+var recentRows = [];
+var recentFilteredRows = [];
+var recentPage = 1;
+var RECENT_PAGE_SIZE = 10;
 
 function applyRecentFilter() {
     const keyword = (document.getElementById("recentSearch")?.value || "").trim().toLowerCase();

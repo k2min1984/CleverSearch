@@ -36,9 +36,9 @@
 <pre id="smbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
-let smbRows = [];
-let smbPage = 1;
-const SMB_PAGE_SIZE = 10;
+var smbRows = [];
+var smbPage = 1;
+var SMB_PAGE_SIZE = 10;
 
 function changeSmbPage(nextPage) {
     const totalPages = Math.max(1, Math.ceil(smbRows.length / SMB_PAGE_SIZE));

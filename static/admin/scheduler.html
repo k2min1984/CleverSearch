@@ -29,9 +29,9 @@
 <pre id="schedulerOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
-let schedulerRows = [];
-let schedulerPage = 1;
-const SCHEDULER_PAGE_SIZE = 10;
+var schedulerRows = [];
+var schedulerPage = 1;
+var SCHEDULER_PAGE_SIZE = 10;
 
 function changeSchedulerPage(nextPage) {
     const totalPages = Math.max(1, Math.ceil(schedulerRows.length / SCHEDULER_PAGE_SIZE));

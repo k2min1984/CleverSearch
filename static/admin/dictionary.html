@@ -34,9 +34,9 @@
 <pre id="dictionaryOutput" class="hidden bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
-let dictRows = [];
-let dictPage = 1;
-const DICT_PAGE_SIZE = 10;
+var dictRows = [];
+var dictPage = 1;
+var DICT_PAGE_SIZE = 10;
 
 function changeDictPage(nextPage) {
     const totalPages = Math.max(1, Math.ceil(dictRows.length / DICT_PAGE_SIZE));

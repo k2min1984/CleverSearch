@@ -39,9 +39,9 @@
 <pre id="dbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
-let dbRows = [];
-let dbPage = 1;
-const DB_PAGE_SIZE = 10;
+var dbRows = [];
+var dbPage = 1;
+var DB_PAGE_SIZE = 10;
 
 function changeDbPage(nextPage) {
     const totalPages = Math.max(1, Math.ceil(dbRows.length / DB_PAGE_SIZE));

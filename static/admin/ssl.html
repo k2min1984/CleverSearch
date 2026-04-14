@@ -37,9 +37,9 @@
 <pre id="sslOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
-let sslRows = [];
-let sslPage = 1;
-const SSL_PAGE_SIZE = 10;
+var sslRows = [];
+var sslPage = 1;
+var SSL_PAGE_SIZE = 10;
 
 function changeSslPage(nextPage) {
     const totalPages = Math.max(1, Math.ceil(sslRows.length / SSL_PAGE_SIZE));

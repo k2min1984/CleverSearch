@@ -42,10 +42,10 @@
 </section>
 
 <script>
-let docsRows = [];
-let docsFilteredRows = [];
-let docsPage = 1;
-const DOCS_PAGE_SIZE = 10;
+var docsRows = [];
+var docsFilteredRows = [];
+var docsPage = 1;
+var DOCS_PAGE_SIZE = 10;
 
 function applyDocFilter() {
     const keyword = (document.getElementById("docSearch")?.value || "").trim().toLowerCase();

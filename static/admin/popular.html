@@ -38,10 +38,10 @@
 </div>
 <div id="popularPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 <script>
-let popularRows = [];
-let popularFilteredRows = [];
-let popularPage = 1;
-const POPULAR_PAGE_SIZE = 10;
+var popularRows = [];
+var popularFilteredRows = [];
+var popularPage = 1;
+var POPULAR_PAGE_SIZE = 10;
 
 function applyPopularFilter() {
     const keyword = (document.getElementById("popularSearch")?.value || "").trim().toLowerCase();

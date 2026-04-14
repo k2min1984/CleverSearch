@@ -15,10 +15,10 @@
     • <b>기간(일)</b>: 집계 기간 설정<br>
     • 실패 키워드 분석을 통해 사전 등록이나 동의어 추가를 검토할 수 있습니다.
 </div>
-<div class="flex gap-2 mb-3">
-    <input id="failedDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
-    <input id="failedSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-72" placeholder="키워드" />
-    <span id="failedTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
+<div class="flex flex-wrap items-center gap-2 mb-3">
+    <input id="failedDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24 max-w-full" />
+    <input id="failedSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm flex-1 min-w-0 w-full md:w-72" placeholder="키워드" />
+    <span id="failedTotal" class="text-sm font-bold text-slate-500 md:ml-auto"></span>
 </div>
 <div class="overflow-auto border border-gray-700 rounded">
     <table class="w-full text-sm">
@@ -28,11 +28,21 @@
 </div>
 <div id="failedPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
 
+<style>
+@media (max-width: 1100px) {
+    #failedBody td,
+    #failedPagination,
+    #failedTotal {
+        word-break: break-word;
+    }
+}
+</style>
+
 <script>
-let failedRows = [];
-let failedFilteredRows = [];
-let failedPage = 1;
-const FAILED_PAGE_SIZE = 10;
+var failedRows = [];
+var failedFilteredRows = [];
+var failedPage = 1;
+var FAILED_PAGE_SIZE = 10;
 
 function applyFailedFilter() {
     const keyword = (document.getElementById("failedSearch")?.value || "").trim().toLowerCase();
@@ -88,7 +98,7 @@ function renderFailedRows(rows) {
     const pageRows = failedFilteredRows.slice(start, start + FAILED_PAGE_SIZE);
 
     body.innerHTML = pageRows.map((row, idx) =>
-        `<tr class="border-t border-gray-700"><td class="p-2">${start + idx + 1}</td><td class="p-2">${fmt(row.keyword)}</td><td class="p-2">${fmt(row.count)}</td></tr>`
+        `<tr class="border-t border-gray-700"><td class="p-2 align-top">${start + idx + 1}</td><td class="p-2 break-all">${fmt(row.keyword)}</td><td class="p-2 align-top">${fmt(row.count)}</td></tr>`
     ).join("") || '<tr><td class="p-2" colspan="3">데이터 없음</td></tr>';
 
     renderFailedPagination();
