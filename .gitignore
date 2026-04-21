@@ -29,7 +29,10 @@ uploads/
 # 불필요 디렉토리
 spring-api/
 tests/
-scripts/
+scripts/*
+!scripts/start_dev.ps1
+!scripts/start_prod.ps1
+!scripts/start_dev_yatap.ps1
 
 # 임시/테스트 결과 파일
 e2e_schedule_test_result.json

@@ -20,8 +20,13 @@ cd CleverSearch
 ### 3) 인프라 기동 (권장)
 
 ```powershell
-docker compose up -d postgres opensearch
+docker compose up -d opensearch
 ```
+
+참고:
+
+- DB는 로컬이 아니라 원격 PostgreSQL 서버를 기본 사용합니다.
+- 기본 환경파일 `.env.example`에 원격 DB 접속값이 포함되어 있습니다.
 
 ### 4) 앱 기동 (개발)
 
@@ -33,13 +38,20 @@ pwsh -File scripts/start_dev.ps1
 
 - `.venv`가 없으면 자동 생성
 - `requirements.txt` 패키지 자동 설치/업데이트
-- 기본 환경파일 `.env.example` 자동 사용
+- 기본 환경파일 `.env.example` 자동 사용 (원격 DB)
+- 기존 uvicorn 실행 중이면 자동 종료 후 재기동 (포트 중복 방지)
 
 접속:
 
 - 앱: http://127.0.0.1:8000
 - 관리자: http://127.0.0.1:8000/admin
 - API 문서: http://127.0.0.1:8000/docs
+
+SSL로 실행하려면:
+
+```powershell
+pwsh -File scripts/start_dev.ps1 -UseSsl
+```
 
 ## 운영 기동
 
@@ -58,6 +70,7 @@ pwsh -File scripts/start_prod.ps1 -EnvFile .env.production
 ```powershell
 pwsh -File scripts/start_dev.ps1 -CheckOnly
 pwsh -File scripts/start_dev.ps1 -BindHost 127.0.0.1 -Port 8000
+pwsh -File scripts/start_dev.ps1 -UseSsl
 pwsh -File scripts/start_prod.ps1 -CheckOnly
 ```
 
