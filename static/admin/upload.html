@@ -24,6 +24,11 @@
     <p class="text-gray-400 mb-2" id="dropZoneText">파일을 여기에 드래그하거나 클릭하여 선택</p>
     <p class="text-xs text-gray-500">지원 형식: hwp, pdf, docx, pptx, xlsx, xls, hwpx, jpg, jpeg, png (최대 100MB)</p>
 </div>
+<div class="mb-4 flex flex-wrap gap-2">
+    <button id="pickFilesBtn" type="button" class="btn btn-secondary admin-write">파일 선택</button>
+    <button id="pickFolderBtn" type="button" class="btn btn-secondary admin-write">폴더 선택</button>
+    <span class="text-xs text-gray-500">브라우저가 지원하면 폴더 전체를 재귀 업로드합니다.</span>
+</div>
 <div id="uploadQueue" class="space-y-2 mb-4"></div>
 
 <!-- 업로드 진행 상태 오버레이 -->
@@ -48,6 +53,9 @@
 /* ── 업로드 잠금 플래그 (전역이 아니라 탭 스코프) ── */
 var _uploadBusy = false;
 var _localUploadSeen = new Set();
+var _allowedExtensions = new Set(["hwp", "hwpx", "pdf", "docx", "pptx", "xlsx", "xls", "jpg", "jpeg", "png"]);
+var _maxFileBytes = 100 * 1024 * 1024; // 100MB
+var _maxRetries = 2;
 
 function escUpload(v) {
     if (typeof fmt === "function") return fmt(v);
@@ -61,6 +69,48 @@ function escUpload(v) {
 
 function fileFingerprint(file) {
     return `${file.name}|${file.size}|${file.lastModified}`;
+}
+
+function getFileExtension(name) {
+    var fileName = String(name || "");
+    var idx = fileName.lastIndexOf(".");
+    if (idx < 0) return "";
+    return fileName.slice(idx + 1).trim().toLowerCase();
+}
+
+function formatBytes(bytes) {
+    var n = Number(bytes || 0);
+    if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)}MB`;
+    if (n >= 1024) return `${(n / 1024).toFixed(1)}KB`;
+    return `${n}B`;
+}
+
+function appendQueueRow(name, statusClass, statusText, message) {
+    var queue = document.getElementById("uploadQueue");
+    if (!queue) return;
+    var row = document.createElement("div");
+    row.className = "flex items-center gap-2 bg-gray-800 rounded px-3 py-2 text-sm";
+    row.innerHTML = `<span class="flex-1 truncate">${escUpload(name)}</span>`
+        + `<span class="${statusClass} text-xs">${escUpload(statusText)}</span>`
+        + `<span class="text-gray-500 text-xs ml-2 truncate">${escUpload(message || "")}</span>`;
+    queue.appendChild(row);
+}
+
+function preValidateFiles(files) {
+    var valid = [];
+    for (const file of files) {
+        var ext = getFileExtension(file.name);
+        if (!_allowedExtensions.has(ext)) {
+            appendQueueRow(file.name, "text-blue-400", "skipped", "허용되지 않은 확장자");
+            continue;
+        }
+        if (file.size > _maxFileBytes) {
+            appendQueueRow(file.name, "text-blue-400", "skipped", `파일 크기 초과 (${formatBytes(file.size)})`);
+            continue;
+        }
+        valid.push(file);
+    }
+    return valid;
 }
 
 function pickFilesFromDialog() {
@@ -80,9 +130,86 @@ function pickFilesFromDialog() {
     picker.click();
 }
 
+function pickFolderFromDialog() {
+    const picker = document.createElement("input");
+    picker.type = "file";
+    picker.multiple = true;
+    picker.style.display = "none";
+    picker.setAttribute("webkitdirectory", "");
+    picker.setAttribute("directory", "");
+    document.body.appendChild(picker);
+
+    picker.onchange = () => {
+        const captured = Array.from(picker.files || []);
+        picker.remove();
+        if (captured.length > 0) handleFiles(captured);
+    };
+
+    picker.click();
+}
+
+function readFileEntry(entry) {
+    return new Promise((resolve) => {
+        entry.file(
+            (file) => resolve(file),
+            () => resolve(null)
+        );
+    });
+}
+
+async function walkDirectoryEntry(entry, outFiles) {
+    if (!entry) return;
+    if (entry.isFile) {
+        var file = await readFileEntry(entry);
+        if (file) outFiles.push(file);
+        return;
+    }
+    if (!entry.isDirectory) return;
+
+    var reader = entry.createReader();
+    while (true) {
+        var batch = await new Promise((resolve) => {
+            reader.readEntries(resolve, () => resolve([]));
+        });
+        if (!batch || batch.length === 0) break;
+        for (var i = 0; i < batch.length; i++) {
+            await walkDirectoryEntry(batch[i], outFiles);
+        }
+    }
+}
+
+async function extractDroppedFiles(dataTransfer) {
+    var files = [];
+    var items = Array.from(dataTransfer?.items || []);
+    if (items.length === 0) {
+        return Array.from(dataTransfer?.files || []);
+    }
+
+    var hasDirectoryApi = items.some((item) => typeof item.webkitGetAsEntry === "function");
+    if (!hasDirectoryApi) {
+        return Array.from(dataTransfer.files || []);
+    }
+
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        if (typeof item.webkitGetAsEntry !== "function") continue;
+        var entry = item.webkitGetAsEntry();
+        if (!entry) continue;
+        await walkDirectoryEntry(entry, files);
+    }
+
+    if (files.length === 0) {
+        return Array.from(dataTransfer.files || []);
+    }
+    return files;
+}
+
 function setupUpload() {
     const dropZone = document.getElementById("dropZone");
     if (!dropZone) return;
+
+    var pickFilesBtn = document.getElementById("pickFilesBtn");
+    var pickFolderBtn = document.getElementById("pickFolderBtn");
 
     _uploadBusy = false;
 
@@ -92,6 +219,20 @@ function setupUpload() {
         pickFilesFromDialog();
     };
 
+    if (pickFilesBtn) {
+        pickFilesBtn.onclick = () => {
+            if (_uploadBusy) return;
+            pickFilesFromDialog();
+        };
+    }
+
+    if (pickFolderBtn) {
+        pickFolderBtn.onclick = () => {
+            if (_uploadBusy) return;
+            pickFolderFromDialog();
+        };
+    }
+
     /* ── 드래그 & 드롭 ── */
     dropZone.ondragover = (e) => {
         e.preventDefault();
@@ -100,11 +241,11 @@ function setupUpload() {
     dropZone.ondragleave = () => {
         dropZone.classList.remove("dragover");
     };
-    dropZone.ondrop = (e) => {
+    dropZone.ondrop = async (e) => {
         e.preventDefault();
         dropZone.classList.remove("dragover");
         if (_uploadBusy) return;
-        const captured = Array.from(e.dataTransfer.files);
+        const captured = await extractDroppedFiles(e.dataTransfer);
         if (captured.length > 0) handleFiles(captured);
     };
 }
@@ -167,17 +308,15 @@ async function handleFiles(files) {
     if (_uploadBusy) return;
 
     const queue = document.getElementById("uploadQueue");
+    const preValidated = preValidateFiles(files);
+    if (preValidated.length === 0) return;
+
     const deduped = [];
     const batchSeen = new Set();
-    for (const file of files) {
+    for (const file of preValidated) {
         const key = fileFingerprint(file);
         if (_localUploadSeen.has(key) || batchSeen.has(key)) {
-            const row = document.createElement("div");
-            row.className = "flex items-center gap-2 bg-gray-800 rounded px-3 py-2 text-sm";
-            row.innerHTML = `<span class="flex-1 truncate">${escUpload(file.name)}</span>`
-                          + `<span class="text-blue-400 text-xs">skipped</span>`
-                          + `<span class="text-gray-500 text-xs ml-2 truncate">동일 로컬 파일 재업로드 차단</span>`;
-            queue.appendChild(row);
+            appendQueueRow(file.name, "text-blue-400", "skipped", "동일 로컬 파일 재업로드 차단");
             continue;
         }
         batchSeen.add(key);
@@ -212,7 +351,7 @@ async function handleFiles(files) {
         const badge = row.querySelector("span:last-child");
         badge.className = "text-yellow-400 text-xs";
         badge.textContent = "업로드 중...";
-        const status = await uploadSingle(file, row);
+        const status = await uploadSingleWithRetry(file, row, _maxRetries);
         if (status === "success" || status === "skipped") {
             _localUploadSeen.add(key);
         }
@@ -225,6 +364,32 @@ async function handleFiles(files) {
         document.getElementById("uploadRunningOverlay")?.classList.add("hidden");
         setUploadLock(false);
     }, 600); // 100% 꽉 찬 화면을 0.6초간 보여준 뒤 닫음
+}
+
+async function delayMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function uploadSingleWithRetry(file, row, maxRetries) {
+    for (var attempt = 0; attempt <= maxRetries; attempt++) {
+        if (attempt > 0) {
+            var retryBadge = row.querySelector("span:last-child");
+            if (retryBadge) {
+                retryBadge.className = "text-amber-400 text-xs";
+                retryBadge.textContent = `재시도 ${attempt}/${maxRetries}...`;
+            }
+        }
+
+        var result = await uploadSingle(file, row);
+        if (result === "success" || result === "skipped") {
+            return result;
+        }
+
+        if (attempt < maxRetries) {
+            await delayMs(600 * (attempt + 1));
+        }
+    }
+    return "fail";
 }
 
 /* ── 단건 업로드 ── */
