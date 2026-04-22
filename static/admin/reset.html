@@ -29,31 +29,31 @@
 <script>
 async function resetAllData() {
     if (!confirm("모든 데이터(OpenSearch + DB)를 초기화합니다. 계속하시겠습니까?")) return;
-    const headers = {};
-    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
-    try {
-        const res = await fetch(`${FILE_API}/clear-all-data`, { method: "DELETE", headers });
-        const data = await res.json();
-        writeJson("resetOutput", data);
+    const result = await apiFetch(`${FILE_API}/clear-all-data`, { method: "DELETE" });
+    writeJson("resetOutput", result.data);
+
+    if (result.ok) {
         alert("전체 데이터 초기화 완료");
-        loadDocs();
-    } catch (e) {
-        writeJson("resetOutput", { error: "네트워크 오류" });
+        if (typeof loadDocs === "function") {
+            loadDocs();
+        }
+    } else {
+        alert(`전체 데이터 초기화 실패: ${result.data?.detail || `HTTP ${result.status}`}`);
     }
 }
 
 async function resetIndex() {
     if (!confirm("인덱스 구조까지 완전 삭제 + DB 초기화합니다. 계속하시겠습니까?")) return;
-    const headers = {};
-    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
-    try {
-        const res = await fetch(`${FILE_API}/delete-index`, { method: "DELETE", headers });
-        const data = await res.json();
-        writeJson("resetOutput", data);
+    const result = await apiFetch(`${FILE_API}/delete-index`, { method: "DELETE" });
+    writeJson("resetOutput", result.data);
+
+    if (result.ok) {
         alert("인덱스 삭제 + DB 초기화 완료");
-        loadDocs();
-    } catch (e) {
-        writeJson("resetOutput", { error: "네트워크 오류" });
+        if (typeof loadDocs === "function") {
+            loadDocs();
+        }
+    } else {
+        alert(`인덱스 삭제 + DB 초기화 실패: ${result.data?.detail || `HTTP ${result.status}`}`);
     }
 }
 
