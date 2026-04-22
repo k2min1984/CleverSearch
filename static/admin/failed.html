@@ -16,9 +16,11 @@
     • 실패 키워드 분석을 통해 사전 등록이나 동의어 추가를 검토할 수 있습니다.
 </div>
 <div class="flex flex-wrap items-center gap-2 mb-3">
-    <input id="failedDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24 max-w-full" />
-    <input id="failedSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm flex-1 min-w-0 w-full md:w-72" placeholder="키워드" />
-    <span id="failedTotal" class="text-sm font-bold text-slate-500 md:ml-auto"></span>
+    <label class="text-sm text-gray-400">기간(일):</label>
+    <input id="failedDays" type="number" min="1" value="7" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" />
+    <input id="failedSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-64" placeholder="키워드" />
+    <button id="failedSearchBtn" type="button" class="inline-flex items-center justify-center min-w-[84px] px-3 py-1 rounded bg-cyan-300 hover:bg-cyan-200 border border-cyan-100 text-slate-900 text-sm font-extrabold shadow-sm" aria-label="검색">검색</button>
+    <span id="failedTotal" class="text-sm font-bold text-slate-500 ml-auto"></span>
 </div>
 <div class="overflow-auto border border-gray-700 rounded">
     <table class="w-full text-sm">
@@ -115,6 +117,9 @@ async function loadFailed() {
 }
 
 document.getElementById("failedDays")?.addEventListener("change", loadFailed);
-document.getElementById("failedSearch")?.addEventListener("input", applyFailedFilter);
+document.getElementById("failedSearchBtn")?.addEventListener("click", applyFailedFilter);
+document.getElementById("failedSearch")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") applyFailedFilter();
+});
 bindFailedPagination();
 </script>

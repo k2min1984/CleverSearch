@@ -17,6 +17,7 @@
 </div>
 <div class="flex gap-2 mb-3">
     <input id="logsSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-72" placeholder="사용자 / 검색어" />
+    <button id="logsSearchBtn" type="button" class="inline-flex items-center justify-center min-w-[84px] px-3 py-1 rounded bg-cyan-300 hover:bg-cyan-200 border border-cyan-100 text-slate-900 text-sm font-extrabold shadow-sm" aria-label="검색">검색</button>
     <span id="logsTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div class="overflow-auto border border-gray-700 rounded">
@@ -109,6 +110,9 @@ async function loadLogs() {
     applyLogsFilter();
 }
 
-document.getElementById("logsSearch")?.addEventListener("input", applyLogsFilter);
+document.getElementById("logsSearchBtn")?.addEventListener("click", applyLogsFilter);
+document.getElementById("logsSearch")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") applyLogsFilter();
+});
 bindLogsPagination();
 </script>

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CleverSearch Admin</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/vendor/chart.umd.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
@@ -321,6 +321,7 @@
             border-radius: 11px;
             text-align: left;
             padding: 10px 12px;
+            padding: 10px 12px 10px 36px;
             color: #334155;
             background: transparent;
             font-weight: 600;
@@ -560,6 +561,25 @@
         .btn-del:hover {
             color: #c62828;
             text-decoration: underline;
+        }
+
+        .btn-inline-delete {
+            border: 1px solid #fbcfe8;
+            border-radius: 8px;
+            background: #fff1f6;
+            color: #9f1239;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+            padding: 5px 8px;
+            box-shadow: none;
+        }
+
+        .btn-inline-delete:hover {
+            background: #ffe4ee;
+            color: #881337;
+            transform: none;
+            text-decoration: none;
         }
 
         /*
@@ -942,21 +962,27 @@
             }
 
             #tabMenu .menu-items {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+                display: flex;
+                flex-wrap: nowrap;
                 max-height: none;
                 opacity: 1;
-                overflow: visible;
+                overflow-x: auto;
+                overflow-y: hidden;
                 pointer-events: auto;
                 transform: none;
                 margin-left: 8px;
                 padding-left: 10px;
                 border-left: 2px solid #d9e3f7;
+                padding-bottom: 2px;
             }
 
+
             #tabMenu .tab {
-                width: 100%;
+                width: auto;
+                flex: 0 0 auto;
+                white-space: nowrap;
                 padding-left: 14px;
+                padding-left: 24px;
             }
 
             table th,
@@ -1043,6 +1069,7 @@
 
             #tabMenu .tab {
                 padding: 9px 10px;
+                padding: 9px 10px 9px 24px;
                 font-size: 13px;
             }
 
@@ -1447,6 +1474,7 @@
         function normalizeTabUi(container) {
             container.querySelectorAll("button").forEach(button => {
                 if (button.classList.contains("tab")) return;
+                if (button.classList.contains("js-doc-delete")) return;
 
                 button.classList.add("btn-unified");
                 const text = (button.textContent || "").replace(/\s+/g, "").trim();

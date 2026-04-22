@@ -24,12 +24,13 @@
     <label class="text-sm text-gray-400">표시 개수:</label>
     <input id="popularLimit" type="number" min="1" max="9" placeholder="1~9" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
     <input id="popularSearch" type="text" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-72" placeholder="키워드" />
+    <button id="popularSearchBtn" type="button" class="inline-flex items-center justify-center min-w-[84px] px-3 py-1 rounded bg-cyan-300 hover:bg-cyan-200 border border-cyan-100 text-slate-900 text-sm font-extrabold shadow-sm" aria-label="검색">검색</button>
     <button id="popularApplyBtn" type="button" class="px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm font-medium">적용</button>
     <button id="popularRecommendBtn" type="button" class="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">추천 키워드</button>
     <span id="popularTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
 </div>
 <div id="popularConfigNotice" class="hidden mb-3 rounded border px-3 py-2 text-sm"></div>
-<div id="recommendResult" class="hidden mb-3 bg-indigo-900/30 border border-indigo-700 rounded-lg p-3 text-sm text-indigo-200"></div>
+<div id="recommendResult" class="hidden mb-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900 shadow-sm"></div>
 <div class="overflow-auto border border-gray-700 rounded">
     <table class="w-full text-sm">
         <thead class="bg-gray-800"><tr><th class="p-2 text-left">순위</th><th class="p-2 text-left">키워드</th><th class="p-2 text-left">카운트</th></tr></thead>
@@ -201,24 +202,27 @@ function renderPopularRows(rows) {
 async function loadRecommendKeywords() {
     const container = document.getElementById("recommendResult");
     container.classList.remove("hidden");
-    container.innerHTML = "<span class='text-indigo-300'>추천 키워드 조회 중...</span>";
+    container.innerHTML = "<span class='text-indigo-700 font-semibold'>추천 키워드 조회 중...</span>";
     try {
         const res = await fetch(`${API.replace('/admin','/search')}/recommend?user_id=admin&limit=10`, {
             headers: accessToken ? { "Authorization": `Bearer ${accessToken}` } : {}
         });
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
-            container.innerHTML = "<b><span aria-hidden=\"true\">💡</span> 추천 키워드:</b> " + data.map(k => `<span class='inline-block bg-indigo-800 text-indigo-200 px-2 py-1 rounded-full text-xs mr-1 mb-1'>${fmt(k)}</span>`).join("");
+            container.innerHTML = "<b class='text-indigo-900'><span aria-hidden=\"true\">💡</span> 추천 키워드:</b> " + data.map(k => `<span class='inline-block bg-indigo-100 border border-indigo-200 text-indigo-800 px-2 py-1 rounded-full text-xs mr-1 mb-1 font-semibold'>${fmt(k)}</span>`).join("");
         } else {
-            container.innerHTML = "<span class='text-gray-400'>추천 키워드가 없습니다. 검색 이력이 축적되면 자동으로 생성됩니다.</span>";
+            container.innerHTML = "<span class='text-slate-600'>추천 키워드가 없습니다. 검색 이력이 축적되면 자동으로 생성됩니다.</span>";
         }
     } catch (e) {
-        container.innerHTML = `<span class='text-red-400'>추천 키워드 조회 실패: ${fmt(e.message)}</span>`;
+        container.innerHTML = `<span class='text-red-700 font-semibold'>추천 키워드 조회 실패: ${fmt(e.message)}</span>`;
     }
 }
 
 document.getElementById("popularDays")?.addEventListener("change", loadPopular);
-document.getElementById("popularSearch")?.addEventListener("input", applyPopularFilter);
+document.getElementById("popularSearchBtn")?.addEventListener("click", applyPopularFilter);
+document.getElementById("popularSearch")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") applyPopularFilter();
+});
 document.getElementById("popularApplyBtn")?.addEventListener("click", saveAndLoadPopular);
 document.getElementById("popularRecommendBtn")?.addEventListener("click", loadRecommendKeywords);
 
