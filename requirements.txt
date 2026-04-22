@@ -40,3 +40,6 @@ py-hanspell
 # ── Auth & Security ──
 PyJWT
 cryptography
+smbprotocol
+paramiko
+watchfiles

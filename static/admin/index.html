@@ -1236,7 +1236,8 @@
 
         const TAB_NAMES = [
             "dashboard", "docs", "upload", "popular", "logs", "recent", "failed",
-            "dictionary", "smb", "dbsources", "scheduler", "ssl", "scoring", "reset"
+            "dictionary", "smb", "dbsources", "indexing", "watcher", "network",
+            "scheduler", "volume", "ssl", "scoring", "reset"
         ];
 
         const tabInitMap = {
@@ -1250,7 +1251,11 @@
             dictionary: () => { if (typeof loadDictionaryEntries === "function") loadDictionaryEntries(); },
             smb: () => { if (typeof loadSmbSources === "function") loadSmbSources(); },
             dbsources: () => { if (typeof loadDbSources === "function") loadDbSources(); },
+            indexing: () => { if (typeof loadIndexingHistory === "function") loadIndexingHistory(); },
+            watcher: () => { if (typeof loadWatcherStatus === "function") loadWatcherStatus(); },
+            network: () => { if (typeof loadNetworkEvents === "function") { loadMonitorStatus(); loadNetworkEvents(); } },
             scheduler: () => { if (typeof loadSchedulerStatus === "function") loadSchedulerStatus(); },
+            volume: () => { if (typeof loadVolumePanel === "function") loadVolumePanel(); },
             ssl: () => { if (typeof scanCertificates === "function") scanCertificates(); },
             scoring: () => { if (typeof loadScoringWeights === "function") loadScoringWeights(); },
             reset: null

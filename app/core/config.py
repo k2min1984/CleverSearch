@@ -81,6 +81,9 @@ class Settings:
     # Oracle 전용: SID 대신 서비스명 사용 시 True
     DB_ORACLE_USE_SERVICE_NAME = _get_bool_env("DB_ORACLE_USE_SERVICE_NAME", "false")
 
+    # PostgreSQL 전용: 세션 search_path. 빈 값이면 서버 기본(role/database) 사용
+    DB_SCHEMA = os.getenv("DB_SCHEMA", "").strip()
+
     # DB_TYPE → SQLAlchemy dialect+driver 매핑
     _DB_DIALECTS: dict[str, str] = {
         "postgres": "postgresql+psycopg2",
@@ -138,6 +141,10 @@ class Settings:
     # 선택 설정: 다중 DB/SMB 사전 등록 JSON 문자열
     DB_SOURCES_JSON = os.getenv("DB_SOURCES_JSON", "")
     SMB_SOURCES_JSON = os.getenv("SMB_SOURCES_JSON", "")
+
+    # SMB 연결 타임아웃 (초)
+    SMB_CONNECT_TIMEOUT = int(os.getenv("SMB_CONNECT_TIMEOUT", "10"))
+    SMB_READ_TIMEOUT = int(os.getenv("SMB_READ_TIMEOUT", "30"))
 
     # JWT 인증 설정
     JWT_SECRET = os.getenv("JWT_SECRET", "change-this-in-production-at-least-32-chars")

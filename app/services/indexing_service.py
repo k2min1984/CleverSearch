@@ -30,11 +30,23 @@ ALLOWED_EXTENSIONS = {"xlsx", "xls", "hwp", "hwpx", "pdf", "docx", "pptx", "jpg"
 
 class IndexingService:
     @staticmethod
-    def ensure_index() -> None:
+    def _decode_text_with_fallback(content: bytes) -> str:
+        """txt 파일 인코딩 추정 디코딩 (Windows 로컬/레거시 파일 대응)"""
+        for enc in ("utf-8-sig", "utf-16", "cp949", "euc-kr"):
+            try:
+                text = content.decode(enc)
+                if text.strip():
+                    return text
+            except UnicodeDecodeError:
+                continue
+        return content.decode("utf-8", errors="ignore")
+
+    @staticmethod
+    def ensure_index(index_name: str | None = None) -> str:
+        target_index = (index_name or settings.OPENSEARCH_INDEX).strip() or settings.OPENSEARCH_INDEX
         client = get_client()
-        index_name = settings.OPENSEARCH_INDEX
-        if client.indices.exists(index=index_name):
-            return
+        if client.indices.exists(index=target_index):
+            return target_index
 
         index_body = {
             "settings": {
@@ -87,7 +99,8 @@ class IndexingService:
                 }
             },
         }
-        client.indices.create(index=index_name, body=index_body)
+        client.indices.create(index=target_index, body=index_body)
+        return target_index
 
     @staticmethod
     def _extract_text(filename: str, content: bytes) -> tuple[str, str]:
@@ -107,15 +120,14 @@ class IndexingService:
         elif ext in ["jpg", "jpeg", "png"]:
             text_content = image.extract_text(content)
         elif ext == "txt":
-            text_content = content.decode("utf-8", errors="ignore")
+            text_content = IndexingService._decode_text_with_fallback(content)
 
         return text_content, ext
 
     @staticmethod
-    def index_bytes(filename: str, content: bytes, source_label: str = "upload") -> dict:
-        IndexingService.ensure_index()
+    def index_bytes(filename: str, content: bytes, source_label: str = "upload", index_name: str | None = None) -> dict:
+        target_index = IndexingService.ensure_index(index_name=index_name)
         client = get_client()
-        index_name = settings.OPENSEARCH_INDEX
 
         safe_filename = DocumentUtils.sanitize_text(filename)
         text_content, ext = IndexingService._extract_text(safe_filename, content)
@@ -157,15 +169,16 @@ class IndexingService:
                 "content_hash": content_digest,
             }
 
-        is_dup, existing_file = DocumentUtils.check_duplicate_content(client, index_name, content_digest)
+        is_dup, existing_file = DocumentUtils.check_duplicate_content(client, target_index, content_digest)
         if (not is_dup) and (legacy_text_digest != content_digest):
-            is_dup, existing_file = DocumentUtils.check_duplicate_content(client, index_name, legacy_text_digest)
+            is_dup, existing_file = DocumentUtils.check_duplicate_content(client, target_index, legacy_text_digest)
         if is_dup:
             return {
                 "status": "skipped",
                 "message": f"내용 중복: {existing_file}",
                 "file": safe_filename,
                 "content_hash": content_digest,
+                "index": target_index,
             }
 
         category = DocumentUtils.map_category(safe_filename)
@@ -189,7 +202,7 @@ class IndexingService:
         }
 
         safe_doc = DocumentUtils.sanitize_for_opensearch(doc_source)
-        index_res = client.index(index=index_name, body=safe_doc, refresh=True)
+        index_res = client.index(index=target_index, body=safe_doc, refresh=True)
         DBService.save_indexed_document(
             os_doc_id=index_res.get("_id", ""),
             origin_file=safe_filename,
@@ -207,4 +220,5 @@ class IndexingService:
             "content_hash": content_digest,
             "category": category,
             "doc_id": index_res.get("_id"),
+            "index": target_index,
         }

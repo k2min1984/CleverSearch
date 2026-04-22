@@ -1,0 +1,123 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 색인 이력 탭
+# 파일/DB 색인 처리 이력 조회 및 관리
+#
+# Modified History
+# 현승준 / 2026-04-08 / 최초생성
+########################################################
+-->
+
+<!-- 색인 이력 탭 (통합 감사용) -->
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+    <b>📑 통합 색인 이력이란?</b> SMB/DB/파일감시 실행 회차별 요약 이력을 통합 조회하는 감사용 화면입니다.<br>
+    • 소스별 즉시 확인은 SMB/DB 탭 목록의 <b>이력</b> 아코디언을 사용하세요.<br>
+    • <b>source_type</b>: smb, db, watcher<br>
+    • <b>action</b>: sync_summary(실행 요약)<br>
+    • <b>status</b>: success(성공), fail(실패), partial(부분성공)
+</div>
+
+<!-- 필터 -->
+<div class="flex flex-wrap gap-2 mb-3 items-center">
+    <select id="idxFilterType" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
+        <option value="">전체 타입</option>
+        <option value="smb">SMB</option>
+        <option value="db">DB</option>
+        <option value="watcher">파일감시</option>
+    </select>
+    <input id="idxFilterName" placeholder="소스명 (선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-40" />
+    <select id="idxFilterStatus" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
+        <option value="">전체 상태</option>
+        <option value="success">성공</option>
+        <option value="fail">실패</option>
+    </select>
+    <input id="idxFilterLimit" type="number" placeholder="조회 수" value="100" min="1" max="1000" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+    <button onclick="loadIndexingHistory()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">조회</button>
+</div>
+
+<!-- 이력 삭제 -->
+<div class="flex flex-wrap gap-2 mb-3 items-center">
+    <input id="idxDeleteDays" type="number" placeholder="N일 이전 삭제" value="30" min="1" max="365" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-36" />
+    <button onclick="deleteIndexingHistory()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">이력 정리</button>
+    <span class="text-xs text-gray-500">※ 지정 일수 이전의 이력을 일괄 삭제합니다</span>
+</div>
+
+<!-- 리스트 뷰 -->
+<div id="idxList">
+    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left">
+        <th class="p-2">ID</th><th class="p-2">타입</th><th class="p-2">소스명</th><th class="p-2">파일/레코드</th><th class="p-2">액션</th><th class="p-2">상태</th><th class="p-2">메시지</th><th class="p-2">시간</th>
+    </tr></thead><tbody id="idxBody"></tbody></table>
+</div>
+<pre id="idxOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto hidden"></pre>
+
+<script>
+async function loadIndexingHistory() {
+    const sourceType = document.getElementById("idxFilterType").value;
+    const sourceName = document.getElementById("idxFilterName").value;
+    const status = document.getElementById("idxFilterStatus").value;
+    const limit = document.getElementById("idxFilterLimit").value || 100;
+
+    let url = `${SYS_API}/indexing/history?limit=${limit}`;
+    if (sourceType) url += `&source_type=${sourceType}`;
+    if (sourceName) url += `&source_name=${encodeURIComponent(sourceName)}`;
+    if (status) url += `&status=${status}`;
+
+    const result = await apiFetch(url, { method: "GET" });
+    const data = Array.isArray(result.data) ? result.data : (result.data || []);
+    writeJson("idxOutput", data);
+    populateIdxList(data);
+}
+
+function populateIdxList(data) {
+    const body = document.getElementById("idxBody");
+    if (!body) return;
+    if (!Array.isArray(data) || data.length === 0) {
+        body.innerHTML = '<tr><td class="p-2 text-gray-500" colspan="8">이력이 없습니다.</td></tr>';
+        return;
+    }
+    const statusBadge = (s) => {
+        if (s === "success") return '<span class="text-green-400">✅ 성공</span>';
+        if (s === "partial") return '<span class="text-yellow-400">⚠ 부분 성공</span>';
+        if (s === "skipped") return '<span class="text-gray-400">⏭ 스킵</span>';
+        return '<span class="text-red-400">❌ 실패</span>';
+    };
+    const actionBadge = (a) => {
+        const map = { sync_summary: "📊 실행 요약" };
+        return map[a] || a;
+    };
+    const typeClass = (t) => {
+        if (t === "smb") return "bg-blue-900/50 text-blue-300";
+        if (t === "db") return "bg-purple-900/50 text-purple-300";
+        if (t === "watcher") return "bg-emerald-900/50 text-emerald-300";
+        return "bg-gray-800 text-gray-300";
+    };
+    body.innerHTML = data.map(r =>
+        `<tr class="border-t border-gray-700">
+            <td class="p-2">${fmt(r.id)}</td>
+            <td class="p-2"><span class="px-1.5 py-0.5 rounded text-xs ${typeClass(r.source_type)}">${fmt(r.source_type)}</span></td>
+            <td class="p-2">${fmt(r.source_name)}</td>
+            <td class="p-2 max-w-xs truncate" title="${(r.file_name||'').replace(/"/g,'&quot;')}">${fmt(r.file_name)}</td>
+            <td class="p-2">${actionBadge(r.action)}</td>
+            <td class="p-2">${statusBadge(r.status)}</td>
+            <td class="p-2 max-w-xs truncate text-red-400" title="${(r.message||'').replace(/"/g,'&quot;')}">${fmt(r.message||"-")}</td>
+            <td class="p-2">${fmt(r.created_at)}</td>
+        </tr>`
+    ).join("");
+}
+
+async function deleteIndexingHistory() {
+    const days = document.getElementById("idxDeleteDays").value || 30;
+    if (!confirm(`${days}일 이전의 색인 이력을 삭제합니다. 계속하시겠습니까?`)) return;
+    const result = await apiFetch(`${SYS_API}/indexing/history?before_days=${days}`, { method: "DELETE" });
+    writeJson("idxOutput", result);
+    if (result.ok) {
+        alert("정리 완료: " + (result.data?.deleted_count || 0) + "건 삭제됨");
+        await loadIndexingHistory();
+    } else {
+        alert("삭제 실패: " + (result.data?.detail || JSON.stringify(result.data)));
+    }
+}
+
+loadIndexingHistory();
+</script>

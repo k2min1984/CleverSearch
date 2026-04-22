@@ -2,125 +2,249 @@
 ########################################################
 # Description
 # CleverSearch 관리자 페이지 - 스케줄러 탭
-# SMB/DB 소스 자동 동기화 주기 관리
+# 소스별 자동 동기화 스케줄 관리
 #
 # Modified History
 # 현승준 / 2026-03-25 / 최초생성
+# 현승준 / 2026-04-15 / 소스별 개별 스케줄 관리 UI 전면 개편
+# 현승준 / 2026-04-16 / 화이트 테마 + 버튼 스타일 개선
 ########################################################
 -->
 
 <!-- 스케줄러 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b><span aria-hidden="true">⏰</span> 자동 색인 스케줄러란?</b> 설정한 주기(분)마다 SMB·DB 소스를 자동으로 동기화하여 최신 상태를 유지합니다.<br>
-    • <b>간격(분)</b>: 동기화 주기 (최소 10분, 기본 120분)<br>
-    • 시작 후 백그라운드에서 자동 실행되며, 상태는 이 탭에서 확인할 수 있습니다.
+    <b><span aria-hidden="true">⏰</span> 소스별 자동 색인 스케줄러</b> 각 SMB·DB 소스마다 개별 동기화 주기를 설정할 수 있습니다.<br>
+    • 소스가 <b>활성화</b>되면 기본 <b>1일 1회(24시간)</b> 스케줄이 자동 등록됩니다.<br>
+    • 아래에서 개별 소스의 동기화 주기를 변경하거나 스케줄을 비활성화할 수 있습니다.<br>
+    • <b>스케줄러 시작</b> 버튼을 눌러야 백그라운드 동기화가 실행됩니다.
 </div>
-<div class="flex gap-2 mb-3 items-center">
-    <label class="text-sm text-gray-400">간격(분):</label>
-    <input id="schedulerInterval" type="number" min="10" value="120" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-32" />
-    <button id="schedulerStartBtn" type="button" class="admin-write px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
-    <button id="schedulerToggleBtn" type="button" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
-    <span id="schedulerTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
+
+<!-- 스케줄러 제어 -->
+<div class="flex gap-2 mb-4 items-center">
+    <button id="schedulerStartBtn" type="button" class="px-5 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-bold shadow-sm transition-colors">스케줄러 시작</button>
+    <button id="schedulerStopBtn" type="button" class="px-5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold shadow-sm transition-colors">스케줄러 중지</button>
+    <span id="schedulerStatusBadge" class="ml-2 px-3 py-1 rounded-full text-xs font-bold"></span>
+    <span id="schedulerLastRun" class="ml-auto text-xs text-gray-400"></span>
 </div>
-<div id="schedulerList" class="hidden">
-    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">항목</th><th class="p-2">값</th></tr></thead><tbody id="schedulerBody"></tbody></table>
+
+<!-- 스케줄 엔트리 테이블 (화이트 배경) -->
+<div class="bg-white rounded-xl shadow-md overflow-hidden">
+    <table class="w-full text-sm">
+        <thead>
+            <tr class="text-gray-500 text-left bg-gray-50 border-b border-gray-200">
+                <th class="px-4 py-3 font-semibold">타입</th>
+                <th class="px-4 py-3 font-semibold">소스명</th>
+                <th class="px-4 py-3 font-semibold">동기화 주기</th>
+                <th class="px-4 py-3 font-semibold">다음 실행</th>
+                <th class="px-4 py-3 font-semibold">마지막 실행</th>
+                <th class="px-4 py-3 font-semibold text-center">상태</th>
+                <th class="px-4 py-3 font-semibold text-center">작업</th>
+            </tr>
+        </thead>
+        <tbody id="scheduleBody"></tbody>
+    </table>
+    <div id="scheduleEmpty" class="hidden p-10 text-center text-gray-400 text-sm">
+        등록된 스케줄이 없습니다. SMB/DB 소스를 활성화하면 자동으로 스케줄이 생성됩니다.
+    </div>
 </div>
-<div id="schedulerPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
-<pre id="schedulerOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
 
 <script>
-var schedulerRows = [];
-var schedulerPage = 1;
-var SCHEDULER_PAGE_SIZE = 10;
+var scheduleEntries = [];
 
-function changeSchedulerPage(nextPage) {
-    const totalPages = Math.max(1, Math.ceil(schedulerRows.length / SCHEDULER_PAGE_SIZE));
-    schedulerPage = Math.max(1, Math.min(totalPages, nextPage));
-    renderSchedulerRows();
+/* ── 주기 프리셋 ── */
+var INTERVAL_OPTIONS = [
+    { label: "30분", value: 30 },
+    { label: "1시간", value: 60 },
+    { label: "2시간", value: 120 },
+    { label: "6시간", value: 360 },
+    { label: "12시간", value: 720 },
+    { label: "24시간", value: 1440 },
+];
+
+function intervalLabel(minutes) {
+    var preset = INTERVAL_OPTIONS.find(function(o) { return o.value === minutes; });
+    if (preset) return preset.label;
+    if (minutes >= 60 && minutes % 60 === 0) return (minutes / 60) + "시간";
+    return minutes + "분";
 }
 
-function renderSchedulerPagination() {
-    const pager = document.getElementById("schedulerPagination");
-    if (!pager) return;
-    if (schedulerRows.length <= SCHEDULER_PAGE_SIZE) {
-        pager.classList.add("hidden");
-        pager.innerHTML = "";
+function formatDateTime(isoStr) {
+    if (!isoStr) return "-";
+    try {
+        var d = new Date(isoStr);
+        return d.toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return isoStr; }
+}
+
+function typeIcon(sourceType) {
+    return sourceType === "smb" ? "📁" : "🗄️";
+}
+
+function typeBadge(sourceType) {
+    if (sourceType === "smb") {
+        return '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">SMB</span>';
+    }
+    return '<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">DB</span>';
+}
+
+/* ── 렌더링 ── */
+function renderScheduleTable() {
+    var body = document.getElementById("scheduleBody");
+    var empty = document.getElementById("scheduleEmpty");
+    if (!body) return;
+
+    if (scheduleEntries.length === 0) {
+        body.innerHTML = "";
+        empty && empty.classList.remove("hidden");
         return;
     }
-    const totalPages = Math.max(1, Math.ceil(schedulerRows.length / SCHEDULER_PAGE_SIZE));
-    pager.classList.remove("hidden");
-    pager.innerHTML = `
-        <button type="button" class="js-scheduler-page px-3 py-1 rounded border border-gray-500 text-sm ${schedulerPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${schedulerPage === 1 ? "disabled" : ""} data-page="${schedulerPage - 1}">이전</button>
-        <span class="text-slate-500 font-semibold">${schedulerPage} / ${totalPages}</span>
-        <button type="button" class="js-scheduler-page px-3 py-1 rounded border border-gray-500 text-sm ${schedulerPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${schedulerPage === totalPages ? "disabled" : ""} data-page="${schedulerPage + 1}">다음</button>
-    `;
-}
+    empty && empty.classList.add("hidden");
 
-function bindSchedulerActions() {
-    const pager = document.getElementById("schedulerPagination");
-    if (pager && pager.dataset.bound !== "1") {
-        pager.dataset.bound = "1";
-        pager.addEventListener("click", (event) => {
-            const pageBtn = event.target.closest(".js-scheduler-page");
-            if (!pageBtn) return;
-            changeSchedulerPage(Number(pageBtn.dataset.page || 1));
+    body.innerHTML = scheduleEntries.map(function(e) {
+        /* 주기 셀렉트 */
+        var intervalSelect = '<select class="js-interval-select bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs text-gray-700 focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none" data-id="' + e.id + '" data-source-type="' + e.source_type + '" data-source-id="' + e.source_id + '">';
+        INTERVAL_OPTIONS.forEach(function(opt) {
+            var selected = opt.value === e.interval_minutes ? " selected" : "";
+            intervalSelect += '<option value="' + opt.value + '"' + selected + '>' + opt.label + '</option>';
         });
-    }
+        var hasCustom = !INTERVAL_OPTIONS.find(function(o) { return o.value === e.interval_minutes; });
+        if (hasCustom) {
+            intervalSelect += '<option value="' + e.interval_minutes + '" selected>' + intervalLabel(e.interval_minutes) + '</option>';
+        }
+        intervalSelect += '</select>';
+
+        /* 활성/비활성 배지 + 토글 */
+        var statusBadge = e.is_enabled
+            ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700"><svg class="w-2.5 h-2.5" viewBox="0 0 10 10"><circle cx="5" cy="5" r="5" fill="currentColor"/></svg>활성</span>'
+            : '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-600"><svg class="w-2.5 h-2.5" viewBox="0 0 10 10"><circle cx="5" cy="5" r="5" fill="currentColor"/></svg>비활성</span>';
+
+        var toggleSwitch = '<label class="relative inline-flex items-center cursor-pointer mt-1">' +
+            '<input type="checkbox" class="sr-only peer js-schedule-toggle" data-id="' + e.id + '" data-source-type="' + e.source_type + '" data-source-id="' + e.source_id + '" ' + (e.is_enabled ? "checked" : "") + ' />' +
+            '<div class="w-9 h-5 rounded-full bg-red-400 peer-checked:bg-green-500 transition-colors after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all after:shadow-sm peer-checked:after:translate-x-full"></div>' +
+        '</label>';
+
+        /* 행 배경색 — 비활성 소스는 연한 회색 */
+        var rowBg = e.is_enabled ? '' : ' bg-gray-50';
+
+        return '<tr class="border-t border-gray-100 hover:bg-blue-50/40 transition-colors' + rowBg + '">' +
+            '<td class="px-4 py-3"><span class="text-lg mr-1.5">' + typeIcon(e.source_type) + '</span>' + typeBadge(e.source_type) + '</td>' +
+            '<td class="px-4 py-3 font-semibold text-gray-900">' + fmt(e.source_name) + ' <span class="text-xs text-gray-400 font-normal">#' + e.source_id + '</span></td>' +
+            '<td class="px-4 py-3">' + intervalSelect + '</td>' +
+            '<td class="px-4 py-3 text-xs text-gray-600">' + formatDateTime(e.next_run_at) + '</td>' +
+            '<td class="px-4 py-3 text-xs text-gray-600">' + formatDateTime(e.last_run_at) + '</td>' +
+            '<td class="px-4 py-3 text-center"><div class="flex flex-col items-center gap-0.5">' + statusBadge + toggleSwitch + '</div></td>' +
+            '<td class="px-4 py-3 text-center">' +
+                '<button class="js-schedule-delete px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white shadow-sm transition-colors" data-id="' + e.id + '" title="삭제">삭제</button>' +
+            '</td>' +
+        '</tr>';
+    }).join("");
 }
 
-function renderSchedulerRows() {
-    const body = document.getElementById("schedulerBody");
-    if (!body) return;
-    const totalPages = Math.max(1, Math.ceil(schedulerRows.length / SCHEDULER_PAGE_SIZE));
-    schedulerPage = Math.max(1, Math.min(totalPages, schedulerPage));
-    const start = (schedulerPage - 1) * SCHEDULER_PAGE_SIZE;
-    const pageRows = schedulerRows.slice(start, start + SCHEDULER_PAGE_SIZE);
-
-    body.innerHTML = pageRows.map(([k, v]) => {
-        const valueText = typeof v === "string" ? v : JSON.stringify(v);
-        return `<tr class="border-t border-gray-700"><td class="p-2 font-medium">${fmt(k)}</td><td class="p-2">${fmt(valueText)}</td></tr>`;
-    }).join("") || '<tr><td class="p-2" colspan="2">데이터 없음</td></tr>';
-
-    renderSchedulerPagination();
-}
-
-async function startScheduler() {
-    const interval = Number(document.getElementById("schedulerInterval").value || 120);
-    const result = await apiFetch(`${SYS_API}/scheduler/start?interval_seconds=${interval}`, { method: "POST" });
-    writeJson("schedulerOutput", result);
-    if (result.ok) {
-        await loadSchedulerStatus();
-    }
+/* ── API 호출 ── */
+async function loadScheduleEntries() {
+    var result = await apiFetch(SYS_API + "/scheduler/entries", { method: "GET" });
+    scheduleEntries = Array.isArray(result.data) ? result.data : (result.data || []);
+    renderScheduleTable();
 }
 
 async function loadSchedulerStatus() {
-    const result = await apiFetch(`${SYS_API}/scheduler/status`, { method: "GET" });
-    writeJson("schedulerOutput", result.data);
-    populateSchedulerList(result.data);
-}
-
-function toggleSchedulerView() {
-    document.getElementById("schedulerOutput").classList.toggle("hidden");
-    document.getElementById("schedulerList").classList.toggle("hidden");
-}
-
-function populateSchedulerList(data) {
-    const body = document.getElementById("schedulerBody");
-    if (!body || !data) {
-        document.getElementById("schedulerTotal").textContent = "총 0건";
-        schedulerRows = [];
-        renderSchedulerRows();
-        return;
+    var result = await apiFetch(SYS_API + "/scheduler/status", { method: "GET" });
+    var data = result.data || {};
+    var badge = document.getElementById("schedulerStatusBadge");
+    var lastRun = document.getElementById("schedulerLastRun");
+    if (badge) {
+        if (data.running) {
+            badge.textContent = "● 실행 중";
+            badge.className = "ml-2 px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700";
+        } else {
+            badge.textContent = "● 중지됨";
+            badge.className = "ml-2 px-3 py-1 rounded-full text-xs font-bold bg-gray-200 text-gray-500";
+        }
     }
-    const entries = Object.entries(data);
-    document.getElementById("schedulerTotal").textContent = `총 ${entries.length}건`;
-    schedulerRows = entries;
-    schedulerPage = 1;
-    renderSchedulerRows();
+    if (lastRun) {
+        lastRun.textContent = data.last_run_at ? "마지막 확인: " + formatDateTime(data.last_run_at) : "";
+    }
 }
 
-loadSchedulerStatus();
-bindSchedulerActions();
+async function startScheduler() {
+    var result = await apiFetch(SYS_API + "/scheduler/start", { method: "POST" });
+    if (result.data && result.data.status === "started") {
+        showToast && showToast("스케줄러가 시작되었습니다", "success");
+    } else if (result.data && result.data.status === "already-running") {
+        showToast && showToast("이미 실행 중입니다", "info");
+    }
+    await loadSchedulerStatus();
+}
+
+async function stopScheduler() {
+    var result = await apiFetch(SYS_API + "/scheduler/stop", { method: "POST" });
+    if (result.data && result.data.status === "stopped") {
+        showToast && showToast("스케줄러가 중지되었습니다", "success");
+    }
+    await loadSchedulerStatus();
+}
+
+async function updateScheduleEntry(sourceType, sourceId, intervalMinutes, isEnabled) {
+    var result = await apiFetch(SYS_API + "/scheduler/entries", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            source_type: sourceType,
+            source_id: sourceId,
+            interval_minutes: intervalMinutes,
+            is_enabled: isEnabled,
+        }),
+    });
+    if (result.data && result.data.status === "success") {
+        showToast && showToast("스케줄 설정이 변경되었습니다", "success");
+    }
+    await loadScheduleEntries();
+}
+
+async function deleteScheduleEntry(entryId) {
+    if (!confirm("이 스케줄을 삭제하시겠습니까?")) return;
+    var result = await apiFetch(SYS_API + "/scheduler/entries/" + entryId, { method: "DELETE" });
+    if (result.data && result.data.status === "success") {
+        showToast && showToast("스케줄이 삭제되었습니다", "success");
+    }
+    await loadScheduleEntries();
+}
+
+/* ── 이벤트 위임 ── */
+(function() {
+    var tableEl = document.getElementById("scheduleBody");
+    if (tableEl) {
+        tableEl.addEventListener("change", function(ev) {
+            var toggle = ev.target.closest(".js-schedule-toggle");
+            if (toggle) {
+                var entry = scheduleEntries.find(function(e) { return String(e.id) === toggle.dataset.id; });
+                if (entry) {
+                    updateScheduleEntry(entry.source_type, entry.source_id, entry.interval_minutes, toggle.checked);
+                }
+                return;
+            }
+            var select = ev.target.closest(".js-interval-select");
+            if (select) {
+                var entry = scheduleEntries.find(function(e) { return String(e.id) === select.dataset.id; });
+                if (entry) {
+                    updateScheduleEntry(entry.source_type, entry.source_id, Number(select.value), entry.is_enabled);
+                }
+                return;
+            }
+        });
+        tableEl.addEventListener("click", function(ev) {
+            var delBtn = ev.target.closest(".js-schedule-delete");
+            if (delBtn) {
+                deleteScheduleEntry(Number(delBtn.dataset.id));
+            }
+        });
+    }
+})();
+
 document.getElementById("schedulerStartBtn")?.addEventListener("click", startScheduler);
-document.getElementById("schedulerToggleBtn")?.addEventListener("click", toggleSchedulerView);
+document.getElementById("schedulerStopBtn")?.addEventListener("click", stopScheduler);
+
+/* ── 초기 로드 ── */
+loadScheduleEntries();
+loadSchedulerStatus();
 </script>

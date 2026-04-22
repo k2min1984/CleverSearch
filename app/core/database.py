@@ -20,7 +20,7 @@ import hashlib
 import hmac
 import os
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.core.config import settings
@@ -57,12 +57,17 @@ elif _db_type in ("mysql", "mariadb"):
     )
 else:
     # PostgreSQL (기본)
+    _pg_connect_args: dict = {}
+    if settings.DB_SCHEMA:
+        # 세션 search_path 고정 → 모든 쿼리가 지정 스키마를 우선 조회
+        _pg_connect_args["options"] = f"-csearch_path={settings.DB_SCHEMA},public"
     engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
         pool_size=settings.DB_POOL_SIZE,
         max_overflow=settings.DB_MAX_OVERFLOW,
         pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
+        connect_args=_pg_connect_args,
     )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -107,14 +112,19 @@ class IndexedDocument(Base):
 
 
 class SmbSource(Base):
-    # SMB 경로별 동기화 설정과 상태를 저장합니다.
+    # SMB/SSH 경로별 동기화 설정과 상태를 저장합니다.
     __tablename__ = "smb_sources"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(120), nullable=False, unique=True, index=True)
+    connection_type = Column(String(10), nullable=False, default="smb", index=True)  # smb / ssh
     share_path = Column(String(400), nullable=False)
     username = Column(String(200), nullable=True)
     password = Column(String(200), nullable=True)
+    domain = Column(String(100), nullable=True)
+    port = Column(Integer, nullable=False, default=445)
+    ssh_host = Column(String(200), nullable=True)       # SSH 서버 호스트
+    ssh_key_path = Column(String(400), nullable=True)    # SSH 개인키 경로 (선택)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     last_seen_at = Column(DateTime, nullable=True)
     last_error = Column(String(500), nullable=True)
@@ -131,6 +141,7 @@ class DbSource(Base):
     db_type = Column(String(40), nullable=False, index=True)
     connection_url = Column(String(600), nullable=False)
     query_text = Column(Text, nullable=False)
+    target_volume = Column(String(120), nullable=True, index=True)
     title_column = Column(String(120), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     chunk_size = Column(Integer, nullable=False, default=500)
@@ -138,6 +149,83 @@ class DbSource(Base):
     last_error = Column(String(500), nullable=True)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class SearchVolume(Base):
+    # 검색 볼륨(인덱스) 등록/활성 상태를 관리합니다.
+    __tablename__ = "search_volumes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    index_name = Column(String(120), nullable=False, unique=True, index=True)
+    alias_name = Column(String(120), nullable=True, unique=True, index=True)
+    shards = Column(Integer, nullable=False, default=1)
+    replicas = Column(Integer, nullable=False, default=1)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class SmbSyncHistory(Base):
+    # SMB 소스 동기화 실행 이력을 저장합니다.
+    __tablename__ = "smb_sync_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_id = Column(Integer, ForeignKey("smb_sources.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_name = Column(String(120), nullable=False, index=True)
+    status = Column(String(20), nullable=False, index=True)  # success / fail
+    indexed = Column(Integer, nullable=False, default=0)
+    skipped = Column(Integer, nullable=False, default=0)
+    failed = Column(Integer, nullable=False, default=0)
+    trigger_type = Column(String(20), nullable=False, default="manual", index=True)  # manual / scheduler / watcher
+    message = Column(String(500), nullable=True)
+    started_at = Column(DateTime, nullable=False, index=True)
+    finished_at = Column(DateTime, nullable=False, index=True)
+    duration_ms = Column(Integer, nullable=False, default=0)
+
+
+class IndexingHistory(Base):
+    # 파일 변경 감지 및 자동 색인 실행 이력을 저장합니다.
+    __tablename__ = "indexing_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_type = Column(String(20), nullable=False, index=True)  # smb / db / upload
+    source_name = Column(String(120), nullable=False, index=True)
+    file_name = Column(String(260), nullable=True)
+    action = Column(String(20), nullable=False, index=True)  # created / modified / deleted / sync
+    status = Column(String(20), nullable=False, index=True)  # success / fail / skipped
+    message = Column(String(500), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class NetworkEventLog(Base):
+    # 네트워크 단절/재연결 이벤트 이력을 저장합니다.
+    __tablename__ = "network_event_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_type = Column(String(20), nullable=False, index=True)  # smb / db / opensearch
+    source_name = Column(String(120), nullable=False, index=True)
+    event_type = Column(String(30), nullable=False, index=True)  # disconnect / reconnect_attempt / reconnect_success / reconnect_fail
+    detail = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class FileIndexState(Base):
+    # 파일별 색인 상태(해시/수정시간)를 저장하여 증분 색인을 지원합니다.
+    __tablename__ = "file_index_states"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_type = Column(String(20), nullable=False, index=True)   # smb / local
+    source_name = Column(String(120), nullable=False, index=True)
+    file_path = Column(String(600), nullable=False)
+    file_hash = Column(String(64), nullable=False)                 # SHA-256
+    file_size = Column(Integer, nullable=False, default=0)
+    last_modified = Column(DateTime, nullable=True)
+    indexed_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+    __table_args__ = (
+        # source_type + source_name + file_path 복합 유니크 인덱스
+        # create_all 시 자동 생성, Alembic에서는 별도 op로 생성
+    )
 
 
 class DictionaryEntry(Base):
@@ -151,6 +239,24 @@ class DictionaryEntry(Base):
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class ScheduleEntry(Base):
+    # 소스별 동기화 스케줄 관리 테이블
+    __tablename__ = "schedule_entries"
+    __table_args__ = (
+        UniqueConstraint("source_type", "source_id", name="uq_schedule_source"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_type = Column(String(20), nullable=False, index=True)  # smb / db
+    source_id = Column(Integer, nullable=False, index=True)
+    interval_minutes = Column(Integer, nullable=False, default=1440)  # 기본 24시간
+    next_run_at = Column(DateTime, nullable=True, index=True)
+    last_run_at = Column(DateTime, nullable=True)
+    is_enabled = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class CertificateStatus(Base):

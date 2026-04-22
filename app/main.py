@@ -31,7 +31,7 @@ from app.api.v1 import search, index, file, admin, system, auth
 from app.core.setup import create_index # 인덱스 초기화 함수
 from app.core.config import settings
 from app.core.database import init_database
-from app.services.system_service import IngestionSchedulerService, bootstrap_sources_from_env
+from app.services.system_service import FileWatcherService, IngestionSchedulerService, NetworkMonitorService, bootstrap_sources_from_env
 
 # --- [경로 설정] 프로젝트 루트 디렉터리 및 정적 파일 경로 확정 ---
 # os.path.abspath(__file__) -> .../app/main.py
@@ -120,6 +120,10 @@ async def lifespan(app: FastAPI):
         else:
             _startup_log("INFO", "SCHEDULER", "자동 색인 스케줄러 비활성화 상태")
 
+        # 네트워크 모니터 자동 시작 (DB/OpenSearch 연결 감시)
+        NetworkMonitorService.start(interval_seconds=30)
+        _startup_log("PASS", "NETWORK", "네트워크 모니터 시작 완료")
+
         _startup_log("PASS", "READY", "서비스 기동 준비 완료")
     except Exception as e:
         action = _startup_action_guide(e)
@@ -131,6 +135,8 @@ async def lifespan(app: FastAPI):
     yield  # 서버 가동 중 (API 요청 처리)
     
     # 2. 서버 종료 시
+    FileWatcherService.stop()
+    NetworkMonitorService.stop()
     IngestionSchedulerService.stop()
     _startup_log("INFO", "SHUTDOWN", "CleverSearch 종료")
 
@@ -171,21 +177,34 @@ if allowed_hosts:
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
+    # Swagger/ReDoc 경로는 cdn.jsdelivr.net 리소스가 필요하므로 별도 CSP 적용
+    _docs_paths = ("/docs", "/redoc", "/openapi.json")
     if settings.ENABLE_SECURITY_HEADERS:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-        response.headers.setdefault(
-            "Content-Security-Policy",
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
-            "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
-            "img-src 'self' data: blob:; "
-            "connect-src 'self' https:; "
-            "frame-ancestors 'none';",
-        )
+        if request.url.path in _docs_paths:
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "img-src 'self' data: blob:; "
+                "connect-src 'self' https:; "
+                "frame-ancestors 'none';",
+            )
+        else:
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
+                "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
+                "img-src 'self' data: blob:; "
+                "connect-src 'self' https:; "
+                "frame-ancestors 'none';",
+            )
         if request.url.scheme == "https":
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response

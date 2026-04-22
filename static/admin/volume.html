@@ -1,0 +1,204 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 볼륨 관리 탭
+# OpenSearch 인덱스(볼륨) 생성 관리
+#
+# Modified History
+# 현승준 / 2026-04-08 / 분리 생성
+########################################################
+-->
+
+<!-- 볼륨 관리 탭 -->
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+    <b>🧱 볼륨 관리란?</b> OpenSearch 인덱스(볼륨) 생성 및 초기 구성을 관리합니다.<br>
+    • <b>인덱스 이름</b>: 생성할 OpenSearch 인덱스명<br>
+    • <b>샤드</b>: 인덱스를 나누는 조각 수 (병렬 처리/확장성, 생성 후 변경 불가)<br>
+    • <b>Alias</b>: DB 색인에서 target_volume으로 참조하는 이름 (수정 가능)<br>
+    • <b>레플리카</b>: 각 샤드 복제본 수 (장애 대비/조회 가용성, 수정 가능)
+</div>
+
+<div class="grid md:grid-cols-3 gap-2 mb-3">
+    <input id="volumeName" placeholder="인덱스 이름 (index_name)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+    <input id="volumeShards" type="number" min="1" max="10" value="1" placeholder="shards" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+    <input id="volumeReplicas" type="number" min="0" max="5" value="1" placeholder="replicas" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+</div>
+
+<div class="flex gap-2 mb-3 flex-wrap">
+    <button onclick="createVolume()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">볼륨 생성</button>
+    <button onclick="loadVolumeList()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">목록 새로고침</button>
+    <button onclick="fillVolumePreset()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">권장값 채우기</button>
+</div>
+
+<div id="volumeNotice" class="text-sm mb-2"></div>
+
+<div id="volumeList" class="mb-3">
+    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">인덱스</th><th class="p-2">Alias</th><th class="p-2">샤드</th><th class="p-2">레플리카</th><th class="p-2">사용여부</th><th class="p-2">관리</th></tr></thead><tbody id="volumeBody"></tbody></table>
+</div>
+
+<script>
+let _volumeCache = [];
+let _editingVolumeId = null;
+
+function showVolumeNotice(message, isError = false) {
+    const el = document.getElementById("volumeNotice");
+    if (!el) return;
+    el.textContent = message || "";
+    el.className = `text-sm mb-2 ${isError ? "text-red-300" : "text-emerald-300"}`;
+}
+
+async function getVolumeUsageSummary(aliasName) {
+    const result = await apiFetch(`${SYS_API}/db/sources?active_only=false`, { method: "GET" });
+    const rows = Array.isArray(result.data) ? result.data : [];
+    const usingSources = rows.filter(r => (r.target_volume || "") === aliasName);
+    const activeUsing = usingSources.filter(r => r.is_active);
+    return {
+        total: usingSources.length,
+        active: activeUsing.length,
+        names: usingSources.map(r => r.name).slice(0, 5),
+    };
+}
+
+function loadVolumePanel() {
+    const el = document.getElementById("volumeName");
+    if (el && !el.value) {
+        el.value = "cleversearch-volume-ui";
+    }
+    loadVolumeList();
+}
+
+function fillVolumePreset() {
+    const nameEl = document.getElementById("volumeName");
+    const shardEl = document.getElementById("volumeShards");
+    const replicaEl = document.getElementById("volumeReplicas");
+    if (nameEl && !nameEl.value) nameEl.value = "cleversearch-volume-ui";
+    if (shardEl) shardEl.value = 1;
+    if (replicaEl) replicaEl.value = 1;
+}
+
+async function createVolume() {
+    const indexName = (document.getElementById("volumeName").value || "").trim() || "cleversearch-volume-ui";
+    const shards = Number(document.getElementById("volumeShards").value || 1);
+    const replicas = Number(document.getElementById("volumeReplicas").value || 1);
+
+    const payload = { index_name: indexName, shards, replicas };
+    const result = await apiFetch(`${SYS_API}/volume/create`, { method: "POST", body: JSON.stringify(payload) });
+
+    if (result.ok) {
+        alert("볼륨 생성 완료");
+        await loadVolumeList();
+    } else {
+        alert("볼륨 생성 실패: " + (result.data?.detail || JSON.stringify(result.data)));
+    }
+}
+
+async function loadVolumeList() {
+    const result = await apiFetch(`${SYS_API}/volume/list?active_only=false`, { method: "GET" });
+    const data = Array.isArray(result.data) ? result.data : [];
+    _volumeCache = data;
+    const body = document.getElementById("volumeBody");
+    if (!body) return;
+    if (data.length === 0) {
+        body.innerHTML = '<tr><td class="p-2 text-gray-500" colspan="7">등록된 볼륨이 없습니다.</td></tr>';
+        return;
+    }
+    const isViewer = loggedInRole === "viewer";
+    const isAdmin = loggedInRole === "admin";
+    body.innerHTML = data.map((r, idx) => {
+        if (_editingVolumeId === r.id) {
+            const saveBtn = (!isViewer && isAdmin) ? `<span class="text-emerald-400 cursor-pointer hover:underline mr-2" onclick="saveVolumeEdit(${idx})">저장</span>` : "";
+            const cancelBtn = (!isViewer && isAdmin) ? `<span class="text-gray-300 cursor-pointer hover:underline mr-2" onclick="cancelVolumeEdit()">취소</span>` : "";
+            return `<tr class="border-t border-gray-700 bg-gray-900/40"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.index_name)}</td><td class="p-2"><input id="editAliasName" value="${fmt(r.alias_name || r.index_name)}" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-full" /></td><td class="p-2">${fmt(r.shards)}</td><td class="p-2"><input id="editReplicas" type="number" min="0" max="5" value="${fmt(r.replicas)}" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" /></td><td class="p-2">${r.is_active?"✅ 사용":"❌ 미사용"}</td><td class="p-2">${saveBtn}${cancelBtn}</td></tr>`;
+        }
+
+        const toggleText = r.is_active ? "비활성화" : "활성화";
+        const editBtn = (!isViewer && isAdmin) ? `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="startVolumeEdit(${idx})">수정</span>` : '';
+        const toggleBtn = (!isViewer && isAdmin) ? `<span class="text-indigo-400 cursor-pointer hover:underline mr-2" onclick="toggleVolumeActive(${idx})">${toggleText}</span>` : '';
+        const delBtn = (!isViewer && isAdmin) ? `<span class="btn-del" onclick="deleteVolume(${idx})">삭제</span>` : '-';
+        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.index_name)}</td><td class="p-2">${fmt(r.alias_name || r.index_name)}</td><td class="p-2">${fmt(r.shards)}</td><td class="p-2">${fmt(r.replicas)}</td><td class="p-2">${r.is_active?"✅ 사용":"❌ 미사용"}</td><td class="p-2">${editBtn}${toggleBtn}${delBtn}</td></tr>`;
+    }).join("");
+}
+
+function startVolumeEdit(idx) {
+    const row = _volumeCache[idx];
+    if (!row) return;
+    _editingVolumeId = row.id;
+    showVolumeNotice("");
+    loadVolumeList();
+}
+
+function cancelVolumeEdit() {
+    _editingVolumeId = null;
+    loadVolumeList();
+}
+
+async function saveVolumeEdit(idx) {
+    const row = _volumeCache[idx];
+    if (!row) return;
+
+    const aliasName = (document.getElementById("editAliasName")?.value || "").trim();
+    const replicas = Number(document.getElementById("editReplicas")?.value || 0);
+
+    if (!aliasName) {
+        showVolumeNotice("alias는 필수입니다.", true);
+        return;
+    }
+    if (!Number.isInteger(replicas) || replicas < 0 || replicas > 5) {
+        showVolumeNotice("레플리카 값은 0~5 정수만 가능합니다.", true);
+        return;
+    }
+
+    const result = await apiFetch(`${SYS_API}/volume/${row.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ alias_name: aliasName, replicas })
+    });
+    if (result.ok) {
+        _editingVolumeId = null;
+        showVolumeNotice(`볼륨 ${row.index_name} 수정 완료`);
+        await loadVolumeList();
+    } else {
+        showVolumeNotice("수정 실패: " + (result.data?.detail || JSON.stringify(result.data)), true);
+    }
+}
+
+async function toggleVolumeActive(idx) {
+    const row = _volumeCache[idx];
+    if (!row) return;
+    const next = !row.is_active;
+
+    if (!next) {
+        const usage = await getVolumeUsageSummary(row.alias_name || row.index_name);
+        let msg = `볼륨 ${row.index_name}을 비활성화하시겠습니까?`;
+        msg += `\n- 연결된 DB 소스: ${usage.total}개`;
+        msg += `\n- 현재 활성 DB 소스: ${usage.active}개`;
+        if (usage.names.length > 0) {
+            msg += `\n- 예시 소스: ${usage.names.join(", ")}`;
+        }
+        msg += "\n\n비활성화 시 이 볼륨을 target_volume으로 가진 DB 색인은 실패합니다.";
+        if (!confirm(msg)) return;
+    }
+
+    const result = await apiFetch(`${SYS_API}/volume/${row.id}/active`, { method: "POST", body: JSON.stringify({ is_active: next }) });
+    if (result.ok) {
+        alert(`볼륨 ${row.index_name} ${next ? "활성화" : "비활성화"} 완료`);
+        await loadVolumeList();
+    } else {
+        alert("상태 변경 실패: " + (result.data?.detail || JSON.stringify(result.data)));
+    }
+}
+
+async function deleteVolume(idx) {
+    const row = _volumeCache[idx];
+    if (!row) return;
+    if (!confirm(`볼륨 ${row.index_name}을 삭제하시겠습니까?\n(연결된 DB 소스가 있으면 삭제되지 않습니다)`)) return;
+    const result = await apiFetch(`${SYS_API}/volume/${row.id}`, { method: "DELETE" });
+    if (result.ok) {
+        alert(`볼륨 ${row.index_name} 삭제 완료`);
+        await loadVolumeList();
+    } else {
+        alert("삭제 실패: " + (result.data?.detail || JSON.stringify(result.data)));
+    }
+}
+
+loadVolumePanel();
+</script>

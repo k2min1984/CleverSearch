@@ -1,0 +1,164 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 네트워크 탭
+# 네트워크 이벤트 이력 + 네트워크 모니터 제어
+#
+# Modified History
+# 현승준 / 2026-04-08 / 최초생성
+########################################################
+-->
+
+<!-- 네트워크 모니터 + 이벤트 이력 탭 -->
+<div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
+    <b>🌐 네트워크 모니터란?</b> SMB·DB·OpenSearch 연결 상태를 주기적으로 감시하고, 단절/복구 이벤트를 기록합니다.<br>
+    • <b>source_type</b>: smb, db, opensearch<br>
+    • <b>event_type</b>: disconnect(단절), reconnect_attempt(재연결 시도), reconnect_success(복구), reconnect_fail(재연결 실패)
+</div>
+
+<!-- 모니터 제어 -->
+<div class="bg-gray-800/50 border border-gray-700 rounded-lg p-3 mb-4">
+    <h3 class="text-sm font-semibold text-gray-300 mb-2">🔧 모니터 제어</h3>
+    <div class="flex flex-wrap gap-2 items-center">
+        <label class="text-sm text-gray-400">감시 간격(초):</label>
+        <input id="monInterval" type="number" min="10" max="600" value="30" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+        <button onclick="startMonitor()" class="admin-write px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
+        <button onclick="stopMonitor()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">중지</button>
+        <button onclick="loadMonitorStatus()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">상태 확인</button>
+    </div>
+    <div id="monStatusBox" class="mt-2 text-sm"></div>
+</div>
+
+<!-- 이벤트 필터 -->
+<div class="flex flex-wrap gap-2 mb-3 items-center">
+    <select id="netFilterType" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
+        <option value="">전체 소스</option>
+        <option value="smb">SMB</option>
+        <option value="db">DB</option>
+        <option value="opensearch">OpenSearch</option>
+    </select>
+    <select id="netFilterEvent" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
+        <option value="">전체 이벤트</option>
+        <option value="disconnect">단절</option>
+        <option value="reconnect_attempt">재연결 시도</option>
+        <option value="reconnect_success">복구 성공</option>
+        <option value="reconnect_fail">재연결 실패</option>
+    </select>
+    <input id="netFilterName" placeholder="소스명 (선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-40" />
+    <input id="netFilterLimit" type="number" placeholder="조회 수" value="100" min="1" max="1000" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+    <button onclick="loadNetworkEvents()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">조회</button>
+    <button onclick="toggleNetView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+</div>
+
+<!-- 이력 삭제 -->
+<div class="flex flex-wrap gap-2 mb-3 items-center">
+    <input id="netDeleteDays" type="number" placeholder="N일 이전 삭제" value="90" min="1" max="365" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-36" />
+    <button onclick="deleteNetworkEvents()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">이력 정리</button>
+    <span class="text-xs text-gray-500">※ 지정 일수 이전의 네트워크 이벤트를 일괄 삭제합니다</span>
+</div>
+
+<!-- 이벤트 리스트 -->
+<div id="netList">
+    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left">
+        <th class="p-2">ID</th><th class="p-2">소스타입</th><th class="p-2">소스명</th><th class="p-2">이벤트</th><th class="p-2">상세</th><th class="p-2">시간</th>
+    </tr></thead><tbody id="netBody"></tbody></table>
+</div>
+<pre id="netOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto hidden"></pre>
+
+<script>
+/* ── 모니터 제어 ── */
+async function startMonitor() {
+    const interval = document.getElementById("monInterval").value || 30;
+    const result = await apiFetch(`${SYS_API}/monitor/start?interval_seconds=${interval}`, { method: "POST" });
+    if (result.ok) { alert("네트워크 모니터 시작됨"); loadMonitorStatus(); }
+    else { alert("시작 실패: " + (result.data?.detail || JSON.stringify(result.data))); }
+}
+
+async function stopMonitor() {
+    const result = await apiFetch(`${SYS_API}/monitor/stop`, { method: "POST" });
+    if (result.ok) { alert("네트워크 모니터 중지됨"); loadMonitorStatus(); }
+    else { alert("중지 실패: " + (result.data?.detail || JSON.stringify(result.data))); }
+}
+
+async function loadMonitorStatus() {
+    const result = await apiFetch(`${SYS_API}/monitor/status`, { method: "GET" });
+    const box = document.getElementById("monStatusBox");
+    if (!box) return;
+    const d = result.data || result;
+    const running = d.running || d.is_running;
+    box.innerHTML = `<span class="${running ? 'text-green-400' : 'text-gray-500'}">${running ? '🟢 실행 중' : '⚪ 중지됨'}</span>`
+        + (d.interval_seconds ? ` | 간격: ${d.interval_seconds}초` : '')
+        + (d.last_check ? ` | 최근 체크: ${d.last_check}` : '');
+}
+
+/* ── 이벤트 이력 ── */
+async function loadNetworkEvents() {
+    const sourceType = document.getElementById("netFilterType").value;
+    const eventType = document.getElementById("netFilterEvent").value;
+    const sourceName = document.getElementById("netFilterName").value;
+    const limit = document.getElementById("netFilterLimit").value || 100;
+
+    let url = `${SYS_API}/network/events?limit=${limit}`;
+    if (sourceType) url += `&source_type=${sourceType}`;
+    if (eventType) url += `&event_type=${eventType}`;
+    if (sourceName) url += `&source_name=${encodeURIComponent(sourceName)}`;
+
+    const result = await apiFetch(url, { method: "GET" });
+    const data = Array.isArray(result.data) ? result.data : (result.data || []);
+    writeJson("netOutput", data);
+    populateNetList(data);
+}
+
+function populateNetList(data) {
+    const body = document.getElementById("netBody");
+    if (!body) return;
+    if (!Array.isArray(data) || data.length === 0) {
+        body.innerHTML = '<tr><td class="p-2 text-gray-500" colspan="6">이벤트가 없습니다.</td></tr>';
+        return;
+    }
+    const typeBadge = (t) => {
+        const colors = { smb: 'bg-blue-900/50 text-blue-300', db: 'bg-purple-900/50 text-purple-300', opensearch: 'bg-amber-900/50 text-amber-300' };
+        return `<span class="px-1.5 py-0.5 rounded text-xs ${colors[t]||'bg-gray-700 text-gray-300'}">${t}</span>`;
+    };
+    const eventBadge = (e) => {
+        const map = {
+            disconnect: '<span class="text-red-400">🔴 단절</span>',
+            reconnect_attempt: '<span class="text-yellow-400">🟡 재연결 시도</span>',
+            reconnect_success: '<span class="text-green-400">🟢 복구 성공</span>',
+            reconnect_fail: '<span class="text-red-300">🔻 재연결 실패</span>'
+        };
+        return map[e] || e;
+    };
+    body.innerHTML = data.map(r =>
+        `<tr class="border-t border-gray-700">
+            <td class="p-2">${fmt(r.id)}</td>
+            <td class="p-2">${typeBadge(r.source_type)}</td>
+            <td class="p-2">${fmt(r.source_name)}</td>
+            <td class="p-2">${eventBadge(r.event_type)}</td>
+            <td class="p-2 max-w-xs truncate" title="${(r.detail||'').replace(/"/g,'&quot;')}">${fmt(r.detail||"-")}</td>
+            <td class="p-2">${fmt(r.created_at)}</td>
+        </tr>`
+    ).join("");
+}
+
+async function deleteNetworkEvents() {
+    const days = document.getElementById("netDeleteDays").value || 90;
+    if (!confirm(`${days}일 이전의 네트워크 이벤트를 삭제합니다. 계속하시겠습니까?`)) return;
+    const result = await apiFetch(`${SYS_API}/network/events?before_days=${days}`, { method: "DELETE" });
+    writeJson("netOutput", result);
+    if (result.ok) {
+        alert("정리 완료: " + (result.data?.deleted_count || 0) + "건 삭제됨");
+        await loadNetworkEvents();
+    } else {
+        alert("삭제 실패: " + (result.data?.detail || JSON.stringify(result.data)));
+    }
+}
+
+function toggleNetView() {
+    document.getElementById("netOutput").classList.toggle("hidden");
+    document.getElementById("netList").classList.toggle("hidden");
+}
+
+loadMonitorStatus();
+loadNetworkEvents();
+</script>

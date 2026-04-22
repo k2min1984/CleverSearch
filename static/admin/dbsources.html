@@ -3,135 +3,402 @@
 # Description
 # CleverSearch 관리자 페이지 - DB 색인 탭
 # 외부 데이터베이스 텍스트 데이터 SQL 추출 및 색인
+# DBeaver 스타일 연결 설정 + 카드형 목록 UI
 #
 # Modified History
 # 현승준 / 2026-03-25 / 최초생성
+# 현승준 / 2026-04-08 / target_volume, 전체동기화, 동기화이력, 초기화 추가
+# 현승준 / 2026-04-15 / DBeaver 스타일 폼, 카드 레이아웃, 연결 테스트 추가
 ########################################################
 -->
 
 <!-- DB 색인 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
     <b><span aria-hidden="true">🗄️</span> DB 색인이란?</b> 외부 데이터베이스에 저장된 텍스트 데이터를 SQL 쿼리로 추출하여 OpenSearch에 색인합니다.<br>
-    • <b>db_type</b>: mysql, oracle, postgresql, sqlite 중 선택<br>
-    • <b>connection_url</b>: DB 접속 문자열 (예: mysql+pymysql://user:pass@host/db)<br>
-    • <b>query_text</b>: 색인할 데이터를 추출하는 SELECT 쿼리<br>
-    • <b>chunk_size</b>: 텍스트를 분할하는 단위 (기본 500자)
+    • DB 타입을 선택하면 드라이버에 맞는 접속 URL이 자동 생성됩니다.<br>
+    • <b>연결 테스트</b> 버튼으로 접속 가능 여부를 사전에 확인하세요.<br>
+    • 카드의 <b>이력</b> 버튼을 클릭하면 해당 DB 소스의 색인 이력을 확인할 수 있습니다.
 </div>
-<div class="grid md:grid-cols-2 gap-2 mb-2">
-    <input id="dbName" placeholder="이름 (name)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-    <input id="dbType" placeholder="DB 타입 (mysql|oracle|postgresql|sqlite)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-    <input id="dbConn" placeholder="접속 URL (connection_url)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-    <input id="dbTitleCol" placeholder="제목 컬럼 (title_column, 선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-    <input id="dbChunk" placeholder="청크 크기 (chunk_size)" value="500" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
-    <input id="dbSyncId" placeholder="동기화할 source_id" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm" />
+
+<!-- 액션 바 -->
+<div class="flex gap-2 flex-wrap mb-4">
+    <button id="dbAddBtn" type="button" class="admin-write px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-sm font-semibold">+ 신규 등록</button>
+    <div class="flex-1"></div>
+    <input id="dbSyncId" placeholder="동기화할 source_id" class="bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm w-40" />
+    <button id="dbSyncBtn" type="button" class="admin-write px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">소스ID 동기화</button>
+    <button id="dbSyncAllBtn" type="button" class="admin-write px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-sm">전체 동기화</button>
 </div>
-<textarea id="dbQuery" rows="3" placeholder="SELECT 쿼리 (query_text)" class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm mb-3"></textarea>
-<div class="flex gap-2 mb-3">
-    <button id="dbSaveBtn" type="button" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">소스 저장</button>
-    <button id="dbSyncBtn" type="button" class="admin-write px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">즉시 동기화</button>
-    <button id="dbToggleBtn" type="button" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
-    <span id="dbTotal" class="ml-auto text-sm font-bold text-slate-500"></span>
+
+<!-- 등록/수정 모달 -->
+<div id="dbModal" class="fixed inset-0 z-50 hidden">
+    <div id="dbModalOverlay" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+        <div class="relative bg-gray-800 border border-gray-600 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-700">
+                <h3 id="dbModalTitle" class="text-base font-bold text-gray-100">DB 소스 등록</h3>
+                <button id="dbModalCloseBtn" type="button" class="w-8 h-8 rounded-lg hover:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-white transition-colors" style="font-size:20px;line-height:1" aria-label="닫기"></button>
+            </div>
+            <div class="px-5 py-4 space-y-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">소스 이름 *</label>
+                        <input id="dbName" placeholder="예: 인사DB, 게시판DB" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">DB 타입 *</label>
+                        <select id="dbType" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                            <option value="">선택</option>
+                            <option value="postgresql">PostgreSQL</option>
+                            <option value="mysql">MySQL / MariaDB</option>
+                            <option value="oracle">Oracle</option>
+                            <option value="mssql">SQL Server (MSSQL)</option>
+                            <option value="sqlite">SQLite</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">호스트 *</label>
+                        <input id="dbHost" placeholder="예: 192.168.1.100" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">포트 *</label>
+                        <input id="dbPort" type="number" placeholder="자동" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">데이터베이스명 *</label>
+                        <input id="dbDatabase" placeholder="예: mydb" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">사용자명</label>
+                        <input id="dbUsername" placeholder="예: admin" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">비밀번호</label>
+                        <input id="dbPassword" type="password" placeholder="비밀번호" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">접속 URL (자동생성)</label>
+                        <input id="dbConn" placeholder="자동 생성 또는 직접 입력" class="w-full bg-gray-900 border border-gray-500 rounded px-2 py-1.5 text-sm text-yellow-300" />
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">대상 볼륨</label>
+                        <select id="dbTargetVolume" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">제목 컬럼</label>
+                        <input id="dbTitleCol" placeholder="title (선택)" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">청크 크기</label>
+                        <input id="dbChunk" type="number" placeholder="500" value="500" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">SELECT 쿼리 *</label>
+                    <textarea id="dbQuery" rows="3" placeholder="SELECT id, title, content FROM posts WHERE ..." class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm"></textarea>
+                </div>
+            </div>
+            <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-700">
+                <button id="dbTestConnBtn" type="button" class="admin-write px-3 py-1.5 rounded bg-teal-600 hover:bg-teal-500 text-sm">연결 테스트</button>
+                <button id="dbClearBtn" type="button" class="px-4 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-sm">초기화</button>
+                <button id="dbSaveBtn" type="button" class="admin-write px-5 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-sm font-semibold">저장</button>
+            </div>
+        </div>
+    </div>
 </div>
-<div id="dbList" class="hidden">
-    <table class="w-full text-sm"><thead><tr class="text-gray-400 text-left"><th class="p-2">ID</th><th class="p-2">이름</th><th class="p-2">DB타입</th><th class="p-2">활성</th><th class="p-2">최근 동기화</th><th class="p-2">관리</th></tr></thead><tbody id="dbBody"></tbody></table>
+
+<!-- 카드 목록 -->
+<div class="flex items-center mb-3">
+    <span id="dbTotal" class="text-sm font-bold text-slate-500"></span>
 </div>
+<div id="dbCardList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-3"></div>
 <div id="dbPagination" class="hidden mt-2 flex items-center justify-center gap-2 text-sm"></div>
-<pre id="dbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto"></pre>
+<pre id="dbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto hidden"></pre>
 
 <script>
-var dbRows = [];
-var dbPage = 1;
-var DB_PAGE_SIZE = 10;
+let dbRows = [];
+let dbPage = 1;
+const DB_PAGE_SIZE = 8;
+let _dbSourceCache = [];
+let _activeVolumes = [];
 
+/* DB 타입별 기본 포트/드라이버 매핑 */
+const DB_DRIVERS = {
+    postgresql: { port: 5432, driver: "postgresql+psycopg2", template: (u,p,h,pt,d) => `postgresql+psycopg2://${u}:${p}@${h}:${pt}/${d}` },
+    mysql:      { port: 3306, driver: "mysql+pymysql",       template: (u,p,h,pt,d) => `mysql+pymysql://${u}:${p}@${h}:${pt}/${d}?charset=utf8mb4` },
+    oracle:     { port: 1521, driver: "oracle+oracledb",     template: (u,p,h,pt,d) => `oracle+oracledb://${u}:${p}@${h}:${pt}/${d}` },
+    mssql:      { port: 1433, driver: "mssql+pymssql",       template: (u,p,h,pt,d) => `mssql+pymssql://${u}:${p}@${h}:${pt}/${d}` },
+    sqlite:     { port: 0,    driver: "sqlite",              template: (_u,_p,_h,_pt,d) => `sqlite:///${d}` },
+};
+
+function buildConnectionUrl() {
+    const t = document.getElementById("dbType").value;
+    const h = document.getElementById("dbHost").value.trim();
+    const pt = document.getElementById("dbPort").value.trim();
+    const d = document.getElementById("dbDatabase").value.trim();
+    const u = document.getElementById("dbUsername").value.trim();
+    const p = document.getElementById("dbPassword").value;
+    const cfg = DB_DRIVERS[t];
+    if (!cfg) return;
+    if (t === "sqlite") {
+        document.getElementById("dbConn").value = cfg.template("","","","",d);
+        return;
+    }
+    if (h && d) {
+        const port = pt || cfg.port;
+        document.getElementById("dbConn").value = cfg.template(u || "", p || "", h, port, d);
+    }
+}
+
+function onDbTypeChange() {
+    const t = document.getElementById("dbType").value;
+    const cfg = DB_DRIVERS[t];
+    if (cfg && !document.getElementById("dbPort").value) {
+        document.getElementById("dbPort").value = cfg.port || "";
+    }
+    buildConnectionUrl();
+}
+
+/* URL → 개별 필드 파싱 */
+function parseConnectionUrl(url) {
+    if (!url) return {};
+    const m = url.match(/^(\w[\w+.]*):\/\/(?:([^:]*):?([^@]*)@)?(?:([^:/]+)(?::(\d+))?)?\/?(.*)$/);
+    if (!m) return { connection_url: url };
+    const driver = m[1] || "";
+    let dbType = "";
+    if (driver.startsWith("postgresql")) dbType = "postgresql";
+    else if (driver.startsWith("mysql")) dbType = "mysql";
+    else if (driver.startsWith("oracle")) dbType = "oracle";
+    else if (driver.startsWith("mssql")) dbType = "mssql";
+    else if (driver.startsWith("sqlite")) dbType = "sqlite";
+    return { db_type: dbType, username: m[2]||"", password: m[3]||"", host: m[4]||"", port: m[5]||"", database: (m[6]||"").split("?")[0] };
+}
+
+/* 페이지네이션 */
 function changeDbPage(nextPage) {
     const totalPages = Math.max(1, Math.ceil(dbRows.length / DB_PAGE_SIZE));
     dbPage = Math.max(1, Math.min(totalPages, nextPage));
-    renderDbRows();
+    renderDbCards();
 }
-
 function renderDbPagination() {
     const pager = document.getElementById("dbPagination");
     if (!pager) return;
-    if (dbRows.length <= DB_PAGE_SIZE) {
-        pager.classList.add("hidden");
-        pager.innerHTML = "";
-        return;
-    }
+    if (dbRows.length <= DB_PAGE_SIZE) { pager.classList.add("hidden"); pager.innerHTML = ""; return; }
     const totalPages = Math.max(1, Math.ceil(dbRows.length / DB_PAGE_SIZE));
     pager.classList.remove("hidden");
     pager.innerHTML = `
-        <button type="button" class="js-db-page px-3 py-1 rounded border border-gray-500 text-sm ${dbPage === 1 ? "opacity-40 cursor-not-allowed" : ""}" ${dbPage === 1 ? "disabled" : ""} data-page="${dbPage - 1}">이전</button>
+        <button type="button" class="js-db-page px-3 py-1 rounded border border-gray-500 text-sm ${dbPage===1?"opacity-40 cursor-not-allowed":""}" ${dbPage===1?"disabled":""} data-page="${dbPage-1}">이전</button>
         <span class="text-slate-500 font-semibold">${dbPage} / ${totalPages}</span>
-        <button type="button" class="js-db-page px-3 py-1 rounded border border-gray-500 text-sm ${dbPage === totalPages ? "opacity-40 cursor-not-allowed" : ""}" ${dbPage === totalPages ? "disabled" : ""} data-page="${dbPage + 1}">다음</button>
+        <button type="button" class="js-db-page px-3 py-1 rounded border border-gray-500 text-sm ${dbPage===totalPages?"opacity-40 cursor-not-allowed":""}" ${dbPage===totalPages?"disabled":""} data-page="${dbPage+1}">다음</button>
     `;
 }
 
-function renderDbRows() {
-    const body = document.getElementById("dbBody");
-    if (!body) return;
+/* 카드 렌더링 */
+function renderDbCards() {
+    const container = document.getElementById("dbCardList");
+    if (!container) return;
     const isViewer = loggedInRole === "viewer";
     const totalPages = Math.max(1, Math.ceil(dbRows.length / DB_PAGE_SIZE));
     dbPage = Math.max(1, Math.min(totalPages, dbPage));
     const start = (dbPage - 1) * DB_PAGE_SIZE;
     const pageRows = dbRows.slice(start, start + DB_PAGE_SIZE);
-    body.innerHTML = pageRows.map(r => {
+
+    if (pageRows.length === 0) {
+        container.innerHTML = '<div class="col-span-full text-center text-gray-500 py-8">등록된 DB 소스가 없습니다.</div>';
+        renderDbPagination();
+        return;
+    }
+
+    const typeIcon = (t) => ({ postgresql:"🐘", mysql:"🐬", oracle:"🔶", mssql:"🟦", sqlite:"📄" }[t] || "🗄️");
+    const typeColor = (t) => ({ postgresql:"border-blue-500", mysql:"border-orange-500", oracle:"border-red-500", mssql:"border-sky-500", sqlite:"border-gray-400" }[t] || "border-gray-500");
+    const typeBgColor = (t) => ({ postgresql:"bg-blue-700", mysql:"bg-orange-700", oracle:"bg-red-700", mssql:"bg-sky-700", sqlite:"bg-gray-700" }[t] || "bg-gray-700");
+    const typeGradient = (t) => ({ postgresql:"bg-gradient-to-br from-blue-900/60 to-gray-900", mysql:"bg-gradient-to-br from-orange-900/50 to-gray-900", oracle:"bg-gradient-to-br from-red-900/50 to-gray-900", mssql:"bg-gradient-to-br from-sky-900/50 to-gray-900", sqlite:"bg-gradient-to-br from-gray-800 to-gray-900" }[t] || "bg-gray-900");
+    const dbTypeName = (t) => ({postgresql:"PostgreSQL",mysql:"MySQL",oracle:"Oracle",mssql:"MSSQL",sqlite:"SQLite"}[t]) || t;
+
+    container.innerHTML = pageRows.map((r, i) => {
+        const globalIdx = start + i;
         const safeId = Number.isFinite(Number(r.id)) ? Number(r.id) : "";
-        const name = encodeURIComponent(String(r.name || ""));
-        const dbType = encodeURIComponent(String(r.db_type || ""));
-        const editBtn = isViewer ? '' : `<button type="button" class="text-blue-400 cursor-pointer hover:underline mr-2 btn-db-edit" data-id="${safeId}" data-name="${name}" data-db-type="${dbType}">수정</button>`;
-        const delBtn = isViewer ? '' : `<button type="button" class="btn-del btn-db-delete" data-id="${safeId}">삭제</button>`;
-        return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.name)}</td><td class="p-2">${fmt(r.db_type)}</td><td class="p-2">${r.is_active?'<span aria-hidden="true">✅</span>':'<span aria-hidden="true">❌</span>'}</td><td class="p-2">${fmt(r.last_synced_at||"-")}</td><td class="p-2">${editBtn}${delBtn}</td></tr>`;
+        const active = r.is_active
+            ? '<span class="inline-flex items-center gap-1.5 text-xs font-bold text-green-600"><svg class="w-3 h-3" viewBox="0 0 12 12"><circle cx="6" cy="6" r="6" fill="currentColor"/></svg>활성</span>'
+            : '<span class="inline-flex items-center gap-1.5 text-xs font-bold text-red-500"><svg class="w-3 h-3" viewBox="0 0 12 12"><circle cx="6" cy="6" r="6" fill="currentColor"/></svg>비활성</span>';
+        const toggleSwitch = isViewer ? active : `
+            <label class="inline-flex items-center gap-1.5 cursor-pointer select-none" title="${r.is_active ? '클릭하면 비활성(스케줄러 제외)' : '클릭하면 활성(스케줄러 등록)'}">
+                <div class="relative">
+                    <input type="checkbox" class="sr-only peer db-toggle-active" data-id="${safeId}" ${r.is_active ? 'checked' : ''} />
+                    <div class="w-9 h-5 bg-red-400 rounded-full peer-checked:bg-green-500 transition-colors"></div>
+                    <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow peer-checked:translate-x-4 transition-transform"></div>
+                </div>
+                <span class="text-xs font-bold ${r.is_active ? 'text-green-600' : 'text-red-500'}">${r.is_active ? '활성' : '비활성'}</span>
+            </label>`;
+        const lastSync = r.last_synced_at ? fmt(r.last_synced_at) : null;
+        const errorBadge = r.last_error ? `<div class="mt-3 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-600" title="${(r.last_error||'').replace(/"/g,'&quot;')}"><span class="font-bold">⚠ 오류:</span> ${fmt(r.last_error)}</div>` : '';
+        const volume = fmt(r.target_volume || "cleversearch-docs");
+
+        const deleteBtn = isViewer ? '' : `<button type="button" class="absolute top-3 right-3 w-7 h-7 rounded-full bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-500 flex items-center justify-center transition-colors btn-db-delete" data-id="${safeId}" title="삭제">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>`;
+
+        const btns = isViewer ? '' : `
+            <div class="grid grid-cols-4 gap-2 mt-auto pt-4">
+                <button type="button" class="text-xs font-bold py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white btn-db-test" data-id="${safeId}">접속 테스트</button>
+                <button type="button" class="text-xs font-bold py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white btn-db-sync" data-id="${safeId}">동기화</button>
+                <button type="button" class="text-xs font-bold py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white btn-db-edit" data-id="${safeId}" data-idx="${globalIdx}">수정</button>
+                <button type="button" class="text-xs font-bold py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white btn-db-hist" data-idx="${globalIdx}">이력</button>
+            </div>`;
+
+        return `<div class="relative bg-white rounded-xl p-5 hover:shadow-xl transition-all shadow-md flex flex-col min-h-[260px]">
+            ${deleteBtn}
+            <!-- 상단: 큰 아이콘 + 이름 + 배지 -->
+            <div class="flex items-center gap-3 mb-4">
+                <div class="text-5xl leading-none shrink-0">${typeIcon(r.db_type)}</div>
+                <div class="flex-1 min-w-0">
+                    <div class="font-bold text-lg text-gray-900 truncate">${fmt(r.name)}</div>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span class="px-2.5 py-1 rounded-full text-xs font-bold ${typeBgColor(r.db_type)} text-white tracking-wide">${dbTypeName(r.db_type)}</span>
+                    </div>
+                </div>
+                <div class="flex flex-col items-end gap-1 shrink-0 mr-10">
+                    ${toggleSwitch}
+                    <span class="text-xs text-gray-400 font-mono">ID: ${safeId}</span>
+                </div>
+            </div>
+            <!-- 정보 그리드 -->
+            <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm mb-3">
+                <div>
+                    <div class="text-gray-400 text-xs mb-0.5 font-medium">대상 볼륨</div>
+                    <div class="text-gray-800 font-semibold truncate" title="${volume}">${volume}</div>
+                </div>
+                <div>
+                    <div class="text-gray-400 text-xs mb-0.5 font-medium">청크 크기</div>
+                    <div class="text-gray-800 font-semibold">${r.chunk_size || 500}</div>
+                </div>
+                <div>
+                    <div class="text-gray-400 text-xs mb-0.5 font-medium">제목 컨럼</div>
+                    <div class="text-gray-800 font-semibold">${r.title_column ? fmt(r.title_column) : '<span class="text-gray-300">기본(title)</span>'}</div>
+                </div>
+                <div>
+                    <div class="text-gray-400 text-xs mb-0.5 font-medium">최근 동기화</div>
+                    <div class="${lastSync ? 'text-gray-800' : 'text-amber-500'} font-semibold">${lastSync || "미동기화"}</div>
+                </div>
+            </div>
+            ${errorBadge}
+            ${btns}
+            <div id="dbHistPanel-${globalIdx}" class="hidden mt-3 pt-3 border-t border-gray-200">
+                <div class="text-sm text-gray-800 mb-2 font-bold">📋 색인 이력</div>
+                <div class="bg-gray-50 rounded-lg border border-gray-200 overflow-auto max-h-48">
+                    <table class="w-full text-sm"><thead><tr class="bg-gray-100 text-gray-600 text-left sticky top-0"><th class="px-2 py-1.5">시간</th><th class="px-2 py-1.5">파일/레코드</th><th class="px-2 py-1.5">액션</th><th class="px-2 py-1.5">상태</th><th class="px-2 py-1.5">메시지</th></tr></thead><tbody id="dbHistBody-${globalIdx}"><tr><td class="px-2 py-1.5 text-gray-400" colspan="5">불러오는 중...</td></tr></tbody></table>
+                </div>
+            </div>
+        </div>`;
     }).join("");
     renderDbPagination();
 }
 
+/* 이벤트 바인딩 */
 function bindDbActions() {
     const pager = document.getElementById("dbPagination");
     if (pager && pager.dataset.bound !== "1") {
         pager.dataset.bound = "1";
-        pager.addEventListener("click", (event) => {
-            const pageBtn = event.target.closest(".js-db-page");
-            if (!pageBtn) return;
-            changeDbPage(Number(pageBtn.dataset.page || 1));
+        pager.addEventListener("click", (e) => {
+            const btn = e.target.closest(".js-db-page");
+            if (btn) changeDbPage(Number(btn.dataset.page || 1));
         });
     }
 
-    const body = document.getElementById("dbBody");
-    if (!body || body.dataset.actionsBound === "1") return;
-    body.dataset.actionsBound = "1";
-    body.addEventListener("click", (event) => {
-        const editBtn = event.target.closest(".btn-db-edit");
-        if (editBtn) {
-            const id = Number(editBtn.dataset.id || 0);
-            if (!Number.isFinite(id) || id <= 0) {
-                alert("잘못된 DB 소스 ID입니다.");
-                return;
-            }
-            editDbSource(
-                id,
-                decodeURIComponent(editBtn.dataset.name || ""),
-                decodeURIComponent(editBtn.dataset.dbType || "")
-            );
+    const container = document.getElementById("dbCardList");
+    if (!container || container.dataset.actionsBound === "1") return;
+    container.dataset.actionsBound = "1";
+
+    /* 활성/비활성 토글 */
+    container.addEventListener("change", async (e) => {
+        const toggle = e.target.closest(".db-toggle-active");
+        if (!toggle) return;
+        const id = Number(toggle.dataset.id || 0);
+        if (!Number.isFinite(id) || id <= 0) return;
+        const newActive = toggle.checked;
+        const result = await apiFetch(`${SYS_API}/db/sources/${id}/active?is_active=${newActive}`, { method: "PATCH" });
+        if (result.ok && result.data?.status === "success") {
+            await loadDbSources();
+        } else {
+            toggle.checked = !newActive;
+            alert("상태 변경 실패: " + (result.data?.message || result.data?.detail || ""));
+        }
+    });
+
+    container.addEventListener("click", (e) => {
+        const histBtn = e.target.closest(".btn-db-hist");
+        if (histBtn) { toggleDbHistory(Number(histBtn.dataset.idx)); return; }
+
+        const testBtn = e.target.closest(".btn-db-test");
+        if (testBtn) {
+            const id = Number(testBtn.dataset.id || 0);
+            if (Number.isFinite(id) && id > 0) testDbConnection(id);
             return;
         }
-        const delBtn = event.target.closest(".btn-db-delete");
+
+        const syncBtn = e.target.closest(".btn-db-sync");
+        if (syncBtn) {
+            const id = Number(syncBtn.dataset.id || 0);
+            if (Number.isFinite(id) && id > 0) {
+                document.getElementById("dbSyncId").value = id;
+                syncDbSourceById();
+            }
+            return;
+        }
+
+        const editBtn = e.target.closest(".btn-db-edit");
+        if (editBtn) {
+            const idx = Number(editBtn.dataset.idx);
+            loadDbSourceDetail(_dbSourceCache[idx]?.id);
+            return;
+        }
+
+        const delBtn = e.target.closest(".btn-db-delete");
         if (delBtn) {
             const id = Number(delBtn.dataset.id || 0);
-            if (!Number.isFinite(id) || id <= 0) {
-                alert("잘못된 DB 소스 ID입니다.");
-                return;
-            }
-            deleteDbSource(id);
+            if (Number.isFinite(id) && id > 0) deleteDbSource(id);
         }
     });
 }
 
+/* 볼륨 로드 */
+async function loadActiveVolumes() {
+    const sel = document.getElementById("dbTargetVolume");
+    if (!sel) return;
+    const result = await apiFetch(`${SYS_API}/volume/list?active_only=true`, { method: "GET" });
+    const rows = Array.isArray(result.data) ? result.data : [];
+    _activeVolumes = rows;
+    sel.innerHTML = [
+        '<option value="">기본 볼륨(cleversearch-docs)</option>',
+        ...rows.map(v => `<option value="${v.alias_name || v.index_name}">${v.alias_name || v.index_name} (${v.index_name})</option>`),
+    ].join("");
+}
+
+/* CRUD */
 async function upsertDbSource() {
+    const name = (document.getElementById("dbName").value || "").trim();
+    const dbType = (document.getElementById("dbType").value || "").trim();
+    const connectionUrl = (document.getElementById("dbConn").value || "").trim();
+    const queryText = (document.getElementById("dbQuery").value || "").trim();
+
+    if (!name || !dbType || !connectionUrl || !queryText) {
+        alert("이름, DB 타입, 접속 URL, SELECT 쿼리는 필수 입력입니다.");
+        return;
+    }
+
     const payload = {
-        name: document.getElementById("dbName").value,
-        db_type: document.getElementById("dbType").value,
-        connection_url: document.getElementById("dbConn").value,
-        query_text: document.getElementById("dbQuery").value,
+        name,
+        db_type: dbType,
+        connection_url: connectionUrl,
+        query_text: queryText,
+        target_volume: document.getElementById("dbTargetVolume").value || null,
         title_column: document.getElementById("dbTitleCol").value || null,
         chunk_size: Number(document.getElementById("dbChunk").value || 500),
         is_active: true
@@ -139,41 +406,114 @@ async function upsertDbSource() {
     const result = await apiFetch(`${SYS_API}/db/sources`, { method: "POST", body: JSON.stringify(payload) });
     writeJson("dbOutput", result);
     if (result.ok) {
+        const newId = result.data?.id;
+        if (newId) document.getElementById("dbSyncId").value = newId;
+        alert("DB 소스 저장 완료");
         await loadDbSources();
+    } else {
+        alert("DB 소스 저장 실패: " + (result.data?.detail || JSON.stringify(result.data)));
     }
 }
 
 async function loadDbSources() {
+    await loadActiveVolumes();
     const result = await apiFetch(`${SYS_API}/db/sources?active_only=false`, { method: "GET" });
     writeJson("dbOutput", result.data);
     populateDbList(result.data);
 }
 
-async function syncDbSource() {
+async function syncDbSourceById() {
     const sourceId = document.getElementById("dbSyncId").value;
+    if (!sourceId) { alert("source_id를 입력하세요."); return; }
     const result = await apiFetch(`${SYS_API}/db/sources/${sourceId}/sync?max_rows=1000`, { method: "POST" });
     writeJson("dbOutput", result);
     if (result.ok) {
+        alert("DB 동기화 완료");
         await loadDbSources();
+    } else {
+        alert("DB 동기화 실패: " + (result.data?.detail || JSON.stringify(result.data)));
     }
 }
 
-function toggleDbView() {
-    document.getElementById("dbOutput").classList.toggle("hidden");
-    document.getElementById("dbList").classList.toggle("hidden");
+async function syncAllDbSources() {
+    const result = await apiFetch(`${SYS_API}/db/sources/sync-all?max_rows_per_source=1000`, { method: "POST" });
+    writeJson("dbOutput", result);
+    if (result.ok) {
+        alert(`DB 전체 동기화 완료 (성공 ${result.data?.success_sources || 0}/${result.data?.total_sources || 0})`);
+        await loadDbSources();
+    } else {
+        alert("DB 전체 동기화 실패: " + (result.data?.detail || JSON.stringify(result.data)));
+    }
+}
+
+/* 연결 테스트 (폼 기반) */
+async function testDbConnectionFromForm() {
+    const connectionUrl = (document.getElementById("dbConn").value || "").trim();
+    if (!connectionUrl) { alert("접속 URL을 먼저 입력하세요."); return; }
+    const btn = document.getElementById("dbTestConnBtn");
+    const origText = btn.textContent;
+    btn.textContent = "테스트 중...";
+    btn.disabled = true;
+    try {
+        const result = await apiFetch(`${SYS_API}/db/test-connection`, {
+            method: "POST",
+            body: JSON.stringify({ connection_url: connectionUrl }),
+        });
+        if (result.ok && result.data?.status === "success") {
+            alert("✅ DB 연결 성공: " + (result.data?.message || "접속 가능"));
+        } else {
+            alert("❌ DB 연결 실패: " + (result.data?.message || result.data?.detail || "접속 불가"));
+        }
+    } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
+    }
+}
+
+/* 연결 테스트 (소스 ID 기반, 카드 버튼용) */
+async function testDbConnection(sourceId) {
+    const result = await apiFetch(`${SYS_API}/db/sources/${sourceId}/test`, { method: "POST" });
+    if (result.ok && result.data?.status === "success") {
+        alert("✅ DB 연결 성공: " + (result.data?.message || ""));
+    } else {
+        alert("❌ DB 연결 실패: " + (result.data?.message || result.data?.detail || "접속 불가"));
+    }
 }
 
 function populateDbList(data) {
     if (!Array.isArray(data)) {
         document.getElementById("dbTotal").textContent = "총 0건";
         dbRows = [];
-        renderDbRows();
+        _dbSourceCache = [];
+        renderDbCards();
         return;
     }
     document.getElementById("dbTotal").textContent = `총 ${data.length}건`;
     dbRows = data;
+    _dbSourceCache = data;
     dbPage = 1;
-    renderDbRows();
+    renderDbCards();
+}
+
+async function toggleDbHistory(idx) {
+    const panel = document.getElementById(`dbHistPanel-${idx}`);
+    const body = document.getElementById(`dbHistBody-${idx}`);
+    if (!panel || !body) return;
+    panel.classList.toggle("hidden");
+    if (panel.classList.contains("hidden")) return;
+
+    const src = _dbSourceCache[idx];
+    if (!src) return;
+    const url = `${SYS_API}/indexing/history?source_type=db&source_name=${encodeURIComponent(src.name)}&limit=30`;
+    const result = await apiFetch(url, { method: "GET" });
+    const data = Array.isArray(result.data) ? result.data : [];
+    if (data.length === 0) {
+        body.innerHTML = '<tr><td class="px-2 py-1.5 text-gray-400" colspan="5">이력이 없습니다.</td></tr>';
+        return;
+    }
+    body.innerHTML = data.map(r =>
+        `<tr class="border-t border-gray-200 hover:bg-gray-50"><td class="px-2 py-1.5 text-gray-600">${fmt(r.created_at)}</td><td class="px-2 py-1.5 text-gray-800">${fmt(r.file_name||"-")}</td><td class="px-2 py-1.5 text-gray-600">${fmt(r.action||"-")}</td><td class="px-2 py-1.5">${r.status==="success"?'<span class="text-green-600 font-semibold">✅ 성공</span>':'<span class="text-red-500 font-semibold">❌ 실패</span>'}</td><td class="px-2 py-1.5 text-gray-600 truncate max-w-xs" title="${(r.message||'').replace(/"/g,'&quot;')}">${fmt(r.message||"-")}</td></tr>`
+    ).join("");
 }
 
 async function deleteDbSource(sourceId) {
@@ -182,15 +522,70 @@ async function deleteDbSource(sourceId) {
     if (result.ok) { alert("삭제 완료"); loadDbSources(); }
     else { alert("삭제 실패: " + (result.data?.detail || JSON.stringify(result.data))); }
 }
-function editDbSource(id, name, dbType) {
-    document.getElementById("dbName").value = name;
-    document.getElementById("dbType").value = dbType;
-    alert("입력란에 데이터를 불러왔습니다. 수정 후 [소스 저장]을 클릭하세요.");
+
+function openDbModal(isEdit) {
+    const modal = document.getElementById("dbModal");
+    document.getElementById("dbModalTitle").textContent = isEdit ? "DB 소스 수정" : "DB 소스 등록";
+    modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+}
+
+function closeDbModal() {
+    document.getElementById("dbModal").classList.add("hidden");
+    document.body.style.overflow = "";
+}
+
+async function loadDbSourceDetail(sourceId) {
+    if (!sourceId) return;
+    const result = await apiFetch(`${SYS_API}/db/sources/${sourceId}`, { method: "GET" });
+    if (!result.ok) {
+        alert("DB 소스 상세 조회 실패: " + (result.data?.detail || JSON.stringify(result.data)));
+        return;
+    }
+    const r = result.data || {};
+    document.getElementById("dbSyncId").value = r.id || "";
+    document.getElementById("dbName").value = r.name || "";
+    document.getElementById("dbTargetVolume").value = r.target_volume || "";
+    document.getElementById("dbTitleCol").value = r.title_column || "";
+    document.getElementById("dbChunk").value = r.chunk_size || 500;
+    document.getElementById("dbQuery").value = r.query_text || "";
+    document.getElementById("dbConn").value = r.connection_url || "";
+
+    const parsed = parseConnectionUrl(r.connection_url || "");
+    if (parsed.db_type) document.getElementById("dbType").value = parsed.db_type;
+    document.getElementById("dbHost").value = parsed.host || "";
+    document.getElementById("dbPort").value = parsed.port || "";
+    document.getElementById("dbDatabase").value = parsed.database || "";
+    document.getElementById("dbUsername").value = parsed.username || "";
+    document.getElementById("dbPassword").value = parsed.password || "";
+
+    openDbModal(true);
+}
+
+function clearDbForm() {
+    ["dbName","dbHost","dbPort","dbDatabase","dbUsername","dbPassword","dbConn","dbTitleCol","dbQuery"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+    });
+    document.getElementById("dbType").value = "";
+    document.getElementById("dbTargetVolume").value = "";
+    document.getElementById("dbChunk").value = 500;
 }
 
 loadDbSources();
 bindDbActions();
-document.getElementById("dbSaveBtn")?.addEventListener("click", upsertDbSource);
-document.getElementById("dbSyncBtn")?.addEventListener("click", syncDbSource);
-document.getElementById("dbToggleBtn")?.addEventListener("click", toggleDbView);
+document.getElementById("dbAddBtn")?.addEventListener("click", () => { clearDbForm(); openDbModal(false); });
+const _dbCloseBtn = document.getElementById("dbModalCloseBtn");
+if (_dbCloseBtn) { _dbCloseBtn.textContent = "\u2715"; _dbCloseBtn.addEventListener("click", closeDbModal); }
+document.getElementById("dbModalOverlay")?.addEventListener("click", closeDbModal);
+document.getElementById("dbSaveBtn")?.addEventListener("click", async () => { await upsertDbSource(); closeDbModal(); });
+document.getElementById("dbSyncBtn")?.addEventListener("click", syncDbSourceById);
+document.getElementById("dbSyncAllBtn")?.addEventListener("click", syncAllDbSources);
+document.getElementById("dbClearBtn")?.addEventListener("click", clearDbForm);
+document.getElementById("dbTestConnBtn")?.addEventListener("click", testDbConnectionFromForm);
+document.getElementById("dbType")?.addEventListener("change", onDbTypeChange);
+["dbHost","dbPort","dbDatabase","dbUsername","dbPassword"].forEach(id => {
+    document.getElementById(id)?.addEventListener("input", buildConnectionUrl);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("dbModal").classList.contains("hidden")) closeDbModal(); });
 </script>

@@ -36,7 +36,9 @@ class DocumentUtils:
         # JSON 비허용 제어문자 제거 (\t, \n, \r 제외)
         text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', ' ', text)
         # 허용 문자: 한글, 영문, 숫자, 공백, 필수 문장부호
-        allowed = re.compile(r'[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9\s.,!?;:()\"\'\-\[\]\<\>\t\n\r]')
+        # - '+' 보존: ISO8601 timezone(+00:00) 파싱 보장
+        # - '_' 보존: 파일명/필드값 훼손 방지
+        allowed = re.compile(r'[가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9\s.,!?;:()\"\'\-\[\]\<\>\+_\t\n\r]')
         result = "".join([ch for ch in text if allowed.match(ch)])
         return re.sub(r' +', ' ', result).strip()
 
@@ -108,7 +110,8 @@ class DocumentUtils:
         if isinstance(value, dict):
             cleaned = {}
             for k, v in value.items():
-                clean_key = DocumentUtils.sanitize_text(str(k))
+                # 매핑 스키마 필드명(all_text, source_label 등)은 변경하면 검색이 깨지므로 키는 보존한다.
+                clean_key = str(k)
                 cleaned[clean_key] = DocumentUtils.sanitize_for_opensearch(v)
             return cleaned
 
