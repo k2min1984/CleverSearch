@@ -33,6 +33,20 @@ async def search(req: SearchRequest):
     # 1. 검색어 방역 (업로드 시와 동일한 규칙 적용하여 검색 정확도 일치)
     if req.query:
         req.query = DocumentUtils.sanitize_text(req.query)
+
+    # 빈 문자열/공백-only 검색은 0건으로 즉시 반환 (최근검색어 오염 방지)
+    if not (req.query or "").strip():
+        return {
+            "total": 0,
+            "items": [],
+            "category_stats": {},
+            "extension_stats": {},
+            "page": req.page if getattr(req, "page", 1) else 1,
+            "size": req.size if getattr(req, "size", 10) else 10,
+            "original_query": "",
+            "corrected_query": "",
+            "is_typo_corrected": False,
+        }
     
     # 2. 비즈니스 로직 위임 (SearchService에서 가중치 및 필터 쿼리 생성)
     return await SearchService.execute_search(req)

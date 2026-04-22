@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>대국민 업로드 고도화 - 회의용 화면 골격</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --line: #d7deea;
+      --ink: #1d2532;
+      --muted: #596579;
+      --accent: #0f6db5;
+      --ok: #0f8a50;
+      --warn: #b56a0f;
+      --danger: #b12121;
+      --shadow: 0 10px 24px rgba(27, 39, 62, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 20% -10%, #d7ebff 0%, transparent 38%),
+        radial-gradient(circle at 90% 0%, #e9f8ec 0%, transparent 30%),
+        var(--bg);
+      line-height: 1.45;
+    }
+
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 28px 16px 42px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #0f6db5, #1f8a6a);
+      color: #fff;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .hero p {
+      margin: 8px 0 0;
+      opacity: 0.94;
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(12, 1fr);
+      margin-top: 14px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .col-12 { grid-column: span 12; }
+    .col-8 { grid-column: span 8; }
+    .col-6 { grid-column: span 6; }
+    .col-4 { grid-column: span 4; }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 17px;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--accent);
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+    }
+
+    .pill {
+      display: inline-block;
+      margin-right: 6px;
+      margin-bottom: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: #f7faff;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #fff;
+      margin-right: 6px;
+    }
+
+    .ok { background: var(--ok); }
+    .warn { background: var(--warn); }
+    .danger { background: var(--danger); }
+
+    .mock {
+      border: 1px dashed #a8b6cb;
+      border-radius: 10px;
+      padding: 12px;
+      background: #fbfdff;
+    }
+
+    .bar {
+      height: 10px;
+      border-radius: 999px;
+      background: #e8eef8;
+      overflow: hidden;
+    }
+
+    .bar > span {
+      display: block;
+      width: 58%;
+      height: 100%;
+      background: linear-gradient(90deg, #1380cf, #0f8a50);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f3f7ff;
+    }
+
+    .footer-note {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 920px) {
+      .col-8, .col-6, .col-4 { grid-column: span 12; }
+      .hero h1 { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>대국민 업로드 고도화 방향 - 회의용 빈껍데기 화면</h1>
+      <p>문서의 정책/흐름을 실제 구현 전 UI 구조로 시각화한 데모. 버튼은 동작하지 않음.</p>
+    </section>
+
+    <section class="grid">
+      <article class="card col-12">
+        <h2>1) 핵심 결론</h2>
+        <div class="mock">
+          현재 실시간 처리 -> 접수/처리 분리형 비동기 업로드 아키텍처로 전환
+        </div>
+      </article>
+
+      <article class="card col-6">
+        <h2>2) 현재 구조</h2>
+        <ul>
+          <li>API 서버가 업로드 + 검증 + 추출 + 색인을 동기 처리</li>
+          <li>업로드 중 화면 잠금 발생</li>
+          <li>중단 시 재시작 비용 큼</li>
+        </ul>
+      </article>
+
+      <article class="card col-6">
+        <h2>3) 목표 구조</h2>
+        <ul>
+          <li>빠른 접수 후 작업번호 즉시 반환</li>
+          <li>백그라운드 워커 비동기 처리</li>
+          <li>상단 팝업 + 레이어 팝업으로 상태/취소 제공</li>
+        </ul>
+      </article>
+
+      <article class="card col-8">
+        <h2>4) 업로드 진행 레이어 (Mock)</h2>
+        <div class="mock">
+          <h3>업로드 작업 #JOB-20260416-001</h3>
+          <div>
+            <span class="pill">확장</span>
+            <span class="pill">최소화</span>
+            <span class="pill">복원</span>
+          </div>
+          <p>전체 진행률</p>
+          <div class="bar"><span></span></div>
+          <p>
+            <span class="status ok">완료 12</span>
+            <span class="status warn">처리중 3</span>
+            <span class="status danger">실패 1</span>
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>파일명</th>
+                <th>상태</th>
+                <th>진행률</th>
+                <th>동작</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>보고서_최종.pdf</td>
+                <td>업로드중</td>
+                <td>65%</td>
+                <td>[취소]</td>
+              </tr>
+              <tr>
+                <td>계획서_v2.docx</td>
+                <td>처리중</td>
+                <td>100% (분석중)</td>
+                <td>[취소]</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>[전체 취소] [실패만 재시도]</p>
+        </div>
+      </article>
+
+      <article class="card col-4">
+        <h2>5) 로그아웃 정책 (Mock)</h2>
+        <div class="mock">
+          <h3>경고/선택 팝업</h3>
+          <p>업로드 중인 파일이 있습니다.</p>
+          <p>[백그라운드에서 계속 진행] [업로드 취소 후 로그아웃]</p>
+          <p class="footer-note">Phase 1: 경고 팝업만, Phase 2: 선택 분기 고도화</p>
+        </div>
+      </article>
+
+      <article class="card col-12">
+        <h2>6) PAUSED 전환 조건 (Mock)</h2>
+        <div class="mock">
+          <span class="pill">브라우저 강제 종료</span>
+          <span class="pill">5분 무전송 네트워크 장애</span>
+          <span class="pill">전송 중 로그아웃 이탈</span>
+          <p>재로그인 시 [이어서 전송] 노출, 24시간 미재개 시 GC 정리</p>
+        </div>
+      </article>
+
+      <article class="card col-6">
+        <h2>7) 이름 충돌/덮어쓰기 (Mock)</h2>
+        <div class="mock">
+          <h3>충돌 모달</h3>
+          <p>동일 파일명이 이미 존재합니다.</p>
+          <p>[최신 버전으로 업데이트] [건너뛰기]</p>
+          <p class="footer-note">Keep Both 미제공 (검색 중복 방지)</p>
+        </div>
+      </article>
+
+      <article class="card col-6">
+        <h2>8) 파일 교체 버튼 vs 충돌 덮어쓰기</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>충돌 팝업</th>
+              <th>파일 교체 버튼</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>진입 경로</td>
+              <td>업로드 중 자동 감지</td>
+              <td>문서 목록에서 수동 선택</td>
+            </tr>
+            <tr>
+              <td>대상 지정</td>
+              <td>파일명 기반</td>
+              <td>target_file_id 기반 명시</td>
+            </tr>
+            <tr>
+              <td>공통점</td>
+              <td colspan="2">버전 증가 + overwrite API 호출</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="card col-12">
+        <h2>9) 단계별 추진 (Mock 타임라인)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Phase</th>
+              <th>기간</th>
+              <th>핵심 산출물</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Phase 1</td>
+              <td>1~2주</td>
+              <td>상단 팝업, 진행률 표시, 경고 팝업</td>
+            </tr>
+            <tr>
+              <td>Phase 2</td>
+              <td>3~6주</td>
+              <td>upload-jobs, 취소 API, 큐/워커, AV스캔</td>
+            </tr>
+            <tr>
+              <td>Phase 3</td>
+              <td>6주+</td>
+              <td>DLQ 운영, SLO, Resume 안정화, 고급 기능</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="card col-4">
+        <h2>10) 보안/운영 정책</h2>
+        <ul>
+          <li>미완료 청크 24h GC</li>
+          <li>워커 Timeout/메모리 제한</li>
+          <li>MIME 스푸핑 방어</li>
+          <li>감사 로그/운영 리포트</li>
+        </ul>
+      </article>
+
+      <article class="card col-4">
+        <h2>11) API 골격</h2>
+        <ul>
+          <li>POST /api/v1/upload-jobs</li>
+          <li>GET /api/v1/upload-jobs/{job_id}</li>
+          <li>POST /cancel /cancel-all /retry</li>
+          <li>POST /overwrite (target_file_id)</li>
+        </ul>
+      </article>
+
+      <article class="card col-4">
+        <h2>12) 체크리스트 요약</h2>
+        <ul>
+          <li>중복 업로드/멱등성</li>
+          <li>동시성 제어/무중단 교체</li>
+          <li>AV스캔/접근성/재시도</li>
+          <li>네트워크 끊김/PAUSED 복구</li>
+        </ul>
+      </article>
+    </section>
+  </div>
+</body>
+</html>

@@ -65,14 +65,22 @@ class DocumentUtils:
             body={
                 "query": {
                     "bool": {
-                        "filter": [{"term": {"content_hash": str(digest)}}]
+                        "should": [
+                            {"term": {"content_hash": str(digest)}},
+                            {"term": {"contenthash": str(digest)}},
+                        ],
+                        "minimum_should_match": 1,
                     }
                 }
             },
-            _source=["origin_file"]
+            _source=["origin_file", "originfile"]
         )
         is_dup = res['hits']['total']['value'] > 0
-        existing_file = res['hits']['hits'][0]['_source']['origin_file'] if is_dup else None
+        if is_dup:
+            src = res['hits']['hits'][0].get('_source', {})
+            existing_file = src.get('origin_file') or src.get('originfile')
+        else:
+            existing_file = None
         return is_dup, existing_file
 
     @staticmethod

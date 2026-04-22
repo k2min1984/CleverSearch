@@ -202,7 +202,8 @@ class IndexingService:
         }
 
         safe_doc = DocumentUtils.sanitize_for_opensearch(doc_source)
-        index_res = client.index(index=target_index, body=safe_doc, refresh=True)
+        # 내용 해시를 문서 ID로 고정하여 동일 문서 재색인 시 신규 생성 대신 덮어쓰기합니다.
+        index_res = client.index(index=target_index, id=str(content_digest), body=safe_doc, refresh=True)
         DBService.save_indexed_document(
             os_doc_id=index_res.get("_id", ""),
             origin_file=safe_filename,

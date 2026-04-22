@@ -39,6 +39,7 @@ from app.services.system_service import FileWatcherService, IngestionSchedulerSe
 # dirname(dirname) -> .../ (프로젝트 루트)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
+DOCS_DIR = os.path.join(BASE_DIR, "docs")
 
 
 def _startup_log(level: str, step: str, message: str, action: str = "") -> None:
@@ -254,6 +255,16 @@ async def admin_page():
     if os.path.exists(admin_path):
         return FileResponse(admin_path)
     return {"status": "error", "message": "관리자 페이지 파일을 찾을 수 없습니다."}
+
+
+@app.get("/upload-architecture", summary="업로드 아키텍처 목업", include_in_schema=False)
+@app.get("/docs/upload_architecture_shell_mock.html", include_in_schema=False)
+async def upload_architecture_mock_page():
+    """회의용 업로드 아키텍처 목업 HTML 파일을 반환합니다."""
+    mock_path = os.path.join(DOCS_DIR, "upload_architecture_shell_mock.html")
+    if os.path.exists(mock_path):
+        return FileResponse(mock_path)
+    return {"status": "error", "message": "목업 HTML 파일을 찾을 수 없습니다."}
 
 
 @app.get("/favicon.ico", include_in_schema=False)

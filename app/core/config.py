@@ -11,6 +11,7 @@
 
 import os
 from urllib.parse import quote_plus
+from pathlib import Path
 from dotenv import load_dotenv
 
 
@@ -27,9 +28,22 @@ def _get_port_env(name: str) -> str:
     raw = (os.getenv(name, "") or "").split("#", 1)[0].strip()
     return raw if raw.isdigit() else ""
 
-# .env 파일이 존재할 경우 내용을 로드하여 환경 변수로 설정합니다.
-# Docker Compose 사용 시에는 docker-compose.yml의 environment 설정이 우선순위를 가집니다.
-load_dotenv()
+# 환경 파일 로드 우선순위:
+# 1) CLEVERSEARCH_ENV_FILE 명시값
+# 2) .env.yatap (원격 DB 기본)
+# 3) .env
+# 4) .env.example
+# 이미 프로세스 환경변수로 들어온 값은 덮어쓰지 않습니다(override=False 기본).
+_env_override = os.getenv("CLEVERSEARCH_ENV_FILE", "").strip()
+if _env_override:
+    load_dotenv(_env_override)
+else:
+    _repo_root = Path(__file__).resolve().parents[2]
+    for _candidate in (".env.yatap", ".env", ".env.example"):
+        _path = _repo_root / _candidate
+        if _path.exists():
+            load_dotenv(_path)
+            break
 
 class Settings:
     """
@@ -77,6 +91,7 @@ class Settings:
     DB_NAME = os.getenv("DB_NAME", "cleversearch")
     DB_USER = os.getenv("DB_USER", "cleversearch")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "cleversearch123")
+    DB_SCHEMA = os.getenv("DB_SCHEMA", "cleversearch_dev")
 
     # Oracle 전용: SID 대신 서비스명 사용 시 True
     DB_ORACLE_USE_SERVICE_NAME = _get_bool_env("DB_ORACLE_USE_SERVICE_NAME", "false")
@@ -121,6 +136,8 @@ class Settings:
         charset_param = ""
         if cls.DB_TYPE in ("mysql", "mariadb"):
             charset_param = "?charset=utf8mb4"
+        elif cls.DB_TYPE == "postgres" and getattr(cls, "DB_SCHEMA", ""):
+            charset_param = f"?options=-csearch_path={cls.DB_SCHEMA}"
 
         return f"{dialect}://{safe_user}:{safe_password}@{cls.DB_HOST}:{port}/{cls.DB_NAME}{charset_param}"
 

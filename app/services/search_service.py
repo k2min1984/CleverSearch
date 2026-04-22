@@ -320,6 +320,70 @@ class SearchService:
         }
 
     @staticmethod
+    def _normalize_doc_category(category: str) -> str:
+        value = (category or "").strip().upper()
+        if not value:
+            return ""
+        mapping = {
+            "사업계획서": "PLAN",
+            "결과보고서": "REPORT",
+            "사내규정": "RULE",
+            "기타": "OTHERS",
+            "OTHER": "OTHERS",
+        }
+        return mapping.get(value, value)
+
+    @staticmethod
+    def _build_doc_category_filter(category: str):
+        normalized = SearchService._normalize_doc_category(category)
+        if not normalized:
+            return None
+
+        variants = {
+            normalized,
+            normalized.lower(),
+            normalized.capitalize(),
+        }
+        reverse_alias = {
+            "PLAN": ["사업계획서"],
+            "REPORT": ["결과보고서"],
+            "RULE": ["사내규정"],
+            "OTHERS": ["OTHER", "기타"],
+        }
+        for alias in reverse_alias.get(normalized, []):
+            variants.add(alias)
+
+        should = []
+        for field in ("doc_category", "doccategory", "doc_category.keyword", "doccategory.keyword"):
+            for value in variants:
+                should.append({"term": {field: value}})
+        for field in ("doc_category", "doccategory"):
+            for value in variants:
+                should.append({"match_phrase": {field: value}})
+
+        return {
+            "bool": {
+                "should": should,
+                "minimum_should_match": 1,
+            }
+        }
+
+    @staticmethod
+    def _normalize_ext_for_stats(ext: str) -> str:
+        value = (ext or "").strip().lower().lstrip(".")
+        return value or "unknown"
+
+    @staticmethod
+    def _build_extension_stats_from_hits(raw_hits: list[dict]) -> dict:
+        stats = {}
+        for hit in raw_hits or []:
+            src = (hit.get("_source", {}) or {})
+            ext = src.get("file_ext") or src.get("fileext") or ""
+            normalized = SearchService._normalize_ext_for_stats(ext)
+            stats[normalized] = stats.get(normalized, 0) + 1
+        return stats
+
+    @staticmethod
     def _build_date_range_filter(gte: str = None, lte: str = None):
         if not gte and not lte:
             return None
@@ -481,12 +545,15 @@ class SearchService:
     # --- [3순위] 검색 실패 추적을 위한 로그 기록 함수 ---
     @staticmethod
     async def log_search_event(query: str, total_hits: int, user_id: str = "anonymous", is_failed: bool = None):
+        normalized_query = (query or "").strip()
+        if not normalized_query:
+            return
         log_index = "search_logs"
         # is_failed를 명시적으로 전달받으면 우선 사용, 없으면 total_hits 기준 판정
         failed_flag = is_failed if is_failed is not None else (total_hits == 0)
         log_doc = {
-            "query": query,
-            "query_keyword": query.strip(), # 분석용 키워드
+            "query": normalized_query,
+            "query_keyword": normalized_query, # 분석용 키워드
             "total_hits": total_hits,
             "is_failed": failed_flag,
             "timestamp": datetime.now().isoformat(),
@@ -500,8 +567,8 @@ class SearchService:
 
         # 운영 리포트/추천용으로는 앱 DB를 기준 데이터로 사용합니다.
         try:
-            DBService.save_search_log(user_id=user_id, query=query.strip(), total_hits=total_hits, is_failed=failed_flag)
-            DBService.save_recent_search(user_id=user_id, query=query.strip())
+            DBService.save_search_log(user_id=user_id, query=normalized_query, total_hits=total_hits, is_failed=failed_flag)
+            DBService.save_recent_search(user_id=user_id, query=normalized_query)
         except Exception as e:
             print(f"앱 DB 로그 저장 실패: {e}")
 
@@ -643,6 +710,13 @@ class SearchService:
             "aggs": {
                 "group_by_category": {
                     "terms": { "field": "doc_category" }
+                },
+                "group_by_extension": {
+                    "terms": {
+                        "field": "file_ext",
+                        "size": 20,
+                        "missing": "unknown"
+                    }
                 }
             }
         }
@@ -658,15 +732,9 @@ class SearchService:
             if file_ext_filter:
                 filters.append(file_ext_filter)
         if req.doc_category:
-            filters.append({
-                "bool": {
-                    "should": [
-                        {"term": {"doc_category": req.doc_category}},
-                        {"term": {"doccategory": req.doc_category}},
-                    ],
-                    "minimum_should_match": 1,
-                }
-            })
+            category_filter = SearchService._build_doc_category_filter(req.doc_category)
+            if category_filter:
+                filters.append(category_filter)
 
         if req.end_date:
             date_filter = SearchService._build_date_range_filter(lte=req.end_date)
@@ -750,8 +818,16 @@ class SearchService:
             # 카테고리 통계 추출
             buckets = response.get('aggregations', {}).get('group_by_category', {}).get('buckets', [])
             category_stats = {b['key']: b['doc_count'] for b in buckets}
+            ext_buckets = response.get('aggregations', {}).get('group_by_extension', {}).get('buckets', [])
+            extension_stats = {}
+            for bucket in ext_buckets:
+                key = SearchService._normalize_ext_for_stats(bucket.get('key'))
+                extension_stats[key] = max(extension_stats.get(key, 0), bucket.get('doc_count', 0))
 
             raw_hits = response.get('hits', {}).get('hits', [])
+            hit_based_extension_stats = SearchService._build_extension_stats_from_hits(raw_hits)
+            for key, count in hit_based_extension_stats.items():
+                extension_stats[key] = max(extension_stats.get(key, 0), count)
 
             # 오타 교정이 발생한 경우, 정확히 포함되는 결과가 있으면 벡터 단독 저점수 결과는 제외합니다.
             if is_typo_corrected and clean_query:
@@ -770,6 +846,7 @@ class SearchService:
                         if cat:
                             recalc_stats[cat] = recalc_stats.get(cat, 0) + 1
                     category_stats = recalc_stats
+                    extension_stats = SearchService._build_extension_stats_from_hits(raw_hits)
 
             # 이름형 쿼리(예: 홍길동, 강광민김영민)는 최종 결과를 정확 포함 기준으로 거릅니다.
             if is_name_like_query(clean_query):
@@ -786,6 +863,7 @@ class SearchService:
                     if cat:
                         recalc_stats[cat] = recalc_stats.get(cat, 0) + 1
                 category_stats = recalc_stats
+                extension_stats = SearchService._build_extension_stats_from_hits(raw_hits)
 
             # 결과 가공
             processed_results = []
@@ -818,6 +896,7 @@ class SearchService:
                 "total": total_hits,
                 "items": processed_results,
                 "category_stats": category_stats,
+                "extension_stats": extension_stats,
                 "page": page,
                 "size": req.size,
                 "original_query": original_query,
@@ -830,6 +909,7 @@ class SearchService:
                 "total": 0,
                 "items": [],
                 "category_stats": {},
+                "extension_stats": {},
                 "error": str(e),
                 "page": page,
                 "size": req.size,

@@ -1,0 +1,630 @@
+<!--
+########################################################
+# Description
+# CleverSearch 관리자 페이지 - 대시보드 탭
+# 검색 서비스 운영 현황 모니터링 화면
+# 트렌드 차트, 인기 키워드 도넛 차트, 운영 카드/리스트
+#
+# Modified History
+# 현승준 / 2026-03-25 / 최초생성
+# Copilot / 2026-04-10 / 차트 축소 + 하단 운영 정보 확장
+########################################################
+-->
+
+<!-- 대시보드 탭 -->
+<section class="space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h2 class="text-2xl font-extrabold text-slate-800">대시보드</h2>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <label for="dashboardDays" class="text-xs font-bold text-slate-600">조회일수</label>
+            <input id="dashboardDays" type="number" min="1" value="7" class="w-20" title="최근 조회 일수" aria-label="최근 조회 일수" />
+            <button id="dashboardSmokeBtn" type="button" class="btn-soft px-3 py-2 text-sm">스모크 실행</button>
+            <button id="dashboardDebugBtn" type="button" class="btn-soft px-3 py-2 text-sm">디버그</button>
+        </div>
+    </div>
+
+    <div id="smokeRunningOverlay" class="hidden" style="position: fixed; inset: 0; z-index: 99999; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(1px); margin: 0 !important;">
+        <div class="flex min-h-full items-center justify-center p-4" style="min-height: 100vh;">
+            <div class="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-2xl text-center">
+                <div class="mx-auto mb-3 h-7 w-7 animate-spin rounded-full border-4 border-slate-300 border-t-indigo-600"></div>
+                <p class="text-base font-extrabold text-slate-800">스모크 테스트 실행 중</p>
+                <p class="mt-1 text-sm text-slate-500">잠시만 기다려 주세요. 실행 완료 후 결과가 자동 표시됩니다.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="alertBadges" class="flex flex-wrap gap-2"></div>
+
+    <div class="grid gap-3 md:grid-cols-4">
+        <div class="metric"><div class="metric-label text-sky-700">전체 로그 수</div><div class="metric-value" id="mTotalLogs">0</div></div>
+        <div class="metric"><div class="metric-label text-rose-700">실패 로그 수</div><div class="metric-value" id="mFailedLogs">0</div></div>
+        <div class="metric"><div class="metric-label text-amber-700">검색 실패율</div><div class="metric-value" id="mFailureRate">0%</div></div>
+        <div class="metric"><div class="metric-label text-emerald-700">스케줄러 상태</div><div class="metric-value" id="mScheduler">중지됨</div></div>
+    </div>
+
+    <div class="grid gap-3 lg:grid-cols-2">
+        <div class="rounded-xl border border-slate-200 bg-white p-4">
+            <h4 class="mb-2 text-sm font-extrabold text-sky-700">일별 검색 추이</h4>
+            <div id="trendLegend" class="mb-2 flex items-center gap-4 text-sm font-bold text-slate-800"></div>
+            <div class="h-40">
+                <canvas id="trendChart" class="h-full"></canvas>
+            </div>
+        </div>
+        <div class="rounded-xl border border-slate-200 bg-white p-4">
+            <h4 class="mb-2 text-sm font-extrabold text-violet-700">인기 검색어 순위</h4>
+            <div id="keywordLegend" class="mb-2 flex flex-wrap items-center gap-3 text-sm font-bold text-slate-800"></div>
+            <div class="h-40">
+                <canvas id="keywordChart" class="h-full"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid gap-3 lg:grid-cols-2">
+        <div class="rounded-xl border border-slate-200 bg-white p-4">
+            <h4 class="mb-2 text-sm font-extrabold text-emerald-700">인기 검색어 건수 비교</h4>
+            <div class="h-40">
+                <canvas id="keywordBarChart" class="h-full"></canvas>
+            </div>
+        </div>
+        <div class="rounded-xl border border-slate-200 bg-white p-4">
+            <h4 class="mb-2 text-sm font-extrabold text-amber-700">검색 품질 레이더</h4>
+            <div class="h-40">
+                <canvas id="qualityRadarChart" class="h-full"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-sky-700">문서 총건수</h5>
+            <p id="cDocTotal" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">문서 리스트 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-cyan-700">오늘 신규 색인</h5>
+            <p id="cDocToday" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">당일 등록일시 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-rose-700">실패 키워드 수</h5>
+            <p id="cFailedKeywords" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">기간 필터 반영</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-violet-700">최근 검색어 건수</h5>
+            <p id="cRecentCount" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">최근 검색어 탭 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-emerald-700">사전 엔트리 수</h5>
+            <p id="cDictCount" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">활성 사전 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-teal-700">SMB 소스 수</h5>
+            <p id="cSmbCount" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">전체 소스 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-blue-700">DB 소스 수</h5>
+            <p id="cDbCount" class="mt-1 text-2xl font-extrabold text-slate-800">-</p>
+            <p class="text-xs text-slate-500">전체 소스 기준</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <h5 class="text-xs font-bold text-amber-700">SSL 주의 건수</h5>
+            <p id="cSslRisk" class="mt-1 text-2xl font-extrabold text-amber-600">-</p>
+            <p class="text-xs text-slate-500">30일 이내 만료/이상</p>
+        </article>
+    </div>
+
+    <div class="grid gap-3 xl:grid-cols-2">
+        <section class="rounded-xl border border-slate-200 bg-white p-4">
+            <div class="mb-3 flex items-center justify-between gap-2">
+                <h4 class="text-sm font-extrabold text-rose-700">실패 검색어 Top 10</h4>
+                <button type="button" class="btn-soft px-2 py-1 text-xs dashboard-open-tab" data-tab="failed">탭 열기</button>
+            </div>
+            <div class="overflow-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-slate-200 text-left text-slate-500">
+                            <th class="py-2 pr-2">순위</th>
+                            <th class="py-2 pr-2">키워드</th>
+                            <th class="py-2 pr-2">횟수</th>
+                        </tr>
+                    </thead>
+                    <tbody id="failedTopBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="rounded-xl border border-slate-200 bg-white p-4">
+            <div class="mb-3 flex items-center justify-between gap-2">
+                <h4 class="text-sm font-extrabold text-orange-700">최근 오류 로그</h4>
+                <button type="button" class="btn-soft px-2 py-1 text-xs dashboard-open-tab" data-tab="logs">탭 열기</button>
+            </div>
+            <div class="overflow-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-slate-200 text-left text-slate-500">
+                            <th class="py-2 pr-2">시간</th>
+                            <th class="py-2 pr-2">검색어</th>
+                            <th class="py-2 pr-2">상태</th>
+                        </tr>
+                    </thead>
+                    <tbody id="errorLogsBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <pre id="dashboardHealth" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
+    <pre id="dashboardSummary" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
+    <pre id="dashboardTrend" class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto"></pre>
+    <pre id="smokeOutput" class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 overflow-auto whitespace-pre-wrap break-all max-w-full"></pre>
+</section>
+
+<script>
+var hasChart = typeof window.Chart !== "undefined";
+if (hasChart) {
+    Chart.defaults.color = "#1e293b";
+    Chart.defaults.font.size = 13;
+    Chart.defaults.font.weight = "bold";
+}
+
+var trendChart = null;
+var keywordChart = null;
+var keywordBarChart = null;
+var qualityRadarChart = null;
+
+const DASHBOARD_COLORS = {
+    success: "#14b8a6",
+    successSoft: "rgba(20,184,166,0.20)",
+    failed: "#ef4444",
+    failedSoft: "rgba(239,68,68,0.20)",
+    info: "#3b82f6",
+    infoSoft: "rgba(59,130,246,0.18)",
+    accent: "#f59e0b",
+    accentSoft: "rgba(245,158,11,0.18)",
+    violet: "#8b5cf6",
+    violetSoft: "rgba(139,92,246,0.20)",
+    rose: "#f43f5e",
+    roseSoft: "rgba(244,63,94,0.18)",
+    sky: "#0ea5e9",
+    skySoft: "rgba(14,165,233,0.18)",
+};
+
+function esc(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function asArray(value) {
+    if (Array.isArray(value)) return value;
+    if (value && Array.isArray(value.items)) return value.items;
+    return [];
+}
+
+function asNumber(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeTrendRows(rows) {
+    return (rows || []).map((row) => {
+        const total = asNumber(row?.total, 0);
+        const failed = asNumber(row?.failed, 0);
+        const successRaw = row?.success;
+        const success = successRaw === undefined || successRaw === null
+            ? Math.max(0, total - failed)
+            : asNumber(successRaw, Math.max(0, total - failed));
+        return {
+            date: row?.date || "-",
+            total,
+            failed,
+            success: Math.max(0, success),
+        };
+    });
+}
+
+function todayPrefix() {
+    return new Date().toISOString().slice(0, 10);
+}
+
+function openAdminTab(tabName) {
+    if (typeof switchTab === "function") {
+        switchTab(tabName);
+    }
+}
+
+function toggleDashboardDebug() {
+    ["dashboardHealth", "dashboardSummary", "dashboardTrend"].forEach((id) => {
+        document.getElementById(id).classList.toggle("hidden");
+    });
+}
+
+function renderAlertBadges(rows) {
+    const container = document.getElementById("alertBadges");
+    const data = (Array.isArray(rows) ? rows : []).filter((row) => {
+        const code = String(row?.code || "").toLowerCase();
+        const message = String(row?.message || "");
+        return code !== "scheduler_stopped" && !message.includes("자동 색인 스케줄러 중지");
+    });
+    const severityAllow = new Set(["info", "warn", "warning", "error", "critical", "success"]);
+    container.innerHTML = data.map((row) => {
+        const severityRaw = String(row?.severity || "info").toLowerCase();
+        const severity = severityAllow.has(severityRaw) ? severityRaw : "info";
+        const message = row?.message || row?.code || "알림";
+        return `<span class="badge ${severity}">${esc(message)}</span>`;
+    }).join("");
+}
+
+function drawTrendChart(trendRows) {
+    if (!hasChart) {
+        const trendLegend = document.getElementById("trendLegend");
+        if (trendLegend) trendLegend.innerHTML = '<span class="text-slate-500">차트 라이브러리 미로드: 요약 수치만 표시됩니다.</span>';
+        return;
+    }
+    const normalizedRows = normalizeTrendRows(trendRows);
+    const labels = normalizedRows.map(row => row.date);
+    const success = normalizedRows.map(row => row.success);
+    const failed = normalizedRows.map(row => row.failed);
+    const ctx = document.getElementById("trendChart").getContext("2d");
+    const successGradient = ctx.createLinearGradient(0, 0, 0, 220);
+    successGradient.addColorStop(0, "rgba(20,184,166,0.58)");
+    successGradient.addColorStop(1, "rgba(20,184,166,0.14)");
+    const failedGradient = ctx.createLinearGradient(0, 0, 0, 220);
+    failedGradient.addColorStop(0, "rgba(239,68,68,0.50)");
+    failedGradient.addColorStop(1, "rgba(239,68,68,0.16)");
+
+    if (trendChart) trendChart.destroy();
+    trendChart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets: [
+            {
+                type: "line",
+                label: "성공 추세",
+                data: success,
+                borderColor: DASHBOARD_COLORS.success,
+                backgroundColor: successGradient,
+                fill: "origin",
+                borderWidth: 2,
+                tension: 0.38,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                pointHitRadius: 12,
+                order: 3,
+            },
+            {
+                type: "bar",
+                label: "실패 건수",
+                data: failed,
+                borderColor: "rgba(239,68,68,0.82)",
+                backgroundColor: failedGradient,
+                borderWidth: 1,
+                borderRadius: 8,
+                borderSkipped: false,
+                barPercentage: 0.42,
+                categoryPercentage: 0.56,
+                order: 1,
+            }
+        ]},
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    grid: { color: "rgba(148,163,184,0.10)" },
+                    ticks: { color: "#1e293b", font: { size: 12, weight: "bold" } },
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: "rgba(148,163,184,0.12)" },
+                    ticks: { color: "#1e293b", font: { size: 12, weight: "bold" } },
+                }
+            }
+        }
+    });
+
+    const trendLegend = document.getElementById("trendLegend");
+    if (trendLegend) {
+        trendLegend.innerHTML = `
+            <span class="inline-flex items-center gap-2"><span class="inline-block h-3 w-6 rounded" style="background-color: ${DASHBOARD_COLORS.success};"></span>성공 추세(면적)</span>
+            <span class="inline-flex items-center gap-2"><span class="inline-block h-3 w-6 rounded" style="background-color: ${DASHBOARD_COLORS.failed};"></span>실패 건수(막대)</span>
+        `;
+    }
+}
+
+function drawKeywordChart(summary, trendRows) {
+    if (!hasChart) {
+        const keywordLegend = document.getElementById("keywordLegend");
+        if (keywordLegend) keywordLegend.innerHTML = '<span class="text-slate-500">차트 라이브러리 미로드: 표/카드 지표로 확인하세요.</span>';
+        return;
+    }
+    const rows = (summary?.top_keywords || []).slice(0, 5);
+    const labels = rows.map(row => String(row.keyword || "-"));
+    const values = rows.map(row => asNumber(row.count));
+    const ctx = document.getElementById("keywordChart").getContext("2d");
+    if (keywordChart) keywordChart.destroy();
+    keywordChart = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+            labels,
+            datasets: [{
+                data: values,
+                borderWidth: 0,
+                backgroundColor: [
+                    DASHBOARD_COLORS.info,
+                    DASHBOARD_COLORS.success,
+                    DASHBOARD_COLORS.accent,
+                    DASHBOARD_COLORS.rose,
+                    DASHBOARD_COLORS.violet
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "78%",
+            plugins: { legend: { display: false } }
+        }
+    });
+
+    const keywordLegend = document.getElementById("keywordLegend");
+    if (keywordLegend) {
+        const colors = [
+            DASHBOARD_COLORS.info,
+            DASHBOARD_COLORS.success,
+            DASHBOARD_COLORS.accent,
+            DASHBOARD_COLORS.rose,
+            DASHBOARD_COLORS.violet
+        ];
+        keywordLegend.innerHTML = labels.map((label, idx) =>
+            `<span class="inline-flex items-center gap-2"><span class="inline-block h-3 w-6 rounded" style="background-color: ${colors[idx]};"></span>${esc(label)}</span>`
+        ).join("");
+    }
+
+    drawKeywordBarChart(labels, values);
+    drawQualityRadarChart(trendRows || []);
+}
+
+function drawKeywordBarChart(labels, values) {
+    if (!hasChart) return;
+    const ctx = document.getElementById("keywordBarChart")?.getContext("2d");
+    if (!ctx) return;
+    if (keywordBarChart) keywordBarChart.destroy();
+    keywordBarChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [{
+                label: "검색 건수",
+                data: values,
+                borderRadius: 8,
+                borderSkipped: false,
+                backgroundColor: [
+                    DASHBOARD_COLORS.sky,
+                    DASHBOARD_COLORS.violet,
+                    DASHBOARD_COLORS.accent,
+                    DASHBOARD_COLORS.success,
+                    DASHBOARD_COLORS.rose,
+                ]
+            }]
+        },
+        options: {
+            indexAxis: "y",
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    grid: { color: "rgba(148,163,184,0.16)" },
+                    ticks: { color: "#334155", font: { size: 11, weight: "bold" } }
+                },
+                y: {
+                    grid: { display: false },
+                    ticks: { color: "#334155", font: { size: 11, weight: "bold" } }
+                }
+            }
+        }
+    });
+}
+
+function drawQualityRadarChart(trendRows) {
+    if (!hasChart) return;
+    const ctx = document.getElementById("qualityRadarChart")?.getContext("2d");
+    if (!ctx) return;
+
+    const rows = normalizeTrendRows(trendRows);
+    const total = rows.reduce((acc, row) => acc + asNumber(row.success) + asNumber(row.failed), 0);
+    const success = rows.reduce((acc, row) => acc + asNumber(row.success), 0);
+    const failed = rows.reduce((acc, row) => acc + asNumber(row.failed), 0);
+    const days = Math.max(rows.length, 1);
+    const failRate = total > 0 ? (failed / total) * 100 : 0;
+
+    if (qualityRadarChart) qualityRadarChart.destroy();
+    qualityRadarChart = new Chart(ctx, {
+        type: "radar",
+        data: {
+            labels: ["총 검색량", "성공량", "실패량", "일평균 검색", "실패율(역지표)"],
+            datasets: [{
+                label: "운영 품질",
+                data: [
+                    Math.min(total, 100),
+                    Math.min(success, 100),
+                    Math.min(failed, 100),
+                    Math.min(total / days, 100),
+                    Math.max(0, 100 - failRate),
+                ],
+                borderWidth: 2,
+                borderColor: DASHBOARD_COLORS.violet,
+                backgroundColor: DASHBOARD_COLORS.violetSoft,
+                pointRadius: 2,
+                pointHoverRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    suggestedMax: 100,
+                    ticks: { display: false },
+                    grid: { color: "rgba(148,163,184,0.22)" },
+                    pointLabels: { color: "#334155", font: { size: 11, weight: "bold" } }
+                }
+            }
+        }
+    });
+}
+
+function renderFailedTop(rows) {
+    const body = document.getElementById("failedTopBody");
+    if (!body) return;
+    const topRows = asArray(rows).slice(0, 10);
+    body.innerHTML = topRows.map((row, idx) => {
+        const keyword = row.keyword || row.query || row.term || "-";
+        const count = asNumber(row.count || row.hits || row.total || 0);
+        return `<tr class="border-b border-slate-100"><td class="py-2 pr-2">${idx + 1}</td><td class="py-2 pr-2">${esc(keyword)}</td><td class="py-2 pr-2">${count}</td></tr>`;
+    }).join("") || '<tr><td class="py-2 text-slate-400" colspan="3">데이터 없음</td></tr>';
+}
+
+function renderErrorLogs(rows) {
+    const body = document.getElementById("errorLogsBody");
+    if (!body) return;
+    const list = asArray(rows).slice(0, 10);
+    body.innerHTML = list.map((row) => {
+        const at = row.created_at || row.timestamp || row.logged_at || "-";
+        const query = row.query || row.keyword || "-";
+        const status = row.status || row.status_code || row.result || (row.success === false ? "fail" : "-");
+        return `<tr class="border-b border-slate-100"><td class="py-2 pr-2">${esc(String(at).slice(0, 19))}</td><td class="py-2 pr-2">${esc(query)}</td><td class="py-2 pr-2">${esc(status)}</td></tr>`;
+    }).join("") || '<tr><td class="py-2 text-slate-400" colspan="3">오류 로그 없음</td></tr>';
+}
+
+function setMetric(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerText = String(value);
+}
+
+function setSmokeRunning(isRunning) {
+    const overlay = document.getElementById("smokeRunningOverlay");
+    const smokeBtn = document.getElementById("dashboardSmokeBtn");
+    if (overlay) {
+        overlay.style.display = isRunning ? "block" : "none";
+        overlay.setAttribute("aria-hidden", isRunning ? "false" : "true");
+    }
+    if (smokeBtn) {
+        smokeBtn.disabled = isRunning;
+        smokeBtn.classList.toggle("opacity-50", isRunning);
+        smokeBtn.classList.toggle("cursor-not-allowed", isRunning);
+        smokeBtn.textContent = isRunning ? "스모크 실행 중..." : "스모크 실행";
+    }
+}
+
+async function loadDashboard() {
+    const days = document.getElementById("dashboardDays").value || 7;
+    const [
+        health,
+        summary,
+        trend,
+        alerts,
+        docsRes,
+        failedRes,
+        recentRes,
+        logsRes,
+        dictRes,
+        smbRes,
+        dbRes,
+        sslRes,
+    ] = await Promise.all([
+        apiFetch(`${SYS_API}/health/overview`, { method: "GET" }),
+        apiFetch(`${SYS_API}/dashboard/summary?days=${days}`, { method: "GET" }),
+        apiFetch(`${SYS_API}/dashboard/trend?days=${days}`, { method: "GET" }),
+        apiFetch(`${SYS_API}/dashboard/alerts?cert_warn_days=7&spike_ratio=1.5`, { method: "GET" }),
+        apiFetch(`${API}/indexed-documents?skip=0&limit=200`, { method: "GET" }),
+        apiFetch(`${API}/failed-keywords?days=${days}&limit=200`, { method: "GET" }),
+        apiFetch(`${API}/recent-searches?skip=0&limit=200`, { method: "GET" }),
+        apiFetch(`${API}/search-logs?skip=0&limit=500`, { method: "GET" }),
+        apiFetch(`${SYS_API}/dictionary/entries?active_only=true`, { method: "GET" }),
+        apiFetch(`${SYS_API}/smb/sources?active_only=false`, { method: "GET" }),
+        apiFetch(`${SYS_API}/db/sources?active_only=false`, { method: "GET" }),
+        apiFetch(`${SYS_API}/ssl/certificates?cert_dir=cert&warn_days=30`, { method: "GET" }),
+    ]);
+
+    writeJson("dashboardHealth", health.data);
+    writeJson("dashboardSummary", summary.data);
+    writeJson("dashboardTrend", trend.data);
+    renderAlertBadges(alerts.data || []);
+
+    setMetric("mTotalLogs", summary.data?.total_logs || 0);
+    setMetric("mFailedLogs", summary.data?.failed_logs || 0);
+    setMetric("mFailureRate", `${((summary.data?.failure_rate || 0) * 100).toFixed(1)}%`);
+    setMetric("mScheduler", health.data?.scheduler?.running ? "실행 중" : "중지됨");
+
+    drawTrendChart(trend.data || []);
+    drawKeywordChart(summary.data || {}, trend.data || []);
+
+    const docItems = asArray(docsRes.data);
+    const docTotal = asNumber(docsRes.data?.total, docItems.length);
+    const todayCount = docItems.filter(row => String(row.indexed_at || "").startsWith(todayPrefix())).length;
+    const failedRows = asArray(failedRes.data);
+    const recentRows = asArray(recentRes.data);
+    const logsRows = asArray(logsRes.data);
+    const dictRows = asArray(dictRes.data);
+    const smbRows = asArray(smbRes.data);
+    const dbRows = asArray(dbRes.data);
+    const sslRows = asArray(sslRes.data);
+    const sslRisk = sslRows.filter((row) => {
+        const daysLeft = asNumber(row.days_left, 9999);
+        const status = String(row.health_status || "").toLowerCase();
+        return daysLeft <= 30 || (status && status !== "ok");
+    }).length;
+
+    setMetric("cDocTotal", docTotal);
+    setMetric("cDocToday", todayCount);
+    setMetric("cFailedKeywords", failedRows.length);
+    setMetric("cRecentCount", recentRows.length);
+    setMetric("cDictCount", dictRows.length);
+    setMetric("cSmbCount", smbRows.length);
+    setMetric("cDbCount", dbRows.length);
+    setMetric("cSslRisk", sslRisk);
+
+    const errorRows = logsRows.filter((row) => {
+        const status = asNumber(row.status || row.status_code || row.http_status, 0);
+        const successFlag = row.success;
+        const isSuccessFlag = row.is_success;
+        if (successFlag === false || isSuccessFlag === false) return true;
+        return status >= 400;
+    });
+
+    renderFailedTop(failedRows);
+    renderErrorLogs(errorRows);
+}
+
+async function runSmokeFromUI() {
+    setSmokeRunning(true);
+    try {
+        const result = await apiFetch(`${SYS_API}/ops/run-smoke-test`, { method: "POST" });
+        writeJson("smokeOutput", result.data || result);
+    } finally {
+        setSmokeRunning(false);
+    }
+}
+
+document.getElementById("dashboardDays")?.addEventListener("change", loadDashboard);
+document.getElementById("dashboardSmokeBtn")?.addEventListener("click", runSmokeFromUI);
+document.getElementById("dashboardDebugBtn")?.addEventListener("click", toggleDashboardDebug);
+document.querySelectorAll(".dashboard-open-tab").forEach((button) => {
+    button.addEventListener("click", () => openAdminTab(button.dataset.tab));
+});
+</script>

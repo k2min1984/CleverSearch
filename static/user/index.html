@@ -34,15 +34,14 @@
         /* 탭 스크롤바 숨기기 */
         #categoryTabs::-webkit-scrollbar { display: none; }
         #categoryTabs { -ms-overflow-style: none; scrollbar-width: none; }
-        /* 파일 위치 기준 문서 미리보기 팝업 */
-        .preview-anchor { position: relative; display: inline-flex; align-items: center; }
-        .preview-popup { position: absolute; left: 0; top: calc(100% + 8px); z-index: 120; background: #f8fbff; border: 1px solid #bfd0ea; border-radius: 0.75rem; padding: 0.75rem; font-size: 0.8rem; color: #334155; width: min(720px, calc(100vw - 40px)); max-height: 320px; overflow-y: auto; display: none; box-shadow: 0 8px 22px rgba(15, 23, 42, 0.16); }
-        .preview-anchor:hover .preview-popup,
-        .preview-anchor:focus-within .preview-popup { display: block; }
+        /* 문서 미리보기 팝업 */
+        .preview-popup { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; background: #f8fbff; border: 1px solid #bfd0ea; border-radius: 0.75rem; padding: 0.75rem; font-size: 0.8rem; color: #334155; max-height: 200px; overflow-y: auto; display: none; box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12); }
+        .result-card:hover .preview-popup { display: block; }
         .result-card { position: relative; }
         /* 인기검색어 가로 배치 */
         #popularTags { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; }
         .suggestion-header { font-size: 11px; letter-spacing: 0.02em; color: #64748b; background: #f1f5fb; padding: 6px 20px; border-top: 1px solid #d7e0ed; }
+        .suggestion-active { background: #e2e8f0 !important; }
         #toastNotice { position: fixed; right: 16px; bottom: 16px; z-index: 100; max-width: 320px; }
         #toastNotice.success { border-color: #2563eb; color: #1d4ed8; background: #eaf2ff; }
         #toastNotice.info { border-color: #64748b; color: #334155; background: #f4f7fb; }
@@ -69,6 +68,12 @@
         #searchInput::placeholder { color: #94a3b8; }
         .search-submit-btn { color: #ffffff !important; }
         .search-submit-btn:hover { color: #ffffff !important; }
+        .facet-panel { border: 1px solid #d9e2ef; border-radius: 12px; padding: 10px; background: #fbfdff; }
+        .facet-title { font-size: 12px; font-weight: 700; color: #475569; }
+        .facet-list { display: flex; flex-wrap: wrap; gap: 8px; }
+        .facet-chip { border: 1px solid #d1dcec; border-radius: 999px; padding: 4px 10px; font-size: 12px; background: #fff; color: #334155; }
+        .facet-chip:hover { border-color: #a5b4fc; color: #3730a3; }
+        .facet-chip.is-active { border-color: #6366f1; background: #eef2ff; color: #3730a3; font-weight: 700; }
         @media (max-width: 639px) {
             #filterArea.mobile-collapsed { display: none; }
             #toastNotice { left: 16px; right: 16px; max-width: none; }
@@ -82,17 +87,17 @@
             <div class="flex justify-end mb-2">
                 <a href="/admin" class="text-xs text-gray-500 hover:text-slate-700">관리자 리스트</a>
             </div>
-            <h1 class="text-5xl font-bold mb-8 cursor-pointer tracking-tight" onclick="location.reload()">
+            <h1 class="text-5xl font-bold mb-8 cursor-pointer tracking-tight" onclick="goHome()">
                 <span class="text-indigo-600">Clever</span><span class="text-slate-800">Search</span>
             </h1>
             
             <div class="relative w-full max-w-2xl mx-auto group">
                 <div class="search-container flex items-center bg-[#303134] rounded-full border border-[#5f6368] px-5 py-3 shadow-sm focus-within:shadow-lg transition-all">
                     <i class="fas fa-search text-gray-400 mr-3"></i>
-                    <input type="text" id="searchInput" class="flex-1 bg-transparent border-none text-slate-800 focus:outline-none text-lg" placeholder="검색어 입력..." autocomplete="off">
+                    <input type="text" id="searchInput" class="flex-1 bg-transparent border-none text-slate-800 focus:outline-none text-lg" placeholder="검색어 입력..." autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="autocompleteList" aria-activedescendant="">
                     <button onclick="resetFiltersAndSearch()" class="search-submit-btn bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium ml-2 transition">검색</button>
                 </div>
-                <div id="autocompleteList" class="absolute top-full left-0 w-full bg-[#303134] border border-[#5f6368] rounded-b-2xl shadow-xl z-50 hidden overflow-hidden mt-1 text-left"></div>
+                <div id="autocompleteList" role="listbox" class="absolute top-full left-0 w-full bg-[#303134] border border-[#5f6368] rounded-b-2xl shadow-xl z-50 hidden overflow-hidden mt-1 text-left"></div>
             </div>
 
             <div id="trendingSection" class="mt-4 text-sm text-gray-400">
@@ -104,10 +109,11 @@
         </div>
 
         <div id="categoryTabs" class="hidden max-w-3xl mx-auto mb-4 flex gap-6 text-sm text-gray-400 border-b border-gray-700 overflow-x-auto">
-            <button onclick="filterCategory('all')" class="category-tab pb-2 border-b-2 border-blue-500 text-blue-500 font-bold" id="tab-all">전체</button>
+            <button onclick="filterCategory('all')" class="category-tab pb-2 border-b-2 border-blue-500 text-blue-500 font-bold" id="tab-all">전체 <span class="text-xs opacity-60" id="count-all"></span></button>
             <button onclick="filterCategory('PLAN')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-PLAN">사업계획서 <span class="text-xs opacity-60" id="count-PLAN"></span></button>
             <button onclick="filterCategory('REPORT')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-REPORT">결과보고서 <span class="text-xs opacity-60" id="count-REPORT"></span></button>
             <button onclick="filterCategory('RULE')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-RULE">사내규정 <span class="text-xs opacity-60" id="count-RULE"></span></button>
+            <button onclick="filterCategory('OTHERS')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-OTHERS">기타 <span class="text-xs opacity-60" id="count-OTHERS"></span></button>
         </div>
 
         <div id="filterToggleWrap" class="hidden max-w-3xl mx-auto mb-2 sm:hidden">
@@ -123,9 +129,6 @@
             </select>
             <select id="extFilter" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none">
                 <option value="all">모든 파일</option>
-                <option value="pdf">PDF 문서</option>
-                <option value="docx">Word 문서</option>
-                <option value="hwp">한글(HWP)</option>
             </select>
             <input id="includeFilter" placeholder="포함 키워드" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none w-36" />
             <input id="excludeFilter" placeholder="제외 키워드" class="bg-[#303134] border border-[#5f6368] rounded px-3 py-1 text-sm focus:outline-none w-36" />
@@ -150,9 +153,9 @@
 
     <script>
         const _ORIGIN = window.location.origin;
-        const API_BASE = `${_ORIGIN}/api/v1/user/search`;
-        const FILE_BASE = `${_ORIGIN}/api/v1/user/file`;
-        const SEARCH_API = `${_ORIGIN}/api/v1/user/search`;
+        const API_BASE = `${_ORIGIN}/api/v1/search`;
+        const FILE_BASE = `${_ORIGIN}/api/v1/file`;
+        const SEARCH_API = `${_ORIGIN}/api/v1/search`;
 
         function getUserId() {
             let userId = localStorage.getItem('hanseek_user_id');
@@ -165,7 +168,7 @@
 
         async function loadPopularTags() {
             try {
-                const response = await fetch(`${API_BASE}/popular`, { cache: 'no-store' });
+                const response = await fetch(`${API_BASE}/popular`);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const tags = await response.json();
                 const container = document.getElementById('popularTags');
@@ -195,9 +198,21 @@
         const filterToggleWrap = document.getElementById('filterToggleWrap');
         const filterToggleBtn = document.getElementById('filterToggleBtn');
         const toastNotice = document.getElementById('toastNotice');
+        const SEARCH_STATE_KEY = 'cleversearch_public_search_state_v1';
+        const SEARCH_SCROLL_KEY = 'cleversearch_public_scroll_y';
         let toastTimer = null;
         let lastToastKey = '';
         let lastToastAt = 0;
+        let activeSuggestionIndex = -1;
+        let suppressHistoryWrite = false;
+        let pendingRestoreScrollY = null;
+        let suppressEnterKeyupOnce = false;
+        let lastHistorySignature = '';
+        let skipPersistOnUnload = false;
+        let frozenCategoryCounts = null;
+        let frozenTotalCount = 0;
+        let frozenCountSignature = '';
+        let frozenExtensionCounts = {};
 
         function showToast(message, type = 'success') {
             const now = Date.now();
@@ -247,11 +262,183 @@
             });
         }
 
+        function getSuggestionRows() {
+            return Array.from(autocompleteList.querySelectorAll('[data-suggestion]'));
+        }
+
+        function syncSuggestionA11yState() {
+            const visible = !autocompleteList.classList.contains('hidden');
+            searchInput.setAttribute('aria-expanded', visible ? 'true' : 'false');
+            if (!visible || activeSuggestionIndex < 0) {
+                searchInput.setAttribute('aria-activedescendant', '');
+                return;
+            }
+            const rows = getSuggestionRows();
+            const row = rows[activeSuggestionIndex];
+            if (!row || !row.id) {
+                searchInput.setAttribute('aria-activedescendant', '');
+                return;
+            }
+            searchInput.setAttribute('aria-activedescendant', row.id);
+        }
+
+        function assignSuggestionOptionIds() {
+            const rows = getSuggestionRows();
+            rows.forEach((row, index) => {
+                if (!row.id) {
+                    row.id = `suggestion-option-${index + 1}`;
+                }
+            });
+        }
+
+        function setActiveSuggestionIndex(index) {
+            const rows = getSuggestionRows();
+            if (rows.length === 0) {
+                activeSuggestionIndex = -1;
+                return;
+            }
+            if (index < 0) index = rows.length - 1;
+            if (index >= rows.length) index = 0;
+            activeSuggestionIndex = index;
+            rows.forEach((row, rowIndex) => {
+                const selected = rowIndex === activeSuggestionIndex;
+                row.classList.toggle('suggestion-active', selected);
+                row.setAttribute('aria-selected', selected ? 'true' : 'false');
+            });
+            syncSuggestionA11yState();
+        }
+
+        function moveSuggestionFocus(delta) {
+            const rows = getSuggestionRows();
+            if (rows.length === 0 || autocompleteList.classList.contains('hidden')) return;
+            if (activeSuggestionIndex < 0) {
+                setActiveSuggestionIndex(delta > 0 ? 0 : rows.length - 1);
+                return;
+            }
+            setActiveSuggestionIndex(activeSuggestionIndex + delta);
+        }
+
+        function escapeRegExp(value) {
+            return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function getHighlightTokens() {
+            const query = (searchInput.value || '').trim();
+            const includeVal = (document.getElementById('includeFilter')?.value || '').trim();
+            const source = [query, includeVal].join(' ').trim();
+            if (!source) return [];
+            const tokens = source
+                .split(/[\s,]+/)
+                .map((token) => token.trim())
+                .filter((token) => token.length >= 2)
+                .slice(0, 8);
+            return Array.from(new Set(tokens));
+        }
+
+        function highlightEscapedText(rawText, tokens) {
+            const sanitizedSource = String(rawText || '')
+                .replace(/<\/?mark\b[^>]*>/gi, '')
+                .replace(/&lt;\/?mark\b[^&]*&gt;/gi, '');
+            const escaped = escapeHtml(sanitizedSource);
+            if (!Array.isArray(tokens) || tokens.length === 0) return escaped;
+            const normalized = [...new Set(tokens)]
+                .map((token) => escapeRegExp(escapeHtml(token)))
+                .filter(Boolean)
+                .sort((a, b) => b.length - a.length);
+            if (normalized.length === 0) return escaped;
+            const regex = new RegExp(`(${normalized.join('|')})`, 'gi');
+            return escaped.replace(regex, '<mark>$1</mark>');
+        }
+
+        function buildSearchState() {
+            return {
+                query: (searchInput.value || '').trim(),
+                page: currentPage,
+                category: currentCategory,
+                dateRange: document.getElementById('dateFilter')?.value || 'all',
+                fileExt: document.getElementById('extFilter')?.value || 'all',
+                includeFilter: document.getElementById('includeFilter')?.value || '',
+                excludeFilter: document.getElementById('excludeFilter')?.value || '',
+                hasResults: document.body.classList.contains('has-results')
+            };
+        }
+
+        function writeSearchState(mode = 'push') {
+            const state = buildSearchState();
+            if (!state.query) return;
+
+            try {
+                sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify(state));
+                sessionStorage.setItem(SEARCH_SCROLL_KEY, String(window.scrollY || 0));
+            } catch (_) {
+                // storage unavailable: keep legacy behavior
+            }
+
+            const params = new URLSearchParams();
+            params.set('q', state.query);
+            if (state.page > 1) params.set('p', String(state.page));
+            if (state.category && state.category !== 'all') params.set('cat', state.category);
+            if (state.dateRange && state.dateRange !== 'all') params.set('d', state.dateRange);
+            if (state.fileExt && state.fileExt !== 'all') params.set('e', state.fileExt);
+            if (state.includeFilter) params.set('inc', state.includeFilter);
+            if (state.excludeFilter) params.set('exc', state.excludeFilter);
+
+            const nextUrl = `${window.location.pathname}?${params.toString()}`;
+            const signature = JSON.stringify(state);
+            if (signature === lastHistorySignature) {
+                window.history.replaceState({ searchState: state }, '', nextUrl);
+                return;
+            }
+
+            if (mode === 'replace') {
+                window.history.replaceState({ searchState: state }, '', nextUrl);
+            } else {
+                window.history.pushState({ searchState: state }, '', nextUrl);
+            }
+            lastHistorySignature = signature;
+        }
+
+        function parseSearchStateFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            const query = (params.get('q') || '').trim();
+            if (!query) return null;
+            const page = Math.max(1, Number.parseInt(params.get('p') || '1', 10) || 1);
+            return {
+                query,
+                page,
+                category: params.get('cat') || 'all',
+                dateRange: params.get('d') || 'all',
+                fileExt: params.get('e') || 'all',
+                includeFilter: params.get('inc') || '',
+                excludeFilter: params.get('exc') || ''
+            };
+        }
+
+        function applySearchState(state) {
+            if (!state || !state.query) return false;
+            searchInput.value = state.query;
+            document.getElementById('dateFilter').value = state.dateRange || 'all';
+            document.getElementById('extFilter').value = state.fileExt || 'all';
+            document.getElementById('includeFilter').value = state.includeFilter || '';
+            document.getElementById('excludeFilter').value = state.excludeFilter || '';
+            currentCategory = state.category || 'all';
+            currentPage = Math.max(1, Number.parseInt(state.page, 10) || 1);
+
+            document.querySelectorAll('.category-tab').forEach(tab => {
+                tab.classList.remove('border-blue-500', 'text-blue-500', 'font-bold');
+                tab.classList.add('border-transparent');
+            });
+            const activeTab = document.getElementById(`tab-${currentCategory}`) || document.getElementById('tab-all');
+            if (activeTab) activeTab.classList.add('border-blue-500', 'text-blue-500', 'font-bold');
+            return true;
+        }
+
         function renderSuggestionGroups(groups) {
             const normalized = Array.isArray(groups) ? groups.filter(group => group.items && group.items.length > 0) : [];
             if (normalized.length === 0) {
                 autocompleteList.classList.add('hidden');
                 autocompleteList.innerHTML = '';
+                syncSuggestionA11yState();
                 return;
             }
 
@@ -260,7 +447,7 @@
                     ? `<button type="button" class="text-[10px] text-gray-500 hover:text-red-600 js-clear-recent">전체 삭제</button>`
                     : '';
                 const rows = group.items.map(item => `
-                    <div class="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700" role="button" tabindex="0" data-suggestion="${encodeURIComponent(String(item))}">
+                    <div class="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700" role="option" aria-selected="false" tabindex="0" data-suggestion="${encodeURIComponent(String(item))}">
                         <div class="flex items-center justify-between gap-3">
                             <span><i class="fas ${group.iconClass || 'fa-history'} text-slate-400 mr-3 text-xs"></i>${escapeHtml(item)}</span>
                             ${group.removable ? `<button type="button" data-remove-query="${encodeURIComponent(String(item))}" class="text-[10px] text-slate-400 hover:text-red-600 px-1 js-remove-recent">삭제</button>` : ''}
@@ -270,7 +457,10 @@
                 return `<div class="suggestion-header flex items-center justify-between"><span>${group.title}</span>${headerAction}</div>${rows}`;
             }).join('');
             bindSuggestionInteractions();
+            assignSuggestionOptionIds();
+            activeSuggestionIndex = -1;
             autocompleteList.classList.remove('hidden');
+            syncSuggestionA11yState();
         }
 
         function bindSuggestionInteractions() {
@@ -346,16 +536,20 @@
             if (!items || items.length === 0) {
                 autocompleteList.classList.add('hidden');
                 autocompleteList.innerHTML = '';
+                syncSuggestionA11yState();
                 return;
             }
 
             autocompleteList.innerHTML = items.map(item => `
-                <div class="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700" role="button" tabindex="0" data-suggestion="${encodeURIComponent(String(item))}">
+                <div class="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700" role="option" aria-selected="false" tabindex="0" data-suggestion="${encodeURIComponent(String(item))}">
                     <i class="fas ${iconClass} text-slate-400 mr-3 text-xs"></i><span>${escapeHtml(item)}</span>
                 </div>
             `).join('');
             bindSuggestionInteractions();
+            assignSuggestionOptionIds();
+            activeSuggestionIndex = -1;
             autocompleteList.classList.remove('hidden');
+            syncSuggestionA11yState();
         }
 
         async function loadRecommendedSuggestions() {
@@ -442,11 +636,199 @@
             }
         }
 
+        function normalizeCategoryKey(rawCategory) {
+            const value = String(rawCategory || '').trim().toUpperCase();
+            if (!value) return '';
+            if (value === 'PLAN' || value === '사업계획서'.toUpperCase()) return 'PLAN';
+            if (value === 'REPORT' || value === '결과보고서'.toUpperCase()) return 'REPORT';
+            if (value === 'RULE' || value === '사내규정'.toUpperCase()) return 'RULE';
+            if (value === 'OTHERS' || value === 'OTHER' || value === '기타'.toUpperCase()) return 'OTHERS';
+            return value;
+        }
+
+        function computeCategoryCounts(data) {
+            const counts = { PLAN: 0, REPORT: 0, RULE: 0, OTHERS: 0 };
+
+            const stats = data?.category_stats || {};
+            Object.entries(stats).forEach(([rawKey, rawCount]) => {
+                const key = normalizeCategoryKey(rawKey);
+                if (!(key in counts)) return;
+                const count = Number(rawCount || 0);
+                if (Number.isFinite(count) && count > 0) {
+                    counts[key] += count;
+                }
+            });
+
+            const statsTotal = counts.PLAN + counts.REPORT + counts.RULE;
+            if (statsTotal === 0) {
+                (Array.isArray(data?.items) ? data.items : []).forEach((item) => {
+                    const key = normalizeCategoryKey(item?.content?.doc_category || item?.content?.doccategory || '');
+                    if (key in counts) counts[key] += 1;
+                });
+            }
+
+            return counts;
+        }
+
+        function normalizeExtensionKey(rawExt) {
+            const value = String(rawExt || '').trim().toLowerCase();
+            const normalized = value.startsWith('.') ? value.slice(1) : value;
+            if (!normalized) return '';
+            if (['unknown', 'none', 'null', 'nan', '-', '_'].includes(normalized)) return '';
+            return normalized;
+        }
+
+        function computeExtensionCounts(data) {
+            const counts = {};
+            const stats = data?.extension_stats || {};
+
+            Object.entries(stats).forEach(([rawKey, rawCount]) => {
+                const key = normalizeExtensionKey(rawKey);
+                if (!key) return;
+                const count = Number(rawCount || 0);
+                if (!Number.isFinite(count) || count <= 0) return;
+                counts[key] = (counts[key] || 0) + count;
+            });
+
+            if (Object.keys(counts).length === 0) {
+                (Array.isArray(data?.items) ? data.items : []).forEach((item) => {
+                    const key = normalizeExtensionKey(item?.content?.file_ext || item?.content?.fileext || '');
+                    if (!key) return;
+                    counts[key] = (counts[key] || 0) + 1;
+                });
+            }
+
+            return counts;
+        }
+
+        function getExtensionLabel(ext) {
+            const key = normalizeExtensionKey(ext);
+            if (key === 'pdf') return 'PDF 문서';
+            if (key === 'docx' || key === 'doc') return 'Word 문서';
+            if (key === 'hwp') return '한글(HWP)';
+            if (key === 'xlsx' || key === 'xls') return 'Excel 문서';
+            if (key === 'pptx' || key === 'ppt') return 'PowerPoint 문서';
+            return key.toUpperCase();
+        }
+
+        function renderExtensionFilterOptions(extensionCounts, totalCount, selectedExt = 'all') {
+            const extFilter = document.getElementById('extFilter');
+            if (!extFilter) return;
+
+            const previousValue = selectedExt || extFilter.value || 'all';
+            const entries = Object.entries(extensionCounts || {})
+                .filter(([, count]) => Number(count) > 0)
+                .sort((a, b) => {
+                    const countDiff = Number(b[1]) - Number(a[1]);
+                    if (countDiff !== 0) return countDiff;
+                    return String(a[0]).localeCompare(String(b[0]));
+                });
+
+            const allCount = Number(totalCount || 0);
+            let html = `<option value="all">모든 파일 (${allCount})</option>`;
+            html += entries
+                .map(([ext, count]) => `<option value="${escapeHtml(ext)}">${escapeHtml(getExtensionLabel(ext))} (${Number(count)})</option>`)
+                .join('');
+
+            extFilter.innerHTML = html;
+            const validValues = new Set(['all', ...entries.map(([ext]) => String(ext))]);
+            extFilter.value = validValues.has(previousValue) ? previousValue : 'all';
+        }
+
+        function getCountBaseSignature(query, includeKw, excludeKw) {
+            const includeSig = (Array.isArray(includeKw) ? includeKw : []).map(String).sort().join('|');
+            const excludeSig = (Array.isArray(excludeKw) ? excludeKw : []).map(String).sort().join('|');
+            return `${String(query || '').trim().toLowerCase()}::${includeSig}::${excludeSig}`;
+        }
+
+        async function ensureFrozenCountBase(query, includeKw, excludeKw) {
+            const signature = getCountBaseSignature(query, includeKw, excludeKw);
+            if (frozenCountSignature === signature && frozenCategoryCounts) {
+                return;
+            }
+
+            const response = await fetch(`${API_BASE}/query`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query,
+                    include_keywords: includeKw,
+                    exclude_keywords: excludeKw,
+                    start_date: null,
+                    file_ext: null,
+                    doc_category: null,
+                    size: 20,
+                    page: 1,
+                    user_id: getUserId(),
+                })
+            });
+            if (!response.ok) {
+                throw new Error(`카운트 기준 조회 실패: HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            frozenCategoryCounts = computeCategoryCounts(data);
+            frozenTotalCount = Number(data?.total || 0);
+            frozenExtensionCounts = computeExtensionCounts(data);
+            frozenCountSignature = signature;
+        }
+
+        function renderCategoryCounts(data, countBaseSignature) {
+            const currentSignature = countBaseSignature || '';
+            const counts = (frozenCountSignature === currentSignature && frozenCategoryCounts)
+                ? frozenCategoryCounts
+                : computeCategoryCounts(data);
+            const total = (frozenCountSignature === currentSignature && frozenCategoryCounts)
+                ? Number(frozenTotalCount || 0)
+                : Number(data?.total || 0);
+
+            const countAll = document.getElementById('count-all');
+            const countPlan = document.getElementById('count-PLAN');
+            const countReport = document.getElementById('count-REPORT');
+            const countRule = document.getElementById('count-RULE');
+            const countOthers = document.getElementById('count-OTHERS');
+
+            if (countAll) countAll.innerText = ` (${total})`;
+            if (countPlan) countPlan.innerText = ` (${counts.PLAN})`;
+            if (countReport) countReport.innerText = ` (${counts.REPORT})`;
+            if (countRule) countRule.innerText = ` (${counts.RULE})`;
+            if (countOthers) countOthers.innerText = ` (${counts.OTHERS})`;
+        }
+
         // [추가] 카테고리 상태 관리 변수
         let currentCategory = 'all';
         let currentPage = 1;
         let totalPages = 1;
         let lastExecutedQuery = '';
+
+        function goHome() {
+            const SAFE_HOME_URL = 'https://127.0.0.1:8000/';
+            try {
+                sessionStorage.removeItem(SEARCH_STATE_KEY);
+                sessionStorage.removeItem(SEARCH_SCROLL_KEY);
+            } catch (_) {
+                // ignore storage errors
+            }
+
+            // Prevent beforeunload from restoring stale search state while navigating home.
+            skipPersistOnUnload = true;
+            searchInput.value = '';
+
+            try {
+                const parsed = new URL(SAFE_HOME_URL);
+                const isAllowed =
+                    parsed.protocol === 'https:' &&
+                    parsed.hostname === '127.0.0.1' &&
+                    parsed.port === '8000' &&
+                    parsed.pathname === '/' &&
+                    !parsed.search &&
+                    !parsed.hash;
+                if (!isAllowed) throw new Error('unsafe home url');
+                window.location.assign(parsed.toString());
+            } catch (_) {
+                // Fail-safe: keep navigation within same-origin root only
+                window.location.assign('/');
+            }
+        }
 
         function clearDetailFilters() {
             document.getElementById('dateFilter').value = 'all';
@@ -460,6 +842,7 @@
             });
             const allTab = document.getElementById('tab-all');
             if (allTab) allTab.classList.add('border-blue-500', 'text-blue-500', 'font-bold');
+            renderExtensionFilterOptions(frozenExtensionCounts, frozenTotalCount, 'all');
         }
 
         // [기능 1] 자동완성
@@ -486,6 +869,8 @@
         function selectSuggestion(text) {
             searchInput.value = text;
             autocompleteList.classList.add('hidden');
+            activeSuggestionIndex = -1;
+            syncSuggestionA11yState();
             performSearch();
         }
 
@@ -495,8 +880,36 @@
             performSearch();
         }
 
+        function handleEmptySearchUI(showToastMessage = true) {
+            document.body.classList.remove('has-results');
+            resultCount.classList.remove('hidden');
+            document.getElementById('countNumber').innerText = 0;
+            resultList.innerHTML = '<div class="text-center py-20 text-gray-500 font-light text-xl">검색어를 입력해 주세요.</div>';
+            document.getElementById('categoryTabs').classList.add('hidden');
+            filterArea.classList.add('hidden');
+            filterToggleWrap.classList.add('hidden');
+            document.getElementById('relatedSection').classList.add('hidden');
+            document.getElementById('relatedTags').innerHTML = '';
+            document.getElementById('paginationArea').classList.add('hidden');
+            try {
+                sessionStorage.removeItem(SEARCH_STATE_KEY);
+                sessionStorage.removeItem(SEARCH_SCROLL_KEY);
+            } catch (_) {
+                // ignore storage errors
+            }
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, '', cleanUrl);
+            if (showToastMessage) {
+                showToast('검색어가 비어 있습니다.', 'info');
+            }
+        }
+
         // [추가] 카테고리 탭 클릭 함수
         function filterCategory(category) {
+            if (!searchInput.value.trim()) {
+                handleEmptySearchUI();
+                return;
+            }
             currentCategory = category;
             
             // UI 탭 활성화 변경
@@ -514,6 +927,10 @@
         // 검색 버튼 클릭 시 현재 필터를 유지한 채 검색
         function resetFiltersAndSearch() {
             const query = searchInput.value.trim();
+            if (!query) {
+                handleEmptySearchUI();
+                return;
+            }
             if (query && lastExecutedQuery && query !== lastExecutedQuery) {
                 clearDetailFilters();
             }
@@ -524,8 +941,16 @@
         // [수정] 통합 검색 실행 (카테고리 필터 및 통계 연동)
         async function performSearch(page = currentPage) {
             const query = searchInput.value.trim();
-            if (!query) return;
+            if (!query) {
+                handleEmptySearchUI();
+                return;
+            }
             currentPage = page;
+
+            if (!suppressHistoryWrite) {
+                // Keep URL/search state in sync even if downstream rendering fails.
+                writeSearchState('replace');
+            }
 
             const dateRange = document.getElementById('dateFilter').value;
             const fileExt = document.getElementById('extFilter').value;
@@ -548,6 +973,11 @@
             const excludeVal = document.getElementById('excludeFilter').value.trim();
             const includeKw = includeVal ? includeVal.split(/[,\s]+/).filter(Boolean) : [];
             const excludeKw = excludeVal ? excludeVal.split(/[,\s]+/).filter(Boolean) : [];
+            const countBaseSignature = getCountBaseSignature(query, includeKw, excludeKw);
+
+            if (currentCategory === 'all' && dateRange === 'all' && fileExt === 'all') {
+                frozenCountSignature = countBaseSignature;
+            }
 
             try {
                 const slowNoticeTimer = setTimeout(() => {
@@ -579,6 +1009,9 @@
                 }
 
                 const data = await response.json();
+                if (data && data.error) {
+                    throw new Error(String(data.error));
+                }
                 lastExecutedQuery = query;
 
                 // 오타 교정이 적용되면 사용자에게 명확히 보여줍니다.
@@ -594,15 +1027,44 @@
 
                 // [카테고리 탭 노출 및 통계 업데이트]
                 document.getElementById('categoryTabs').classList.remove('hidden');
-                if (data.category_stats) {
-                    document.getElementById('count-PLAN').innerText = data.category_stats['PLAN'] || 0;
-                    document.getElementById('count-REPORT').innerText = data.category_stats['REPORT'] || 0;
-                    document.getElementById('count-RULE').innerText = data.category_stats['RULE'] || 0;
+                if (currentCategory === 'all' && dateRange === 'all' && fileExt === 'all') {
+                    frozenCategoryCounts = computeCategoryCounts(data);
+                    frozenTotalCount = Number(data?.total || 0);
+                    frozenExtensionCounts = computeExtensionCounts(data);
+                    frozenCountSignature = countBaseSignature;
+                } else {
+                    try {
+                        await ensureFrozenCountBase(query, includeKw, excludeKw);
+                    } catch (countError) {
+                        console.warn('카운트 기준 조회 실패, 현재 응답으로 대체합니다.', countError);
+                        if (!frozenCategoryCounts || frozenCountSignature !== countBaseSignature) {
+                            frozenCategoryCounts = computeCategoryCounts(data);
+                            frozenTotalCount = Number(data?.total || 0);
+                            frozenExtensionCounts = computeExtensionCounts(data);
+                            frozenCountSignature = countBaseSignature;
+                        }
+                    }
                 }
+
+                renderCategoryCounts(data, countBaseSignature);
+                renderExtensionFilterOptions(frozenExtensionCounts, frozenTotalCount, fileExt);
 
                 renderResults(data);
                 const relatedSeed = data.corrected_query || query;
                 await loadRelatedKeywords(relatedSeed);
+
+                if (!suppressHistoryWrite) {
+                    writeSearchState('push');
+                } else {
+                    suppressHistoryWrite = false;
+                }
+
+                if (pendingRestoreScrollY !== null) {
+                    window.requestAnimationFrame(() => {
+                        window.scrollTo({ top: pendingRestoreScrollY, behavior: 'auto' });
+                        pendingRestoreScrollY = null;
+                    });
+                }
             } catch (error) {
                 const msg = error.message;
                 resultList.innerHTML = `<div class="text-center py-10 text-red-400">오류: ${escapeHtml(msg)}</div>`;
@@ -653,10 +1115,7 @@
             }
 
             if (!data.items || data.items.length === 0) {
-                /* 결과 0건 시 카테고리 탭, 필터 영역 숨기기 */
-                document.getElementById('categoryTabs').classList.add('hidden');
-                filterArea.classList.add('hidden');
-                filterToggleWrap.classList.add('hidden');
+                /* 결과 0건 — 카테고리 탭·필터는 유지, 페이징·연관검색어만 숨김 */
                 document.getElementById('relatedSection').classList.add('hidden');
                 document.getElementById('relatedTags').innerHTML = '';
                 resultList.innerHTML = '<div class="text-center py-20 text-gray-500 font-light text-xl">일치하는 문서를 찾지 못했습니다.</div>';
@@ -671,8 +1130,7 @@
                 card.setAttribute('aria-label', '문서 상세 열기');
 
                 const summaryText = item.summary || '내용 없음';
-                const cardPreviewText = summaryText.substring(0, 300) + (summaryText.length > 300 ? '...' : '');
-                const popupFullText = item.content?.all_text || item.content?.alltext || summaryText;
+                const previewText = summaryText.substring(0, 300) + (summaryText.length > 300 ? '...' : '');
                 const originFile = item.content?.origin_file || item.content?.originfile || '-';
                 const indexedDate = item.indexed_at || item.content?.indexed_at || item.content?.indexedat || '';
                 const titleText = item.content?.Title || originFile || '제목 없음';
@@ -692,22 +1150,20 @@
                             <i class="fas fa-ellipsis-v"></i>
                         </button>
                     </div>
-                    <p class="text-slate-600 text-sm leading-relaxed mb-4">${escapeHtml(cardPreviewText)}</p>
+                    <p class="text-slate-600 text-sm leading-relaxed mb-4">${highlightEscapedText(summaryText, getHighlightTokens())}</p>
                     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 border-t border-slate-200 pt-3">
-                        <span class="preview-anchor" tabindex="0" role="button" aria-label="본문 미리보기">
-                            <i class="far fa-hdd mr-1"></i> ${escapeHtml(originFile)}
-                            <div class="preview-popup">
-                                <div class="text-xs text-indigo-600 font-bold mb-1">본문 미리보기</div>
-                                <div class="text-slate-600 whitespace-pre-wrap">${escapeHtml(popupFullText || '미리보기 데이터 없음')}</div>
-                            </div>
-                        </span>
+                        <span><i class="far fa-hdd mr-1"></i> ${escapeHtml(originFile)}</span>
                         <span><i class="far fa-calendar-alt mr-1"></i> ${escapeHtml(indexedDate ? indexedDate.substring(0,10) : '-')}</span>
                         <span class="sm:ml-auto bg-slate-100 px-2 py-0.5 rounded italic">Score: ${scoreText}</span>
+                    </div>
+                    <div class="preview-popup">
+                        <div class="text-xs text-indigo-600 font-bold mb-1"><span aria-hidden="true">📄</span> 본문 미리보기</div>
+                        <div class="text-slate-600 whitespace-pre-wrap">${escapeHtml(previewText || '미리보기 데이터 없음')}</div>
                     </div>
                 `;
                 
                 card.onclick = (event) => {
-                    if (event.target.closest('button, a, input, textarea, select, .preview-anchor')) return;
+                    if (event.target.closest('button, a, input, textarea, select')) return;
                     const osDocId = item.id;
                     openDocumentView(osDocId, item);
                 };
@@ -720,13 +1176,6 @@
                     openDocumentView(osDocId, item);
                 });
 
-                const previewAnchor = card.querySelector('.preview-anchor');
-                if (previewAnchor) {
-                    previewAnchor.addEventListener('click', (event) => {
-                        event.stopPropagation();
-                    });
-                }
-
                 resultList.appendChild(card);
             });
         }
@@ -734,8 +1183,25 @@
         // 문서 상세 보기 (포맷팅된 새 창)
         async function openDocumentView(docId, item) {
             const safeDocId = encodeURIComponent(String(docId ?? ""));
+            const win = window.open('about:blank', '_blank');
+            if (!win) {
+                showToast('팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.', 'error');
+                return;
+            }
+
+            win.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>문서 로딩 중...</title>
+<style>
+    body { font-family: 'Malgun Gothic', sans-serif; background: #f3f6fb; color: #334155; margin: 0; padding: 2rem; }
+    .loading { max-width: 900px; margin: 0 auto; background: #fff; border: 1px solid #d6dfec; border-radius: 10px; padding: 1rem 1.25rem; }
+</style></head><body><div class="loading">문서를 불러오는 중입니다...</div></body></html>`);
+            win.document.close();
+
             try {
                 const res = await fetch(`${SEARCH_API}/read/${safeDocId}`);
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
                 const data = await res.json();
                 const c = data.content || data._source || data;
                 const title = c.Title || c.origin_file || c.originfile || item.content?.origin_file || item.content?.originfile || '문서';
@@ -745,23 +1211,25 @@
                 const text = c.all_text || c.alltext || c.text || item.content?.all_text || item.content?.alltext || '';
                 const indexed = c.indexed_at || c.indexedat || data.indexed_at || data.indexedat || '';
 
-                                const safeTitle = escapeHtml(title);
-                                const safeOrigin = escapeHtml(origin);
-                                const safeCategory = escapeHtml(category);
-                                const safeExt = escapeHtml(ext);
-                                const safeIndexed = escapeHtml(indexed ? indexed.substring(0, 10) : '-');
-                                const safeText = escapeHtml(text || '본문 데이터 없음');
+                const safeTitle = escapeHtml(title);
+                const safeOrigin = escapeHtml(origin);
+                const safeCategory = escapeHtml(category);
+                const safeExt = escapeHtml(ext);
+                const safeIndexed = escapeHtml(indexed ? indexed.substring(0, 10) : '-');
+                const safeText = highlightEscapedText(text || '본문 데이터 없음', getHighlightTokens());
 
-                const win = window.open('', '_blank', 'noopener,noreferrer');
-                if (!win) {
-                    throw new Error('popup blocked');
+                try {
+                    sessionStorage.setItem(SEARCH_SCROLL_KEY, String(window.scrollY || 0));
+                    sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify(buildSearchState()));
+                } catch (_) {
+                    // ignore persistence errors
                 }
-                win.opener = null;
                 win.document.write(`<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${safeTitle}</title>
 <style>
     body { font-family: 'Malgun Gothic', sans-serif; background: #f3f6fb; color: #334155; margin: 0; padding: 2rem; line-height: 1.7; }
   .container { max-width: 900px; margin: 0 auto; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     h1 { color: #4f46e5; font-size: 1.5rem; border-bottom: 2px solid #d6dfec; padding-bottom: 0.5rem; }
     .meta { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; font-size: 0.85rem; color: #64748b; }
     .meta span { background: #ffffff; border: 1px solid #d6dfec; padding: 4px 10px; border-radius: 6px; }
@@ -769,19 +1237,34 @@
         .close-btn { display: inline-block; margin-top: 1rem; color: #4f46e5; cursor: pointer; text-decoration: underline; border: none; background: transparent; padding: 0; font: inherit; }
 </style></head><body>
 <div class="container">
-    <h1>📄 ${safeTitle}</h1>
+        <h1><span aria-hidden="true">📄</span><span class="sr-only">문서 제목</span> ${safeTitle}</h1>
   <div class="meta">
-        <span>📁 파일명: ${safeOrigin}</span>
-        <span>📂 카테고리: ${safeCategory}</span>
-        <span>📋 확장자: ${safeExt}</span>
-        <span>📅 색인일: ${safeIndexed}</span>
+                <span><span aria-hidden="true">📁</span> 파일명: ${safeOrigin}</span>
+                <span><span aria-hidden="true">📂</span> 카테고리: ${safeCategory}</span>
+                <span><span aria-hidden="true">📋</span> 확장자: ${safeExt}</span>
+                <span><span aria-hidden="true">📅</span> 색인일: ${safeIndexed}</span>
   </div>
     <div class="content">${safeText}</div>
     <button class="close-btn" type="button" onclick="window.close()" aria-label="문서 창 닫기">← 닫기</button>
 </div></body></html>`);
                 win.document.close();
             } catch (e) {
-                window.open(`${SEARCH_API}/read/${safeDocId}`, '_blank', 'noopener,noreferrer');
+                const safeMsg = escapeHtml(e?.message || '문서 로드 실패');
+                win.document.write(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>문서 로드 실패</title>
+<style>
+    body { font-family: 'Malgun Gothic', sans-serif; background: #f8fafc; color: #334155; margin: 0; padding: 2rem; }
+    .panel { max-width: 900px; margin: 0 auto; background: #fff; border: 1px solid #d6dfec; border-radius: 10px; padding: 1rem 1.25rem; }
+    .error { color: #b91c1c; margin: 0 0 0.75rem; }
+    a { color: #4f46e5; }
+</style></head><body>
+<div class="panel">
+    <p class="error">문서를 새 창에서 렌더링하지 못했습니다: ${safeMsg}</p>
+    <p><a href="${SEARCH_API}/read/${safeDocId}" target="_self" rel="noopener">원본 응답 열기</a></p>
+    <button type="button" onclick="window.close()">창 닫기</button>
+</div>
+</body></html>`);
+                win.document.close();
             }
         }
 
@@ -791,6 +1274,15 @@
             performSearch(1);
         });
         document.getElementById('extFilter').addEventListener('change', () => {
+            if (document.getElementById('extFilter').value === 'all') {
+                currentCategory = 'all';
+                document.querySelectorAll('.category-tab').forEach(tab => {
+                    tab.classList.remove('border-blue-500', 'text-blue-500', 'font-bold');
+                    tab.classList.add('border-transparent');
+                });
+                const allTab = document.getElementById('tab-all');
+                if (allTab) allTab.classList.add('border-blue-500', 'text-blue-500', 'font-bold');
+            }
             currentPage = 1;
             performSearch(1);
         });
@@ -810,11 +1302,46 @@
         });
 
         // 엔터키 처리 및 외부 클릭 제어
-        searchInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') { resetFiltersAndSearch(); } });
+        searchInput.addEventListener('keyup', (e) => {
+            if (e.key !== 'Enter') return;
+            if (suppressEnterKeyupOnce) {
+                suppressEnterKeyupOnce = false;
+                return;
+            }
+            resetFiltersAndSearch();
+        });
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                moveSuggestionFocus(1);
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                moveSuggestionFocus(-1);
+                return;
+            }
+            if (e.key === 'Enter' && activeSuggestionIndex >= 0 && !autocompleteList.classList.contains('hidden')) {
+                const rows = getSuggestionRows();
+                const row = rows[activeSuggestionIndex];
+                if (!row) return;
+                e.preventDefault();
+                suppressEnterKeyupOnce = true;
+                selectSuggestion(decodeURIComponent(row.dataset.suggestion || ''));
+                return;
+            }
+            if (e.key === 'Escape') {
+                autocompleteList.classList.add('hidden');
+                activeSuggestionIndex = -1;
+                syncSuggestionA11yState();
+            }
+        });
         document.addEventListener('click', (e) => {
             const searchWrapper = document.querySelector('#headerArea .group');
             if (searchWrapper && !searchWrapper.contains(e.target)) {
                 autocompleteList.classList.add('hidden');
+                activeSuggestionIndex = -1;
+                syncSuggestionA11yState();
             }
         });
         filterToggleBtn.addEventListener('click', toggleMobileFilters);
@@ -823,6 +1350,60 @@
                 syncMobileFilterState(false);
             }
         });
+
+        window.addEventListener('popstate', async (event) => {
+            const state = event.state?.searchState || parseSearchStateFromUrl();
+            if (!applySearchState(state)) return;
+
+            suppressHistoryWrite = true;
+            try {
+                const storedScrollY = Number.parseInt(sessionStorage.getItem(SEARCH_SCROLL_KEY) || '0', 10);
+                pendingRestoreScrollY = Number.isFinite(storedScrollY) ? storedScrollY : 0;
+            } catch (_) {
+                pendingRestoreScrollY = 0;
+            }
+            await performSearch(currentPage);
+        });
+
+        window.addEventListener('beforeunload', () => {
+            try {
+                if (skipPersistOnUnload) return;
+                if (!searchInput.value.trim()) return;
+                sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify(buildSearchState()));
+                sessionStorage.setItem(SEARCH_SCROLL_KEY, String(window.scrollY || 0));
+            } catch (_) {
+                // ignore persistence errors
+            }
+        });
+
+        async function restoreSearchStateOnLoad() {
+            const urlState = parseSearchStateFromUrl();
+            let stateToRestore = urlState;
+            if (!stateToRestore) {
+                try {
+                    const stored = sessionStorage.getItem(SEARCH_STATE_KEY);
+                    if (stored) stateToRestore = JSON.parse(stored);
+                } catch (_) {
+                    stateToRestore = null;
+                }
+            }
+            if (!applySearchState(stateToRestore)) return;
+
+            suppressHistoryWrite = true;
+            try {
+                const storedScrollY = Number.parseInt(sessionStorage.getItem(SEARCH_SCROLL_KEY) || '0', 10);
+                pendingRestoreScrollY = Number.isFinite(storedScrollY) ? storedScrollY : 0;
+            } catch (_) {
+                pendingRestoreScrollY = 0;
+            }
+            await performSearch(currentPage);
+        }
+
+        if (document.readyState === 'loading') {
+            window.addEventListener('DOMContentLoaded', restoreSearchStateOnLoad);
+        } else {
+            restoreSearchStateOnLoad();
+        }
     </script>
 </body>
 </html>

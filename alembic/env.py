@@ -13,6 +13,16 @@
 """
 from logging.config import fileConfig
 import os
+import sys
+
+# [핵심 버그 수정] 윈도우 DB 접속 실패 시 한글 에러(CP949)로 인한 파이썬 강제종료 방지
+os.environ["LC_MESSAGES"] = "C"
+os.environ["PGCLIENTENCODING"] = "UTF8"
+
+# 프로젝트 최상단 경로를 파이썬 모듈 검색 경로에 추가하여 'app' 모듈을 찾을 수 있게 합니다.
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -63,9 +73,21 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        # [자동화] 스키마가 DB에 존재하지 않으면 자동으로 생성합니다.
+        if getattr(settings, "DB_SCHEMA", None):
+            from sqlalchemy import text
+            connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {settings.DB_SCHEMA}"))
+            connection.commit()
+
+        context.configure(
+            connection=connection, 
+            target_metadata=target_metadata,
+            version_table_schema=getattr(settings, "DB_SCHEMA", None)
+        )
 
         with context.begin_transaction():
+            if getattr(settings, "DB_SCHEMA", None):
+                connection.execute(text(f"SET search_path TO {settings.DB_SCHEMA}"))
             context.run_migrations()
 
 

@@ -62,16 +62,19 @@ class DBService:
     def save_recent_search(user_id: str, query: str, keep_limit: int = 20) -> None:
         # 동일 검색어는 최신 시각만 갱신하고, 사용자별 보관 개수를 제한합니다.
         user = user_id or "anonymous"
+        normalized_query = DBService._safe_str(query).strip()
+        if not normalized_query:
+            return
         with get_db_session() as db:
             existing = (
                 db.query(RecentSearch)
-                .filter(RecentSearch.user_id == user, RecentSearch.query == query)
+                .filter(RecentSearch.user_id == user, RecentSearch.query == normalized_query)
                 .first()
             )
             if existing:
                 existing.created_at = datetime.now(timezone.utc)
             else:
-                db.add(RecentSearch(user_id=user, query=query))
+                db.add(RecentSearch(user_id=user, query=normalized_query))
 
             rows = (
                 db.query(RecentSearch)
@@ -92,14 +95,17 @@ class DBService:
                 .limit(limit)
                 .all()
             )
-            return [DBService._safe_str(r.query) for r in rows]
+            return [q for q in (DBService._safe_str(r.query).strip() for r in rows) if q]
 
     @staticmethod
     def remove_recent_search(user_id: str, query: str) -> int:
+        normalized_query = DBService._safe_str(query).strip()
+        if not normalized_query:
+            return 0
         with get_db_session() as db:
             deleted = (
                 db.query(RecentSearch)
-                .filter(RecentSearch.user_id == (user_id or "anonymous"), RecentSearch.query == query)
+                .filter(RecentSearch.user_id == (user_id or "anonymous"), RecentSearch.query == normalized_query)
                 .delete(synchronize_session=False)
             )
             return deleted
