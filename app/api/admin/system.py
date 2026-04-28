@@ -241,8 +241,13 @@ async def list_db_sources(active_only: bool = Query(False)):
 
 
 @router.get("/db/sources/{source_id}", dependencies=[Depends(require_role("operator"))], summary="DB 소스 단건 상세 조회")
-async def get_db_source(source_id: int):
-    return DBIngestionService.get_source(source_id=source_id, include_secret=True)
+async def get_db_source(
+    source_id: int,
+    include_secret: bool = Query(False),
+    current_role: str = Depends(require_role("operator")),
+):
+    should_include_secret = include_secret and current_role == "admin"
+    return DBIngestionService.get_source(source_id=source_id, include_secret=should_include_secret)
 
 
 @router.delete("/db/sources/{source_id}", dependencies=[Depends(require_role("operator"))], summary="DB 소스 삭제")

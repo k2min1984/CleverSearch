@@ -3,14 +3,19 @@ param(
     [string]$BindHost = "127.0.0.1",
     [int]$Port = 8000,
     [switch]$UseSsl,
+    [switch]$NoReload,
     [string]$SslKeyFile = "cert/localhost+2-key.pem",
     [string]$SslCertFile = "cert/localhost+2.pem",
-    [switch]$KillExisting = $true,
+    [switch]$KillExisting,
     [switch]$NoAutoPortFallback,
     [switch]$CheckOnly
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $PSBoundParameters.ContainsKey("KillExisting")) {
+    $KillExisting = $true
+}
 
 # 사용자가 EnvFile을 명시하지 않은 경우에만, 원격 DB 전용 파일을 우선 사용
 if ((-not $PSBoundParameters.ContainsKey("EnvFile")) -and $EnvFile -eq ".env.example") {
@@ -164,26 +169,29 @@ if (-not (Test-Path $py)) {
     throw "가상환경 파이썬을 찾을 수 없습니다: $py"
 }
 
-$args = @(
+$uvicornArgs = @(
     "-m", "uvicorn", "app.main:app",
-    "--reload",
     "--host", $BindHost,
     "--port", "$resolvedPort"
 )
+
+if (-not $NoReload) {
+    $uvicornArgs += "--reload"
+}
 
 if ($UseSsl) {
     $keyPath = Resolve-AbsolutePath -Path $SslKeyFile
     $certPath = Resolve-AbsolutePath -Path $SslCertFile
     if (-not (Test-Path $keyPath)) { throw "SSL 키 파일을 찾을 수 없습니다: $keyPath" }
     if (-not (Test-Path $certPath)) { throw "SSL 인증서 파일을 찾을 수 없습니다: $certPath" }
-    $args += @("--ssl-keyfile", $keyPath, "--ssl-certfile", $certPath)
+    $uvicornArgs += @("--ssl-keyfile", $keyPath, "--ssl-certfile", $certPath)
 }
 
-Write-Host "[RUN][DEV] command: $py $($args -join ' ')"
+Write-Host "[RUN][DEV] command: $py $($uvicornArgs -join ' ')"
 Write-Host "[RUN][DEV] URL: $([string]::Concat(($UseSsl ? 'https' : 'http'), '://', $BindHost, ':', $resolvedPort, '/'))"
 if ($CheckOnly) {
     Write-Host "[RUN][DEV] CheckOnly 모드 완료"
     exit 0
 }
 
-& $py @args
+& $py @uvicornArgs

@@ -19,7 +19,7 @@ from threading import Lock
 from time import monotonic
 
 import jwt
-from fastapi import Header, HTTPException
+from fastapi import Cookie, Header, HTTPException
 
 from app.core.config import settings
 from app.core.database import (
@@ -217,20 +217,42 @@ def get_role_from_request(authorization: str | None, x_role: str | None) -> str:
         payload = decode_access_token(token)
         return str(payload.get("role", "viewer")).lower()
 
-    # 하위호환: 명시적으로 허용된 환경에서만 X-Role 신뢰
-    if settings.ALLOW_LEGACY_X_ROLE:
-        return (x_role or "viewer").strip().lower()
+    # 하위호환: dev/local/test에서만 X-Role 허용
+    if settings.ALLOW_LEGACY_X_ROLE and x_role:
+        legacy_role = str(x_role).strip().lower()
+        if legacy_role in ROLE_ORDER:
+            return legacy_role
+
+    raise HTTPException(status_code=401, detail="인증 토큰이 필요합니다")
+
+
+def get_claims_from_request(authorization: str | None, access_cookie_token: str | None) -> dict:
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        return decode_access_token(token, expected_type="access")
+
+    if access_cookie_token:
+        return decode_access_token(access_cookie_token, expected_type="access")
 
     raise HTTPException(status_code=401, detail="인증 토큰이 필요합니다")
 
 
 def require_role(min_role: str):
-    # JWT 우선, X-Role 하위호환 검증
+    # JWT(access token) 또는 HttpOnly 쿠키 기반 access token만 허용
     def _checker(
         authorization: str | None = Header(default=None, alias="Authorization"),
-        x_role: str | None = Header(default="viewer", alias="X-Role"),
+        x_role: str | None = Header(default=None, alias="X-Role"),
+        access_cookie_token: str | None = Cookie(default=None, alias="cs_access_token"),
     ):
-        incoming = get_role_from_request(authorization=authorization, x_role=x_role)
+        if authorization and authorization.lower().startswith("bearer "):
+            incoming = get_role_from_request(authorization=authorization, x_role=x_role)
+        elif settings.ALLOW_LEGACY_X_ROLE and x_role:
+            incoming = get_role_from_request(authorization=None, x_role=x_role)
+        elif access_cookie_token:
+            payload = decode_access_token(access_cookie_token, expected_type="access")
+            incoming = str(payload.get("role", "viewer")).lower()
+        else:
+            raise HTTPException(status_code=401, detail="인증 토큰이 필요합니다")
         if ROLE_ORDER.get(incoming, 0) < ROLE_ORDER.get(min_role, 0):
             raise HTTPException(status_code=403, detail=f"권한 부족: {min_role} 이상 필요")
         return incoming

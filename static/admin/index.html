@@ -4,11 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CleverSearch Admin</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/vendor/tailwindcss.3.4.3.min.js"></script>
     <script src="/static/vendor/chart.umd.min.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
+    <link href="/static/fonts/nunito.css" rel="stylesheet" />
     <style>
         :root {
             --bg: #eceff3;
@@ -241,6 +239,56 @@
             padding: 18px;
             min-height: calc(100vh - 130px);
         }
+
+        /* 
+         * [다크 테마 -> 라이트 테마 변환 어댑터]
+         * 하위 HTML 파일들의 다크 테마 클래스들을 라이트 테마 메인 화면에 맞게 강제 변환하여
+         * 모든 페이지의 깨짐 현상을 복구합니다.
+         */
+        #tabContent .bg-gray-900,
+        #tabContent .bg-gray-800,
+        #tabContent .bg-gray-700 {
+            background-color: #ffffff !important;
+            border-color: #dce3ef !important;
+        }
+
+        #tabContent .text-gray-100, #tabContent .text-gray-200,
+        #tabContent .text-gray-300, #tabContent .text-gray-400,
+        #tabContent .text-gray-500, #tabContent .text-white {
+            color: #334155 !important;
+        }
+
+        #tabContent .border-gray-700, #tabContent .border-gray-600, #tabContent .border-gray-500 {
+            border-color: #dce3ef !important;
+        }
+
+        /* 텍스트 색상 및 알림 박스 교정 */
+        #tabContent .text-blue-200 { color: #1e40af !important; }
+        #tabContent .text-red-200, #tabContent .text-red-300 { color: #b91c1c !important; }
+        #tabContent .text-amber-200 { color: #b45309 !important; }
+        #tabContent .text-emerald-200, #tabContent .text-emerald-300, #tabContent .text-green-400 { color: #047857 !important; }
+        #tabContent .text-indigo-200 { color: #4338ca !important; }
+        
+        #tabContent .bg-blue-900\/30 { background-color: #eff6ff !important; border-color: #bfdbfe !important; }
+        #tabContent .bg-red-900\/30 { background-color: #fef2f2 !important; border-color: #fecaca !important; }
+        #tabContent .bg-amber-900\/30 { background-color: #fffbeb !important; border-color: #fde68a !important; }
+
+        /* 입력 폼 교정 */
+        #tabContent input, #tabContent select, #tabContent textarea {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+            border-color: #cbd5e1 !important;
+        }
+        #tabContent input:focus, #tabContent select:focus, #tabContent textarea:focus {
+            background-color: #ffffff !important;
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
+        }
+
+        /* 테이블 및 코드블럭 교정 */
+        #tabContent pre { background-color: #f1f5f9 !important; color: #334155 !important; border-color: #e2e8f0 !important; }
+        #tabContent table thead tr { background-color: #f8fafc !important; }
+        #tabContent tr.border-t { border-color: #e2e8f0 !important; }
 
         #tabMenu {
             display: flex;
@@ -580,142 +628,6 @@
             color: #881337;
             transform: none;
             text-decoration: none;
-        }
-
-        /*
-         * Tab fragments still contain old dark classes.
-         * Normalize them into light UI colors so text and controls stay readable.
-         */
-        #tabContent {
-            color: #253041;
-        }
-
-        #tabContent .bg-gray-900,
-        #tabContent .bg-gray-800,
-        #tabContent .bg-gray-700,
-        #tabContent .bg-gray-600 {
-            background: #ffffff !important;
-            color: #243045 !important;
-            border-color: #dce3ef !important;
-        }
-
-        #tabContent .border-gray-900,
-        #tabContent .border-gray-800,
-        #tabContent .border-gray-700,
-        #tabContent .border-gray-600 {
-            border-color: #dce3ef !important;
-        }
-
-        #tabContent .text-gray-100,
-        #tabContent .text-gray-200,
-        #tabContent .text-gray-300,
-        #tabContent .text-gray-400,
-        #tabContent .text-gray-500,
-        #tabContent .text-gray-600,
-        #tabContent .text-red-200,
-        #tabContent .text-red-300,
-        #tabContent .text-red-400,
-        #tabContent .text-indigo-200,
-        #tabContent .text-indigo-300,
-        #tabContent .text-indigo-400,
-        #tabContent .text-blue-200,
-        #tabContent .text-blue-300,
-        #tabContent .text-blue-400 {
-            color: #5c6b82 !important;
-        }
-
-        #tabContent .text-white {
-            color: #ffffff !important;
-        }
-
-        #tabContent .bg-blue-900\/30,
-        #tabContent .bg-blue-900,
-        #tabContent .bg-red-900\/30,
-        #tabContent .bg-red-900,
-        #tabContent .bg-indigo-900,
-        #tabContent .bg-indigo-800,
-        #tabContent .bg-yellow-900\/30 {
-            background: #eef3ff !important;
-            color: #3a4963 !important;
-            border-color: #ccd8f5 !important;
-        }
-
-        #tabContent .bg-blue-600,
-        #tabContent .bg-blue-500,
-        #tabContent .hover\:bg-blue-500:hover,
-        #tabContent .hover\:bg-blue-600:hover,
-        #tabContent .bg-indigo-600,
-        #tabContent .bg-indigo-500,
-        #tabContent .hover\:bg-indigo-500:hover,
-        #tabContent .hover\:bg-indigo-600:hover,
-        #tabContent .bg-purple-600 {
-            background: linear-gradient(180deg, #f8fbff 0%, #e8f0ff 100%) !important;
-            color: #1e40af !important;
-            border: 1px solid #cfe0ff !important;
-            box-shadow: 0 6px 12px rgba(59, 130, 246, 0.12) !important;
-        }
-
-        #tabContent .bg-green-600,
-        #tabContent .bg-green-500,
-        #tabContent .hover\:bg-green-500:hover,
-        #tabContent .hover\:bg-green-600:hover {
-            background: linear-gradient(180deg, #f3fff9 0%, #e3f8ef 100%) !important;
-            color: #0f766e !important;
-            border: 1px solid #bfe9d6 !important;
-            box-shadow: 0 6px 12px rgba(16, 185, 129, 0.1) !important;
-        }
-
-        #tabContent .bg-red-600,
-        #tabContent .bg-red-500,
-        #tabContent .bg-red-700,
-        #tabContent .bg-red-800,
-        #tabContent .bg-red-900,
-        #tabContent .hover\:bg-red-500:hover,
-        #tabContent .hover\:bg-red-600:hover,
-        #tabContent .hover\:bg-red-700:hover,
-        #tabContent .hover\:bg-red-800:hover,
-        #tabContent .hover\:bg-red-900:hover {
-            background: linear-gradient(180deg, #fff7f9 0%, #ffedf2 100%) !important;
-            color: #9f1239 !important;
-            border: 1px solid #ffd6df !important;
-            box-shadow: 0 6px 12px rgba(244, 63, 94, 0.1) !important;
-        }
-
-        #tabContent .bg-yellow-500,
-        #tabContent .bg-yellow-600,
-        #tabContent .hover\:bg-yellow-500:hover,
-        #tabContent .hover\:bg-yellow-600:hover {
-            background: linear-gradient(180deg, #fffdf5 0%, #fff5d8 100%) !important;
-            color: #92400e !important;
-            border: 1px solid #fde5a7 !important;
-            box-shadow: 0 6px 12px rgba(245, 158, 11, 0.1) !important;
-        }
-
-        #tabContent .bg-gray-700,
-        #tabContent .bg-gray-600,
-        #tabContent .hover\:bg-gray-600:hover,
-        #tabContent .hover\:bg-gray-700:hover {
-            background: linear-gradient(180deg, #ffffff 0%, #f4f7fc 100%) !important;
-            color: #334155 !important;
-            border: 1px solid #d8dfeb !important;
-            box-shadow: 0 6px 12px rgba(51, 65, 85, 0.1) !important;
-        }
-
-        #tabContent button,
-        #tabContent .admin-write,
-        #tabContent a[class*="bg-"] {
-            font-weight: 800;
-        }
-
-        #tabContent pre {
-            background: #f7f9fd !important;
-            color: #41516b !important;
-            border-color: #dce3ef !important;
-        }
-
-        #tabContent [class*="rounded-lg"],
-        #tabContent [class*="rounded-xl"] {
-            border-radius: 12px !important;
         }
 
         @media (max-width: 1100px) {
@@ -1143,87 +1055,118 @@
     <div id="drawerOverlay" class="drawer-overlay" aria-hidden="true"></div>
 
     <script>
+        window.__CSP_NONCE__ = document.currentScript ? document.currentScript.nonce : "";
         const _ORIGIN = window.location.origin;
         const API = `${_ORIGIN}/api/v1/admin`;
         const FILE_API = `${_ORIGIN}/api/v1/user/file`;
         const SYS_API = `${_ORIGIN}/api/v1/admin/system`;
         const AUTH_API = `${_ORIGIN}/api/v1/common/auth`;
 
-        let accessToken = localStorage.getItem("cleversearch_admin_token") || "";
-        let refreshToken = localStorage.getItem("cleversearch_admin_refresh_token") || "";
+        let accessToken = "";
+        let refreshToken = "";
         let loggedInUsername = localStorage.getItem("cleversearch_admin_username") || "";
         let loggedInRole = localStorage.getItem("cleversearch_admin_role") || "viewer";
+        let isRefreshingSession = false;
+        let sessionExpireAtMs = 0;
 
         let sessionInterval = null;
 
-        // JWT 토큰 파싱 함수 (만료 시간 추출용)
-        function parseJwt(token) {
+        function syncRequest(url, options = {}) {
+            const method = (options.method || "GET").toUpperCase();
+            const headers = options.headers || {};
+            const body = Object.prototype.hasOwnProperty.call(options, "body") ? options.body : null;
+            const xhr = new XMLHttpRequest();
+
             try {
-                const base64Url = token.split('.')[1];
-                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-                const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-                }).join(''));
-                return JSON.parse(jsonPayload);
-            } catch(e) {
-                return null;
+                xhr.open(method, url, false);
+                xhr.withCredentials = true;
+                Object.entries(headers).forEach(([k, v]) => {
+                    if (v !== undefined && v !== null) {
+                        xhr.setRequestHeader(k, String(v));
+                    }
+                });
+                xhr.send(body);
+                return {
+                    ok: xhr.status >= 200 && xhr.status < 300,
+                    status: xhr.status,
+                    text: xhr.responseText || ""
+                };
+            } catch (_) {
+                return { ok: false, status: 0, text: "" };
             }
         }
 
-        // 타이머 실시간 업데이트 로직
-        function updateTimerDisplay() {
-            if (!accessToken) return;
-            const payload = parseJwt(accessToken);
-            if (!payload || !payload.exp) return;
+        function parseJsonSafe(text, fallback = {}) {
+            try {
+                return JSON.parse(text || "{}");
+            } catch (_) {
+                return fallback;
+            }
+        }
 
+        function formatSessionRemain(totalSec) {
+            const sec = Math.max(0, Number(totalSec) || 0);
+            if (sec >= 3600) {
+                const h = Math.floor(sec / 3600);
+                const m = Math.floor((sec % 3600) / 60).toString().padStart(2, "0");
+                const s = (sec % 60).toString().padStart(2, "0");
+                return `${h}:${m}:${s}`;
+            }
+            const m = Math.floor(sec / 60).toString().padStart(2, "0");
+            const s = (sec % 60).toString().padStart(2, "0");
+            return `${m}:${s}`;
+        }
+
+        function setSessionExpiryFromExp(exp) {
+            const expSec = Number(exp || 0);
+            if (!Number.isFinite(expSec) || expSec <= 0) {
+                sessionExpireAtMs = 0;
+                updateTimerDisplay();
+                return;
+            }
+            sessionExpireAtMs = expSec * 1000;
+            updateTimerDisplay();
             if (sessionInterval) clearInterval(sessionInterval);
+            sessionInterval = setInterval(updateTimerDisplay, 1000);
+        }
 
-            sessionInterval = setInterval(() => {
-                const now = Math.floor(Date.now() / 1000);
-                const left = payload.exp - now;
-                const display = document.getElementById("sessionTimerDisplay");
-                
-                if (left <= 0) {
-                    clearInterval(sessionInterval);
-                    if (display) display.textContent = "00:00";
-                    alert("세션이 만료되었습니다. 다시 로그인해 주세요.");
-                    logoutJwt();
-                } else {
-                    const m = Math.floor(left / 60).toString().padStart(2, '0');
-                    const s = (left % 60).toString().padStart(2, '0');
-                    if (display) {
-                        display.textContent = `${m}:${s}`;
-                        // 5분(300초) 미만 남았을 때 빨간색으로 경고 표시
-                        if (left < 300) {
-                            display.classList.add("text-red-600");
-                            display.classList.remove("text-slate-600");
-                        } else {
-                            display.classList.remove("text-red-600");
-                            display.classList.add("text-slate-600");
-                        }
-                    }
-                }
-            }, 1000);
+        function updateTimerDisplay() {
+            const display = document.getElementById("sessionTimerDisplay");
+            if (!display) return;
+            if (!sessionExpireAtMs) {
+                display.textContent = "--:--";
+                display.classList.remove("text-red-600", "text-amber-600");
+                display.classList.add("text-slate-600");
+                return;
+            }
+
+            const remainSec = Math.max(0, Math.ceil((sessionExpireAtMs - Date.now()) / 1000));
+            display.textContent = formatSessionRemain(remainSec);
+
+            display.classList.remove("text-slate-600", "text-amber-600", "text-red-600");
+            if (remainSec <= 60) {
+                display.classList.add("text-red-600");
+            } else if (remainSec <= 300) {
+                display.classList.add("text-amber-600");
+            } else {
+                display.classList.add("text-slate-600");
+            }
         }
 
         // 세션 연장(Token Refresh) API 호출
         async function extendSession() {
             try {
-                const res = await fetch(`${AUTH_API}/refresh`, {
+                const res = syncRequest(`${AUTH_API}/refresh`, {
                     method: "POST",
                     headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": `Bearer ${refreshToken}`
+                        "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({ refresh_token: refreshToken })
+                    body: JSON.stringify({})
                 });
                 if (res.ok) {
-                    const payload = await res.json();
-                    accessToken = payload.access_token || accessToken;
-                    if (payload.refresh_token) refreshToken = payload.refresh_token;
-                    localStorage.setItem("cleversearch_admin_token", accessToken);
-                    localStorage.setItem("cleversearch_admin_refresh_token", refreshToken);
-                    updateTimerDisplay(); // 타이머 재시작
+                    const meRes = syncRequest(`${AUTH_API}/me`, { method: "GET" });
+                    const mePayload = parseJsonSafe(meRes.text, {});
+                    setSessionExpiryFromExp(mePayload.exp);
                     alert("세션이 성공적으로 연장되었습니다.");
                 } else {
                     alert("세션 연장에 실패했습니다. 다시 로그인해주세요.");
@@ -1306,16 +1249,13 @@
 
         async function logoutJwt() {
             try {
-                if (accessToken) {
-                    await fetch(`${AUTH_API}/logout`, {
-                        method: "POST",
-                        headers: {
-                            "Authorization": `Bearer ${accessToken}`,
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({ refresh_token: refreshToken || null })
-                    });
-                }
+                syncRequest(`${AUTH_API}/logout`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({})
+                });
             } catch (e) {
                 // network error on logout is non-fatal for local session cleanup
             }
@@ -1324,8 +1264,6 @@
             refreshToken = "";
             loggedInUsername = "";
             loggedInRole = "viewer";
-            localStorage.removeItem("cleversearch_admin_token");
-            localStorage.removeItem("cleversearch_admin_refresh_token");
             localStorage.removeItem("cleversearch_admin_username");
             localStorage.removeItem("cleversearch_admin_role");
             localStorage.removeItem("cleversearch_admin_active_tab");
@@ -1333,40 +1271,66 @@
             forceLoginRedirect();
         }
 
+        async function tryRefreshSessionOnce() {
+            if (isRefreshingSession) return false;
+            isRefreshingSession = true;
+            try {
+                const res = syncRequest(`${AUTH_API}/refresh`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({})
+                });
+                if (res.ok) {
+                    const meRes = syncRequest(`${AUTH_API}/me`, { method: "GET" });
+                    const mePayload = parseJsonSafe(meRes.text, {});
+                    setSessionExpiryFromExp(mePayload.exp);
+                }
+                return res.ok;
+            } catch (_) {
+                return false;
+            } finally {
+                isRefreshingSession = false;
+            }
+        }
+
         async function apiFetch(url, options = {}) {
             const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
-
-            let slowNoticeTimer = null;
-            slowNoticeTimer = setTimeout(() => {
-                const msg = "요청이 지연되고 있습니다. 네트워크 또는 서버 상태를 확인해 주세요.";
-                const target = document.getElementById("tabContent");
-                if (target) {
-                    const prev = target.querySelector("#apiSlowNotice");
-                    if (!prev) {
-                        const notice = document.createElement("div");
-                        notice.id = "apiSlowNotice";
-                        notice.className = "mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800";
-                        notice.textContent = msg;
-                        target.prepend(notice);
-                    }
-                }
-            }, 10000);
-
             try {
-                const res = await fetch(url, { ...options, headers });
+                const res = syncRequest(url, { ...options, headers });
                 if (res.status === 401) {
+                    const alreadyRetried = options._retryAfterRefresh === true;
+                    if (!alreadyRetried) {
+                        const refreshed = await tryRefreshSessionOnce();
+                        if (refreshed) {
+                            const retryOptions = { ...options, _retryAfterRefresh: true };
+                            return await apiFetch(url, retryOptions);
+                        }
+                    }
                     await logoutJwt();
                     return { ok: false, status: 401, data: { detail: "세션 만료" } };
                 }
-                const data = await res.json().catch(() => ({ raw: "json parse fail" }));
+                const data = parseJsonSafe(res.text, { raw: "json parse fail" });
                 return { ok: res.ok, status: res.status, data };
             } catch (e) {
                 return { ok: false, status: 0, data: { detail: "서버 연결 실패" } };
-            } finally {
-                if (slowNoticeTimer) clearTimeout(slowNoticeTimer);
-                const notice = document.getElementById("apiSlowNotice");
-                if (notice) notice.remove();
+            }
+        }
+
+        async function initializeSession() {
+            try {
+                const res = syncRequest(`${AUTH_API}/me`, { method: "GET" });
+                if (!res.ok) return false;
+                const payload = parseJsonSafe(res.text, {});
+                loggedInUsername = String(payload.username || loggedInUsername || "admin");
+                loggedInRole = String(payload.role || loggedInRole || "viewer");
+                localStorage.setItem("cleversearch_admin_username", loggedInUsername);
+                localStorage.setItem("cleversearch_admin_role", loggedInRole);
+                setSessionExpiryFromExp(payload.exp);
+                return true;
+            } catch (_) {
+                return false;
             }
         }
 
@@ -1491,9 +1455,9 @@
         async function loadTabHtml(tabName) {
             try {
                 const tabUrl = `/static/admin/${encodeURIComponent(tabName)}.html?v=${Date.now()}`;
-                const res = await fetch(tabUrl, { cache: "no-store" });
+                const res = syncRequest(tabUrl, { method: "GET" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return await res.text();
+                return res.text;
             } catch (e) {
                 return `<div class="text-red-600 p-4">탭 로드 실패: ${fmt(tabName)} (${fmt(e?.message || "error")})</div>`;
             }
@@ -1528,6 +1492,9 @@
 
             container.querySelectorAll("script").forEach(oldScript => {
                 const newScript = document.createElement("script");
+                if (window.__CSP_NONCE__) {
+                    newScript.setAttribute("nonce", window.__CSP_NONCE__);
+                }
                 if (oldScript.src) {
                     newScript.src = oldScript.src;
                 } else {
@@ -1558,9 +1525,9 @@
         async function loadMenu() {
             const container = document.getElementById("tabMenuContainer");
             try {
-                const res = await fetch("/static/admin/menu.html");
+                const res = syncRequest("/static/admin/menu.html", { method: "GET" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                container.innerHTML = await res.text();
+                container.innerHTML = res.text;
             } catch (e) {
                 const safeError = fmt(e?.message || "error");
                 container.innerHTML = `<div id="tabMenu">${TAB_NAMES.map((name, i) =>
@@ -1630,14 +1597,17 @@
             }
         });
 
-        if (!accessToken) {
-            forceLoginRedirect();
-        } else {
+        (async () => {
+            const ok = await initializeSession();
+            if (!ok) {
+                forceLoginRedirect();
+                return;
+            }
             updateTimerDisplay(); // 페이지 로드 시 타이머 시작
             document.getElementById("sessionExtendBtn")?.addEventListener("click", extendSession);
             document.getElementById("logoutBtn")?.addEventListener("click", logoutJwt);
             initAdmin();
-        }
+        })();
 
         document.getElementById("menuToggleBtn")?.addEventListener("click", () => {
             const willOpen = !document.body.classList.contains("drawer-open");
@@ -1650,6 +1620,13 @@
 
         document.getElementById("menuCloseBtn")?.addEventListener("click", () => {
             setDrawerOpen(false);
+        });
+
+        // 동기식 업로드용 iframe으로부터 메시지 수신
+        window.addEventListener("message", (event) => {
+            if (event.origin !== window.location.origin || !event.data || event.data.type !== "upload-sync-result") {
+                return;
+            }
         });
 
         window.matchMedia("(max-width: 1100px)").addEventListener("change", () => {

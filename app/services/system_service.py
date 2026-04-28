@@ -1123,7 +1123,7 @@ class DBIngestionService:
             ]
 
     @staticmethod
-    def get_source(source_id: int, include_secret: bool = True) -> dict[str, Any]:
+    def get_source(source_id: int, include_secret: bool = False) -> dict[str, Any]:
         """DB 소스 단건 상세 조회 (수정 폼 채우기용)"""
         with get_db_session() as db:
             row = db.query(DbSource).filter(DbSource.id == source_id).first()

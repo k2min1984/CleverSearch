@@ -12,11 +12,12 @@
 ########################################################
 """
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from app.schemas.search_schema import SearchRequest
 from app.services.search_service import SearchService
 from app.common.utils import DocumentUtils
 from app.core.opensearch import get_client  # 지렁이 줄을 없애줄 녀석입니다!
+from app.core.security import require_role
 
 # OpenSearch 통신용 변수 세팅
 client = get_client()
@@ -129,11 +130,11 @@ async def get_failed_analysis(days: int = 7):
     """최근 N일간 결과가 0건이었던 검색어들을 집계하여 빈도순으로 반환"""
     return await SearchService.get_failed_analysis(days)
 
-@router.post("/setup-hybrid", summary="[관리자용] 하이브리드 벡터 DB 세팅")
+@router.post("/setup-hybrid", summary="[관리자용] 하이브리드 벡터 DB 세팅", dependencies=[Depends(require_role("admin"))])
 async def setup_hybrid_db():
     return await SearchService.setup_hybrid_index()
 
-@router.get("/admin/documents")
+@router.get("/admin/documents", dependencies=[Depends(require_role("viewer"))])
 async def get_all_documents_for_admin(
     skip: int = Query(0, description="건너뛸 데이터 수 (페이징용)"), 
     limit: int = Query(20, description="한 번에 가져올 데이터 수")

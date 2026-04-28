@@ -27,6 +27,8 @@ python-pptx
 openpyxl
 pandas
 olefile
+python-magic>=0.4.27; platform_system != "Windows"
+python-magic-bin>=0.4.14; platform_system == "Windows"
 
 # ── Image & OCR (PaddleOCR optional – install separately if needed) ──
 Pillow

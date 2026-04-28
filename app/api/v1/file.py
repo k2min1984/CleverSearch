@@ -14,10 +14,13 @@
 ########################################################
 """
 import re
+import json
+import html
 import hashlib
 
 # FastAPI 관련 항목들을 한 줄로 통합
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Path
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Path, Form, Depends
+from fastapi.responses import HTMLResponse
 
 # 프로젝트 내부 모듈
 from app.core.opensearch import get_client
@@ -25,6 +28,13 @@ from app.common.utils import DocumentUtils
 from app.common.embedding import embedder  #[추가] AI 벡터 변환기 가져오기
 from app.services.indexing_service import IndexingService
 from app.services.db_service import DBService
+from app.core.security import require_role
+from app.services.upload_security_service import (
+    MAX_UPLOAD_SIZE,
+    build_safe_filenames,
+    read_upload_limited,
+    validate_signature,
+)
 
 router = APIRouter()
 client = get_client()
@@ -32,10 +42,6 @@ INDEX_NAME = "cleversearch-docs"
 
 # 허용된 확장자 목록 (doc, ppt는 라이브러리 미지원으로 제외)
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'hwp', 'hwpx', 'pdf', 'docx', 'pptx', 'jpg', 'jpeg', 'png'}
-
-# 업로드 파일 최대 크기 (100MB) - DoS 공격 방지
-MAX_UPLOAD_SIZE = 100 * 1024 * 1024
-MAX_BATCH_FILES = 50
 
 def ensure_index():
     """인덱스가 없을 경우 초기 설정(Settings/Mappings)과 함께 생성"""
@@ -47,8 +53,8 @@ def ensure_index():
 
 async def _process_uploaded_file(file: UploadFile) -> dict:
     """단일 파일 업로드 처리 공통 로직."""
-    filename = DocumentUtils.sanitize_text(file.filename)
-    ext = filename.split('.')[-1].lower() if '.' in filename else ""
+    display_filename, storage_filename, ext = build_safe_filenames(file.filename)
+    filename = DocumentUtils.sanitize_text(display_filename)
 
     if ext not in ALLOWED_EXTENSIONS:
         return {
@@ -57,13 +63,8 @@ async def _process_uploaded_file(file: UploadFile) -> dict:
             "filename": filename,
         }
 
-    content = await file.read()
-    if len(content) > MAX_UPLOAD_SIZE:
-        return {
-            "status": "fail",
-            "message": f"파일 크기 초과: 최대 100MB 허용 (현재 {len(content)//1024//1024}MB)",
-            "filename": filename,
-        }
+    content = await read_upload_limited(file=file, max_size=MAX_UPLOAD_SIZE)
+    validate_signature(ext=ext, content=content)
 
     # 업로드 API 입구에서 동일 파일(바이트 해시)을 즉시 차단합니다.
     binary_digest = hashlib.sha256(content).hexdigest()
@@ -96,6 +97,7 @@ async def _process_uploaded_file(file: UploadFile) -> dict:
             "category": result.get("category", "OTHERS"),
             "doc_id": result.get("doc_id", ""),
             "filename": filename,
+            "storage_filename": storage_filename,
         }
     except Exception as e:
         clean_err = DocumentUtils.sanitize_text(str(e))
@@ -114,15 +116,53 @@ async def upload_file(file: UploadFile = File(...)):
     # 1. 인덱스 존재 여부 확인 및 생성
     ensure_index()
 
-    result = await _process_uploaded_file(file)
-    if result.get("status") == "fail":
-        message = result.get("message", "업로드 실패")
-        if "지원하지 않는 확장자" in message:
-            raise HTTPException(status_code=400, detail=message)
-        if "파일 크기 초과" in message:
-            raise HTTPException(status_code=413, detail=message)
-        raise HTTPException(status_code=500, detail=message)
-    return result
+    try:
+        result = await _process_uploaded_file(file)
+        if result.get("status") == "fail":
+            message = result.get("message", "업로드 실패")
+            if "지원하지 않는 확장자" in message:
+                raise HTTPException(status_code=400, detail=message)
+            raise HTTPException(status_code=500, detail=message)
+        return result
+    except HTTPException:
+        raise
+
+
+@router.post("/upload-sync", response_class=HTMLResponse)
+async def upload_file_sync(file: UploadFile = File(...), request_id: str = Form("")):
+    """동기식 form+iframe 업로드용 응답 래퍼(항상 HTML + postMessage)."""
+    ensure_index()
+    try:
+        result = await _process_uploaded_file(file)
+    except Exception as e:
+        result = {
+            "status": "fail",
+            "message": f"서버 내부 오류: {DocumentUtils.sanitize_text(str(e))}",
+            "filename": DocumentUtils.sanitize_text(getattr(file, "filename", "")),
+        }
+
+    payload = {
+        "type": "upload-sync-result",
+        "request_id": request_id or "",
+        "result": result,
+    }
+    payload_json = html.escape(json.dumps(payload, ensure_ascii=False))
+
+    return HTMLResponse(
+        content=(
+            "<!doctype html><html><body>"
+            f"<textarea id='upload-sync-json' style='display:none'>{payload_json}</textarea>"
+            "<script>"
+            "(function(){"
+            "var el=document.getElementById('upload-sync-json');"
+            "var raw=el?el.value:'';"
+            "var data=null;"
+            "try{data=JSON.parse(raw);}catch(e){data={type:'upload-sync-result',request_id:'',result:{status:'fail',message:'응답 파싱 실패'}};}"
+            "try{window.parent.postMessage(data, window.location.origin);}catch(e){}"
+            "})();"
+            "</script></body></html>"
+        )
+    )
 
 
 @router.post("/upload-multiple")
@@ -132,8 +172,6 @@ async def upload_multiple_files(files: list[UploadFile] = File(...)):
 
     if not files:
         raise HTTPException(status_code=400, detail="업로드할 파일이 없습니다")
-    if len(files) > MAX_BATCH_FILES:
-        raise HTTPException(status_code=400, detail=f"한 번에 최대 {MAX_BATCH_FILES}개 파일까지 업로드할 수 있습니다")
 
     results = []
     for upload_file in files:
@@ -162,7 +200,7 @@ async def upload_multiple_files(files: list[UploadFile] = File(...)):
     }
 
 # --- 관리용 API ---
-@router.delete("/clear-all-data")
+@router.delete("/clear-all-data", dependencies=[Depends(require_role("admin"))])
 async def clear_all_data():
     """OpenSearch 전체 문서 삭제 + 업무 DB(indexed_documents, search_logs, recent_searches) 초기화"""
     os_result = {}
@@ -174,7 +212,7 @@ async def clear_all_data():
     db_result = DBService.clear_all_db_data()
     return {"message": "전체 초기화 완료 (OpenSearch + DB)", "opensearch": os_result, "db": db_result}
 
-@router.delete("/delete-index")
+@router.delete("/delete-index", dependencies=[Depends(require_role("admin"))])
 async def delete_index():
     """인덱스 자체를 완전 삭제 + 업무 DB 초기화"""
     if client.indices.exists(index=INDEX_NAME):
