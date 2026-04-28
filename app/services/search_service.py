@@ -354,12 +354,11 @@ class SearchService:
             variants.add(alias)
 
         should = []
-        for field in ("doc_category", "doccategory", "doc_category.keyword", "doccategory.keyword"):
+        # 카테고리 필터는 탭 카운트와 결과 정합성을 위해 "정확 매칭"만 허용한다.
+        # (analyzed 필드 match_phrase 사용 시 의도치 않은 과매칭이 발생할 수 있음)
+        for field in ("doc_category.keyword", "doccategory.keyword", "doc_category", "doccategory"):
             for value in variants:
                 should.append({"term": {field: value}})
-        for field in ("doc_category", "doccategory"):
-            for value in variants:
-                should.append({"match_phrase": {field: value}})
 
         return {
             "bool": {
@@ -388,14 +387,23 @@ class SearchService:
         if not gte and not lte:
             return None
 
-        should = []
-        for field in ("indexed_at", "indexedat"):
-            spec = {}
-            if gte:
-                spec["gte"] = gte
-            if lte:
-                spec["lte"] = lte
-            should.append({"range": {field: spec}})
+        spec = {}
+        if gte:
+            spec["gte"] = gte
+        if lte:
+            spec["lte"] = lte
+
+        # 기본: date 타입 필드
+        should = [{"range": {"indexed_at": spec}}]
+
+        # 레거시 보정: 비표준 날짜 문자열이 indexedat에 남아있는 경우를 위해
+        # keyword 서브필드에 문자열 range를 병행한다. (YYYY-MM-DDTHH:mm:ss... 형식 전제)
+        legacy_spec = {}
+        if gte:
+            legacy_spec["gte"] = gte
+        if lte:
+            legacy_spec["lte"] = lte
+        should.append({"range": {"indexedat.keyword": legacy_spec}})
 
         return {
             "bool": {
@@ -709,11 +717,11 @@ class SearchService:
             "sort": [ { "_score": { "order": "desc" } }, { "indexed_at": { "order": "desc" } } ],
             "aggs": {
                 "group_by_category": {
-                    "terms": { "field": "doc_category" }
+                    "terms": { "field": "doc_category.keyword" }
                 },
                 "group_by_extension": {
                     "terms": {
-                        "field": "file_ext",
+                        "field": "file_ext.keyword",
                         "size": 20,
                         "missing": "unknown"
                     }

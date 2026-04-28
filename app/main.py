@@ -16,6 +16,8 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
+import secrets
+import re
 import os
 
 # 내부 API 라우터 임포트 (역할별 폴더 분리)
@@ -162,9 +164,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ALLOWED_ORIGINS,
     allow_credentials=allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"]
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "Referer", "X-Requested-With", "X-CSRF-Token"],
+    expose_headers=["Content-Type", "X-Request-Id"]
 )
 
 allowed_hosts = list(settings.ALLOWED_HOSTS or [])
@@ -175,22 +177,105 @@ if allowed_hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 
+def _inject_nonce_to_html(html: str, nonce: str) -> str:
+    script_pattern = re.compile(r"<script(?![^>]*\bnonce=)", re.IGNORECASE)
+    style_pattern = re.compile(r"<style(?![^>]*\bnonce=)", re.IGNORECASE)
+    html = script_pattern.sub(f'<script nonce="{nonce}"', html)
+    html = style_pattern.sub(f'<style nonce="{nonce}"', html)
+    return html
+
+
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
+    _unsafe_method = request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
+    _api_path = request.url.path.startswith("/api/")
+    _has_auth_cookie = bool(request.cookies.get("cs_access_token") or request.cookies.get("cs_refresh_token"))
+    _has_bearer = (request.headers.get("authorization") or "").lower().startswith("bearer ")
+
+    # Cookie 기반 인증 요청은 Origin/Referer를 강제 검증해 CSRF를 완화합니다.
+    if _unsafe_method and _api_path and _has_auth_cookie and not _has_bearer:
+        expected_origin = f"{request.url.scheme}://{request.headers.get('host', '')}"
+        origin = (request.headers.get("origin") or "").strip()
+        referer = (request.headers.get("referer") or "").strip()
+        sec_fetch_site = (request.headers.get("sec-fetch-site") or "").strip().lower()
+
+        if origin:
+            if origin != expected_origin:
+                return Response(content="CSRF origin mismatch", status_code=403)
+        elif referer:
+            if not referer.startswith(expected_origin):
+                return Response(content="CSRF referer mismatch", status_code=403)
+        else:
+            # Some browsers may omit Origin/Referer for same-origin requests.
+            if sec_fetch_site not in {"same-origin", "same-site", "none"}:
+                return Response(content="CSRF verification required", status_code=403)
+
     response = await call_next(request)
+
+    # HTML 응답은 nonce를 주입해 CSP에서 unsafe-inline 없이 동작하도록 합니다.
+    _content_type = (response.headers.get("content-type") or "").lower()
+    _is_html = "text/html" in _content_type
+    csp_nonce = secrets.token_urlsafe(16)
+    if _is_html:
+        body = b""
+        async for chunk in response.body_iterator:
+            body += chunk
+        encoding = "utf-8"
+        media_type = response.media_type or "text/html"
+        try:
+            html = body.decode(encoding)
+        except UnicodeDecodeError:
+            encoding = "utf-8"
+            html = body.decode(encoding, errors="replace")
+
+        html = _inject_nonce_to_html(html, csp_nonce)
+        copied_headers = dict(response.headers)
+        copied_headers.pop("content-length", None)
+        response = Response(
+            content=html.encode(encoding),
+            status_code=response.status_code,
+            headers=copied_headers,
+            media_type=media_type,
+        )
     # Swagger/ReDoc 경로는 cdn.jsdelivr.net 리소스가 필요하므로 별도 CSP 적용
     _docs_paths = ("/docs", "/redoc", "/openapi.json")
+    _admin_ui_path = request.url.path == "/admin" or request.url.path.startswith("/static/admin/")
+    _upload_sync_path = request.url.path in {"/api/v1/user/file/upload-sync", "/api/v1/file/upload-sync"}
     if settings.ENABLE_SECURITY_HEADERS:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        if _upload_sync_path:
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        else:
+            response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-        if request.url.path in _docs_paths:
+        if _upload_sync_path:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                f"script-src 'self' 'nonce-{csp_nonce}'; "
+                f"style-src 'self' 'nonce-{csp_nonce}'; "
+                "img-src 'self' data: blob:; "
+                "connect-src 'self' https:; "
+                "frame-ancestors 'self';"
+            )
+        elif request.url.path in _docs_paths:
             response.headers.setdefault(
                 "Content-Security-Policy",
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                f"script-src 'self' 'nonce-{csp_nonce}' https://cdn.jsdelivr.net; "
+                f"style-src 'self' 'nonce-{csp_nonce}' https://cdn.jsdelivr.net; "
+                "img-src 'self' data: blob:; "
+                "connect-src 'self' https:; "
+                "frame-ancestors 'none';",
+            )
+        elif _admin_ui_path:
+            response.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'self'; "
+                f"script-src 'self' 'nonce-{csp_nonce}'; "
+                "script-src-attr 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "font-src 'self' data:; "
                 "img-src 'self' data: blob:; "
                 "connect-src 'self' https:; "
                 "frame-ancestors 'none';",
@@ -199,7 +284,8 @@ async def add_security_headers(request: Request, call_next):
             response.headers.setdefault(
                 "Content-Security-Policy",
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
+                f"script-src 'self' 'nonce-{csp_nonce}' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
+                "script-src-attr 'unsafe-inline'; "
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
                 "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
                 "img-src 'self' data: blob:; "

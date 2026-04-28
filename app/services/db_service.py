@@ -39,6 +39,13 @@ class DBService:
         return {tok for tok in re.split(r"\s+", (text or "").strip().lower()) if len(tok) >= 2}
 
     @staticmethod
+    def _char_ngrams(text: str, n: int = 2) -> set[str]:
+        normalized = DBService._normalize_for_dedup(text)
+        if len(normalized) < n:
+            return {normalized} if normalized else set()
+        return {normalized[i:i+n] for i in range(0, len(normalized) - n + 1)}
+
+    @staticmethod
     def _normalize_for_dedup(text: str) -> str:
         """중복 비교용 정규화: 소문자 + 영숫자/한글만 유지."""
         base = DBService._safe_str(text).lower()
@@ -179,8 +186,10 @@ class DBService:
         if not needle:
             return []
         needle_norm = needle.lower()
+        needle_compact = DBService._normalize_for_dedup(needle_norm)
         needle_tokens = DBService._tokenize(needle_norm)
-        if not needle_tokens:
+        needle_ngrams = DBService._char_ngrams(needle_norm, 2)
+        if not needle_tokens and not needle_ngrams:
             return []
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -194,28 +203,51 @@ class DBService:
             )
 
         scored = []
+        seen_norm = set()
         for q, cnt in rows:
             q_norm = q.lower().strip()
             if q_norm == needle_norm:
                 continue
 
+            q_compact = DBService._normalize_for_dedup(q_norm)
+            if not q_compact or q_compact == needle_compact or q_compact in seen_norm:
+                continue
+            seen_norm.add(q_compact)
+
             q_tokens = DBService._tokenize(q_norm)
-            if not q_tokens:
+            q_ngrams = DBService._char_ngrams(q_norm, 2)
+            if not q_tokens and not q_ngrams:
                 continue
 
-            overlap = len(needle_tokens.intersection(q_tokens))
-            if overlap == 0:
+            token_overlap = len(needle_tokens.intersection(q_tokens))
+            ngram_overlap = len(needle_ngrams.intersection(q_ngrams))
+            contains_bonus = 0.0
+            if needle_compact and q_compact and (needle_compact in q_compact or q_compact in needle_compact):
+                contains_bonus = 20.0
+
+            if token_overlap == 0 and ngram_overlap == 0 and contains_bonus <= 0:
                 continue
 
-            union_size = max(1, len(needle_tokens.union(q_tokens)))
-            jaccard = overlap / union_size
+            token_union = max(1, len(needle_tokens.union(q_tokens)))
+            token_jaccard = (token_overlap / token_union) if needle_tokens and q_tokens else 0.0
 
-            # 텍스트 유사도와 빈도를 함께 반영한 연관도 점수입니다.
-            score = jaccard * 100 + min(cnt, 50)
+            ngram_union = max(1, len(needle_ngrams.union(q_ngrams)))
+            ngram_jaccard = (ngram_overlap / ngram_union) if needle_ngrams and q_ngrams else 0.0
+
+            # 토큰 + 문자단위 유사도 + 포함관계 + 빈도를 함께 반영합니다.
+            score = token_jaccard * 100 + ngram_jaccard * 60 + contains_bonus + min(cnt, 50)
+            if score < 12:
+                continue
             scored.append((score, q))
 
         scored.sort(key=lambda x: (-x[0], x[1]))
-        return [q for _, q in scored[:limit]]
+        related = [q for _, q in scored[:limit]]
+        if related:
+            return related
+
+        # 연관 검색어가 비는 경우 UX 완화를 위해 인기 검색어로 보완합니다.
+        fallback = [kw for kw in DBService.get_popular_keywords(days=days, limit=max(limit * 2, 10)) if kw and kw != needle]
+        return fallback[:limit]
 
     @staticmethod
     def get_recommended_keywords(user_id: str, limit: int = 10) -> List[str]:
