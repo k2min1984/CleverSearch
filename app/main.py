@@ -202,26 +202,43 @@ app = FastAPI(
 )
 
 # --- CORS 설정: 허용 Origin 화이트리스트 기반 ---
+_IS_DEV_ENV = settings.APP_ENV in {"dev", "test", "local"}
+
+# [개발 편의] 접속 주소가 바뀔 때마다(사내 IP, 다른 PC, 노트북 등) CORS_ALLOWED_ORIGINS 에
+# 매번 손으로 추가해야 하던 문제가 있어, 개발 환경에서는 사설망 대역을 정규식으로 함께 허용한다.
+# 운영(prod)은 기존과 동일하게 명시적 화이트리스트만 사용한다.
+_DEV_ORIGIN_REGEX = (
+    r"https?://(localhost|127\.0\.0\.1|\[::1\]"
+    r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+    r"|192\.168\.\d{1,3}\.\d{1,3}"
+    r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?"
+)
+
 allow_credentials = True
 if "*" in settings.CORS_ALLOWED_ORIGINS:
     # CORS 표준상 '*' + credentials 조합은 허용되지 않습니다.
     allow_credentials = False
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ALLOWED_ORIGINS,
-    allow_credentials=allow_credentials,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "Referer", "X-Requested-With", "X-CSRF-Token"],
-    expose_headers=["Content-Type", "X-Request-Id"]
-)
+_cors_kwargs = {
+    "allow_origins": settings.CORS_ALLOWED_ORIGINS,
+    "allow_credentials": allow_credentials,
+    "allow_methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    "allow_headers": ["Authorization", "Content-Type", "Accept", "Origin", "Referer", "X-Requested-With", "X-CSRF-Token"],
+    "expose_headers": ["Content-Type", "X-Request-Id"],
+}
+if _IS_DEV_ENV:
+    _cors_kwargs["allow_origin_regex"] = _DEV_ORIGIN_REGEX
 
-allowed_hosts = list(settings.ALLOWED_HOSTS or [])
-if settings.APP_ENV in {"dev", "test", "local"} and "testserver" not in allowed_hosts:
-    allowed_hosts.append("testserver")
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
-if allowed_hosts:
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+# --- 신뢰 호스트(Host 헤더) 검증 ---
+# [문제 해결] ALLOWED_HOSTS 에 없는 주소(사내 IP, 다른 PC, WAS 도메인)로 접속하면
+# 화면과 API 요청이 전부 400 "Invalid host header" 로 막혀 버튼이 동작하지 않았다.
+# 개발 환경에서는 호스트 검증을 하지 않고, 운영에서는 기존 화이트리스트를 그대로 강제한다.
+if not _IS_DEV_ENV:
+    allowed_hosts = list(settings.ALLOWED_HOSTS or [])
+    if allowed_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 
 # [M-6] HTTP → HTTPS 강제 리다이렉트 (운영 환경 또는 명시적 활성화 시)
@@ -326,7 +343,7 @@ async def add_security_headers(request: Request, call_next):
                 "Content-Security-Policy",
                 "default-src 'self'; "
                 f"script-src 'self' 'nonce-{csp_nonce}'; "
-                "script-src-attr 'none'; "
+                "script-src-attr 'unsafe-inline'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "font-src 'self' data:; "
                 "img-src 'self' data: blob:; "
@@ -338,7 +355,7 @@ async def add_security_headers(request: Request, call_next):
                 "Content-Security-Policy",
                 "default-src 'self'; "
                 f"script-src 'self' 'nonce-{csp_nonce}'; "
-                "script-src-attr 'none'; "
+                "script-src-attr 'unsafe-inline'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "font-src 'self' data:; "
                 "img-src 'self' data: blob:; "

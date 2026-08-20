@@ -263,25 +263,30 @@
          * 뱃지/버튼은 어댑터의 text-white→#334155 강제 변환을 다시 흰색으로 되돌린다.
          * (다크→라이트 전환이 컬러 액션 버튼·뱃지 가독성을 떨어뜨리던 문제 보정)
          */
-        #tabContent .bg-blue-600, #tabContent .bg-blue-700,
-        #tabContent .bg-blue-500, #tabContent .bg-blue-800,
-        #tabContent .bg-emerald-600, #tabContent .bg-emerald-700,
-        #tabContent .bg-teal-600, #tabContent .bg-teal-700,
-        #tabContent .bg-indigo-600, #tabContent .bg-indigo-700,
-        #tabContent .bg-amber-600, #tabContent .bg-amber-700,
-        #tabContent .bg-orange-600, #tabContent .bg-orange-700,
-        #tabContent .bg-red-600, #tabContent .bg-red-700,
-        #tabContent .bg-rose-600, #tabContent .bg-rose-700,
-        #tabContent .bg-sky-600, #tabContent .bg-sky-700,
-        #tabContent .bg-slate-700, #tabContent .bg-slate-800,
+        /* .btn-unified 가 붙은 버튼은 JS가 별도 preset(연한 배경+전용 글자색)을 입히므로
+           여기서 흰 글자를 강제하면 배경은 preset의 연한 색인데 글자만 흰색이 되어 안 보인다.
+           preset을 타지 않는(카드 내 자체 색상 버튼 등) 요소에만 흰 글자를 강제한다. */
+        #tabContent .bg-blue-600:not(.btn-unified), #tabContent .bg-blue-700:not(.btn-unified),
+        #tabContent .bg-blue-500:not(.btn-unified), #tabContent .bg-blue-800:not(.btn-unified),
+        #tabContent .bg-green-600:not(.btn-unified), #tabContent .bg-green-700:not(.btn-unified),
+        #tabContent .bg-emerald-600:not(.btn-unified), #tabContent .bg-emerald-700:not(.btn-unified),
+        #tabContent .bg-teal-600:not(.btn-unified), #tabContent .bg-teal-700:not(.btn-unified),
+        #tabContent .bg-indigo-600:not(.btn-unified), #tabContent .bg-indigo-700:not(.btn-unified),
+        #tabContent .bg-amber-600:not(.btn-unified), #tabContent .bg-amber-700:not(.btn-unified),
+        #tabContent .bg-orange-600:not(.btn-unified), #tabContent .bg-orange-700:not(.btn-unified),
+        #tabContent .bg-red-600:not(.btn-unified), #tabContent .bg-red-700:not(.btn-unified),
+        #tabContent .bg-red-800:not(.btn-unified), #tabContent .bg-red-900:not(.btn-unified),
+        #tabContent .bg-rose-600:not(.btn-unified), #tabContent .bg-rose-700:not(.btn-unified),
+        #tabContent .bg-sky-600:not(.btn-unified), #tabContent .bg-sky-700:not(.btn-unified),
+        #tabContent .bg-slate-700:not(.btn-unified), #tabContent .bg-slate-800:not(.btn-unified),
         #tabContent [data-on-color="white"] {
             color: #ffffff !important;
         }
-        #tabContent .bg-blue-600.text-white, #tabContent .bg-blue-700.text-white,
-        #tabContent .bg-emerald-600.text-white, #tabContent .bg-teal-600.text-white,
-        #tabContent .bg-indigo-600.text-white, #tabContent .bg-amber-600.text-white,
-        #tabContent .bg-orange-600.text-white, #tabContent .bg-red-600.text-white,
-        #tabContent .bg-rose-600.text-white, #tabContent .bg-sky-600.text-white {
+        #tabContent .bg-blue-600.text-white:not(.btn-unified), #tabContent .bg-blue-700.text-white:not(.btn-unified),
+        #tabContent .bg-emerald-600.text-white:not(.btn-unified), #tabContent .bg-teal-600.text-white:not(.btn-unified),
+        #tabContent .bg-indigo-600.text-white:not(.btn-unified), #tabContent .bg-amber-600.text-white:not(.btn-unified),
+        #tabContent .bg-orange-600.text-white:not(.btn-unified), #tabContent .bg-red-600.text-white:not(.btn-unified),
+        #tabContent .bg-rose-600.text-white:not(.btn-unified), #tabContent .bg-sky-600.text-white:not(.btn-unified) {
             color: #ffffff !important;
         }
 
@@ -1098,25 +1103,29 @@
 
         let sessionInterval = null;
 
-        function syncRequest(url, options = {}) {
+        // [수정] 예전엔 XMLHttpRequest를 동기(xhr.open(..., false))로 열어서 요청이 끝날
+        // 때까지 메인 스레드 전체가 멈췄다. 두 가지 이유로 fetch() 기반 비동기 요청으로 바꾼다.
+        // 1) 웹표준: 메인 스레드에서의 동기 XHR은 WHATWG 표준에서 폐기 권고(deprecated) 대상이다.
+        // 2) 접근성: 메인 스레드가 멈추면 그 동안 스크린리더/키보드 포커스 등 보조기술도 같이
+        //    멈춰서, 요청 중엔 화면이 응답 없는 것처럼 보였다(로딩 오버레이도 페인트되지 않았음).
+        // 호출부는 이미 전부 await syncRequest(...) 형태라 이 함수만 비동기로 바꾸면 된다.
+        async function syncRequest(url, options = {}) {
             const method = (options.method || "GET").toUpperCase();
             const headers = options.headers || {};
-            const body = Object.prototype.hasOwnProperty.call(options, "body") ? options.body : null;
-            const xhr = new XMLHttpRequest();
+            const body = Object.prototype.hasOwnProperty.call(options, "body") ? options.body : undefined;
 
             try {
-                xhr.open(method, url, false);
-                xhr.withCredentials = true;
-                Object.entries(headers).forEach(([k, v]) => {
-                    if (v !== undefined && v !== null) {
-                        xhr.setRequestHeader(k, String(v));
-                    }
+                const response = await fetch(url, {
+                    method,
+                    headers,
+                    body,
+                    credentials: "include",
                 });
-                xhr.send(body);
+                const text = await response.text();
                 return {
-                    ok: xhr.status >= 200 && xhr.status < 300,
-                    status: xhr.status,
-                    text: xhr.responseText || ""
+                    ok: response.ok,
+                    status: response.status,
+                    text: text || ""
                 };
             } catch (_) {
                 return { ok: false, status: 0, text: "" };
@@ -1183,7 +1192,7 @@
         // 세션 연장(Token Refresh) API 호출
         async function extendSession() {
             try {
-                const res = syncRequest(`${AUTH_API}/refresh`, {
+                const res = await syncRequest(`${AUTH_API}/refresh`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1191,7 +1200,7 @@
                     body: JSON.stringify({})
                 });
                 if (res.ok) {
-                    const meRes = syncRequest(`${AUTH_API}/me`, { method: "GET" });
+                    const meRes = await syncRequest(`${AUTH_API}/me`, { method: "GET" });
                     const mePayload = parseJsonSafe(meRes.text, {});
                     setSessionExpiryFromExp(mePayload.exp);
                     alert("세션이 성공적으로 연장되었습니다.");
@@ -1291,7 +1300,7 @@
 
         async function logoutJwt() {
             try {
-                syncRequest(`${AUTH_API}/logout`, {
+                await syncRequest(`${AUTH_API}/logout`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1314,7 +1323,7 @@
             if (isRefreshingSession) return false;
             isRefreshingSession = true;
             try {
-                const res = syncRequest(`${AUTH_API}/refresh`, {
+                const res = await syncRequest(`${AUTH_API}/refresh`, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1322,7 +1331,7 @@
                     body: JSON.stringify({})
                 });
                 if (res.ok) {
-                    const meRes = syncRequest(`${AUTH_API}/me`, { method: "GET" });
+                    const meRes = await syncRequest(`${AUTH_API}/me`, { method: "GET" });
                     const mePayload = parseJsonSafe(meRes.text, {});
                     setSessionExpiryFromExp(mePayload.exp);
                 }
@@ -1337,7 +1346,7 @@
         async function apiFetch(url, options = {}) {
             const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
             try {
-                const res = syncRequest(url, { ...options, headers });
+                const res = await syncRequest(url, { ...options, headers });
                 if (res.status === 401) {
                     const alreadyRetried = options._retryAfterRefresh === true;
                     if (!alreadyRetried) {
@@ -1359,7 +1368,7 @@
 
         async function initializeSession() {
             try {
-                const res = syncRequest(`${AUTH_API}/me`, { method: "GET" });
+                const res = await syncRequest(`${AUTH_API}/me`, { method: "GET" });
                 if (!res.ok) return false;
                 const payload = parseJsonSafe(res.text, {});
                 loggedInUsername = String(payload.username || loggedInUsername || "admin");
@@ -1497,7 +1506,7 @@
         async function loadTabHtml(tabName) {
             try {
                 const tabUrl = `/static/admin/${encodeURIComponent(tabName)}.html?v=${Date.now()}`;
-                const res = syncRequest(tabUrl, { method: "GET" });
+                const res = await syncRequest(tabUrl, { method: "GET" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 return res.text;
             } catch (e) {
@@ -1567,7 +1576,7 @@
         async function loadMenu() {
             const container = document.getElementById("tabMenuContainer");
             try {
-                const res = syncRequest("/static/admin/menu.html", { method: "GET" });
+                const res = await syncRequest("/static/admin/menu.html", { method: "GET" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 container.innerHTML = res.text;
             } catch (e) {

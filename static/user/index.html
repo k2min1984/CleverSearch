@@ -153,9 +153,13 @@
 
     <script>
         const _ORIGIN = window.location.origin;
-        const API_BASE = `${_ORIGIN}/api/v1/search`;
+        // [버그 수정] 구버전 /api/v1/search 프리픽스는 보안 강화로 라우터 레벨에서
+        // viewer 이상 로그인을 요구하게 되어(app/main.py의 _legacy_viewer) 익명 사용자가
+        // 검색하면 401 "인증 토큰이 필요합니다"가 떴다. 대국민 검색은 비로그인 이용이
+        // 정상이므로, 인증을 요구하지 않는 신규 경로(/api/v1/user/search)로 전환한다.
+        const API_BASE = `${_ORIGIN}/api/v1/user/search`;
         const FILE_BASE = `${_ORIGIN}/api/v1/file`;
-        const SEARCH_API = `${_ORIGIN}/api/v1/search`;
+        const SEARCH_API = `${_ORIGIN}/api/v1/user/search`;
 
         function getUserId() {
             let userId = localStorage.getItem('hanseek_user_id');
