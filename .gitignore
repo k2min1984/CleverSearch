@@ -6,8 +6,10 @@ __pycache__/
 *.pyc
 
 # 환경 변수
+# [보안] 실제 자격증명이 들어가는 파일은 전부 제외. 예시 파일(.env.example)만 커밋한다.
 .env
-.env.local.backup
+.env.*
+!.env.example
 
 # OS 관련
 .DS_Store
