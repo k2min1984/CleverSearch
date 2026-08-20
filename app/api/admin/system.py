@@ -563,11 +563,17 @@ async def run_renew_script():
 
 @router.post("/ops/run-smoke-test", dependencies=[Depends(require_role("admin"))], summary="시스템 스모크 테스트 실행")
 async def run_system_smoke_test():
+    # [버그 수정] Windows 한글 로케일(cp949)로 자식 프로세스 출력을 디코딩하면
+    # 스크립트가 출력하는 한글 JSON을 못 읽고 리더 스레드가 죽어 stdout이 None이 된다.
+    # 자식 프로세스에도 UTF-8로 쓰도록 강제하고, 부모도 UTF-8로 디코딩한다.
+    child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     proc = subprocess.run(
         [sys.executable, "scripts/run_system_smoke_tests.py"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
+        env=child_env,
     )
     return {
         "status": "success" if proc.returncode == 0 else "fail",

@@ -23,6 +23,7 @@ if str(ROOT_DIR) not in sys.path:
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.core.security import create_access_token
 
 
 def assert_check(name: str, passed: bool, details: dict) -> dict:
@@ -36,9 +37,11 @@ def run() -> dict:
     }
 
     with TestClient(app) as client:
-        viewer_headers = {"X-Role": "viewer"}
-        operator_headers = {"X-Role": "operator"}
-        admin_headers = {"X-Role": "admin"}
+        # ALLOW_LEGACY_X_ROLE 기본값이 false로 막혀있어 X-Role 헤더만으로는
+        # 인증이 통과하지 않는다. 역할별로 실제 access token을 발급해 사용한다.
+        viewer_headers = {"Authorization": f"Bearer {create_access_token('smoke-viewer', 'viewer')}"}
+        operator_headers = {"Authorization": f"Bearer {create_access_token('smoke-operator', 'operator')}"}
+        admin_headers = {"Authorization": f"Bearer {create_access_token('smoke-admin', 'admin')}"}
 
         # JWT 로그인/재발급/로그아웃
         login = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin123!"})
@@ -102,7 +105,9 @@ def run() -> dict:
             params={"dict_type": "synonym", "term": "AI", "replacement": "인공지능"},
             headers=operator_headers,
         )
-        entries = client.get("/api/v1/system/dictionary/entries", headers=viewer_headers)
+        # /api/v1/system 은 라우터 레벨에서 operator 이상을 강제하므로(app/main.py 참고)
+        # 라우트 자체가 viewer로 문서화돼 있어도 실제로는 operator 토큰이 필요하다.
+        entries = client.get("/api/v1/system/dictionary/entries", headers=operator_headers)
         entries_data = entries.json() if entries.status_code == 200 else []
         has_ai_synonym = any((row.get("term") == "AI" and row.get("dict_type") == "synonym") for row in entries_data)
         results["checks"].append(
@@ -114,8 +119,8 @@ def run() -> dict:
         )
 
         # 스케줄러 생명주기
-        s_start = client.post("/api/v1/system/scheduler/start", params={"interval_seconds": 30}, headers=operator_headers)
-        s_status = client.get("/api/v1/system/scheduler/status", headers=viewer_headers)
+        s_start = client.post("/api/v1/system/scheduler/start", headers=operator_headers)
+        s_status = client.get("/api/v1/system/scheduler/status", headers=operator_headers)
         s_stop = client.post("/api/v1/system/scheduler/stop", headers=operator_headers)
         status_payload = s_status.json() if s_status.status_code == 200 else {}
         results["checks"].append(
@@ -132,10 +137,10 @@ def run() -> dict:
         )
 
         # 대시보드 API
-        d1 = client.get("/api/v1/system/dashboard/summary", params={"days": 7}, headers=viewer_headers)
-        d2 = client.get("/api/v1/system/dashboard/trend", params={"days": 14}, headers=viewer_headers)
-        d3 = client.get("/api/v1/system/health/overview", headers=viewer_headers)
-        d4 = client.get("/api/v1/system/dashboard/alerts", headers=viewer_headers)
+        d1 = client.get("/api/v1/system/dashboard/summary", params={"days": 7}, headers=operator_headers)
+        d2 = client.get("/api/v1/system/dashboard/trend", params={"days": 14}, headers=operator_headers)
+        d3 = client.get("/api/v1/system/health/overview", headers=operator_headers)
+        d4 = client.get("/api/v1/system/dashboard/alerts", headers=operator_headers)
         results["checks"].append(
             assert_check(
                 "dashboard_endpoints",
@@ -161,9 +166,11 @@ def run() -> dict:
                 "is_active": False,
             },
         )
-        smb_list = client.get("/api/v1/system/smb/sources", headers=viewer_headers)
+        smb_list = client.get("/api/v1/system/smb/sources", headers=operator_headers)
         smb_ok = smb_create.status_code == 200 and smb_list.status_code == 200
 
+        # [뷰/테이블 모드] 임의 SELECT 필드(query_text)는 보안상 폐지되어
+        # source_table/select_columns 로 백엔드가 SELECT를 조립한다.
         db_create = client.post(
             "/api/v1/system/db/sources",
             headers=operator_headers,
@@ -171,13 +178,14 @@ def run() -> dict:
                 "name": "smoke-db",
                 "db_type": "sqlite",
                 "connection_url": "sqlite:///./cleversearch_app.db",
-                "query_text": "SELECT 'smoke-title' AS title, 'smoke-content' AS content",
-                "title_column": "title",
+                "source_table": "sqlite_master",
+                "select_columns": "name,type",
+                "title_column": "name",
                 "chunk_size": 100,
                 "is_active": False,
             },
         )
-        db_list = client.get("/api/v1/system/db/sources", headers=viewer_headers)
+        db_list = client.get("/api/v1/system/db/sources", headers=operator_headers)
         db_ok = db_create.status_code == 200 and db_list.status_code == 200
 
         results["checks"].append(
@@ -194,7 +202,7 @@ def run() -> dict:
         )
 
         # SSL 스크립트 생성/상태 조회
-        certs = client.get("/api/v1/system/ssl/certificates", params={"cert_dir": "cert", "warn_days": 30}, headers=viewer_headers)
+        certs = client.get("/api/v1/system/ssl/certificates", params={"cert_dir": "cert", "warn_days": 30}, headers=operator_headers)
         renew = client.post(
             "/api/v1/system/ssl/renew-script",
             params={"output_path": "scripts/renew_certs.ps1"},
@@ -216,4 +224,6 @@ def run() -> dict:
 
 
 if __name__ == "__main__":
-    print(json.dumps(run(), ensure_ascii=False, indent=2))
+    report = run()
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    sys.exit(0 if report["passed"] else 1)
