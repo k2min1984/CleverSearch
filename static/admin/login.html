@@ -101,10 +101,32 @@
 
     <script>
         const AUTH_API = `${window.location.origin}/api/v1/common/auth`;
-        const existingToken = localStorage.getItem("cleversearch_admin_token") || "";
-        if (existingToken) {
-            window.location.replace("/admin");
-        }
+
+        // localStorage 에 토큰이 있다고 무조건 /admin 으로 보내면, 쿠키가 만료/유실된 경우
+        // /admin → /me 401 → forceLoginRedirect → login → /admin 무한루프(화면 깜빡임) 발생.
+        // 따라서 /me 로 실제 세션 유효성을 검증한 후에만 이동한다.
+        (function autoRedirectIfAuthenticated() {
+            const existingToken = localStorage.getItem("cleversearch_admin_token") || "";
+            if (!existingToken) return;
+
+            fetch(`${AUTH_API}/me`, {
+                method: "GET",
+                credentials: "include",
+                cache: "no-store"
+            }).then((res) => {
+                if (res.ok) {
+                    window.location.replace("/admin");
+                } else {
+                    // 쿠키 누락/만료 → 잔존 localStorage 토큰을 정리해 무한루프 차단
+                    localStorage.removeItem("cleversearch_admin_token");
+                    localStorage.removeItem("cleversearch_admin_refresh_token");
+                }
+            }).catch(() => {
+                // 네트워크 오류 시에도 안전하게 정리 (다음 로그인 시 새로 발급)
+                localStorage.removeItem("cleversearch_admin_token");
+                localStorage.removeItem("cleversearch_admin_refresh_token");
+            });
+        })();
 
         async function loginJwt(username, password) {
             const res = await fetch(`${AUTH_API}/login`, {

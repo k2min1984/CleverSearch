@@ -58,6 +58,9 @@ class Settings:
 
     # 민감 정보 암호화 키 (운영 환경에서는 반드시 변경 필요)
     CREDENTIAL_SECRET = os.getenv("CREDENTIAL_SECRET", "change-this-credential-secret-in-production")
+
+    # 외부 색인 에이전트(파일 감시기) 인증 키. 빈 값이면 /agent-notify 엔드포인트 비활성.
+    AGENT_API_KEY = os.getenv("AGENT_API_KEY", "").strip()
     
     # OpenSearch 접속 정보
     # 주의: Docker 내부 통신 시 'localhost' 대신 서비스명(예: https://opensearch:9200)을 사용해야 할 수 있습니다.
@@ -152,6 +155,17 @@ class Settings:
     INGEST_SCHEDULER_INTERVAL_SECONDS = int(os.getenv("INGEST_SCHEDULER_INTERVAL_SECONDS", "120"))
     AUTO_START_INGEST_SCHEDULER = os.getenv("AUTO_START_INGEST_SCHEDULER", "false").lower() == "true"
 
+    # 증분 색인 워커 (SyncJob 폴링) — 설계서 §3.2
+    # pool_size 기본 1: 사용자 요청 응답성 우선(GIL/NIC/DB 풀 동시점유 최소화).
+    INDEX_WORKER_POOL_SIZE = int(os.getenv("INDEX_WORKER_POOL_SIZE", "1"))
+    INDEX_WORKER_POLL_INTERVAL_SECONDS = float(os.getenv("INDEX_WORKER_POLL_INTERVAL_SECONDS", "3"))
+    INDEX_WORKER_LEASE_SECONDS = int(os.getenv("INDEX_WORKER_LEASE_SECONDS", "300"))
+    AUTO_START_INDEX_WORKER = os.getenv("AUTO_START_INDEX_WORKER", "true").lower() == "true"
+    # 빈 큐일 때 폴링 백오프 상한(초). 연속 None 시 점진적으로 늘려 DB SELECT 부담 완화.
+    INDEX_WORKER_IDLE_BACKOFF_MAX_SECONDS = float(os.getenv("INDEX_WORKER_IDLE_BACKOFF_MAX_SECONDS", "30"))
+    # SMB/SSH 색인 시 read_bytes 를 회피할 파일 크기 상한(바이트). 0 이면 무제한.
+    INDEX_MAX_FILE_SIZE_BYTES = int(os.getenv("INDEX_MAX_FILE_SIZE_BYTES", str(50 * 1024 * 1024)))
+
     # 인증서 상태 확인 기본 경로
     CERT_DIR = os.getenv("CERT_DIR", "cert")
 
@@ -185,11 +199,33 @@ class Settings:
     AUTH_RATE_LIMIT_MAX_ATTEMPTS = int(os.getenv("AUTH_RATE_LIMIT_MAX_ATTEMPTS", "5"))
     AUTH_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "300"))
     AUTH_RATE_LIMIT_BLOCK_SECONDS = int(os.getenv("AUTH_RATE_LIMIT_BLOCK_SECONDS", "900"))
-    # 하위호환 X-Role 헤더 허용 여부 (기본: dev/local/test만 허용)
-    ALLOW_LEGACY_X_ROLE = _get_bool_env(
-        "ALLOW_LEGACY_X_ROLE",
-        "true" if APP_ENV in {"dev", "local", "test"} else "false",
-    )
+
+    # [M-3] 비밀번호 정책 (국정원 가이드: 길이 ≥ 9, 영문/숫자/특수문자 3종 이상)
+    AUTH_PW_MIN_LENGTH = int(os.getenv("AUTH_PW_MIN_LENGTH", "9"))
+    AUTH_PW_REQUIRE_CHARS_COUNT = int(os.getenv("AUTH_PW_REQUIRE_CHARS_COUNT", "3"))  # 4종(영대/영소/숫자/특수) 중 N종
+    AUTH_PW_MAX_AGE_DAYS = int(os.getenv("AUTH_PW_MAX_AGE_DAYS", "90"))  # 만료 일수, 0 이면 비활성
+    AUTH_PW_HISTORY_COUNT = int(os.getenv("AUTH_PW_HISTORY_COUNT", "5"))  # 직전 N개 재사용 차단
+
+    # [L-5] 역할별 토큰 만료 차등 (분 단위) — 미설정 시 JWT_EXPIRE_MINUTES 사용
+    JWT_ACCESS_MINUTES_ADMIN = int(os.getenv("JWT_ACCESS_MINUTES_ADMIN", "60"))
+    JWT_ACCESS_MINUTES_OPERATOR = int(os.getenv("JWT_ACCESS_MINUTES_OPERATOR", "240"))
+    JWT_ACCESS_MINUTES_VIEWER = int(os.getenv("JWT_ACCESS_MINUTES_VIEWER", "1440"))
+    JWT_REFRESH_MINUTES_ADMIN = int(os.getenv("JWT_REFRESH_MINUTES_ADMIN", "240"))
+    JWT_REFRESH_MINUTES_OPERATOR = int(os.getenv("JWT_REFRESH_MINUTES_OPERATOR", "1440"))
+    JWT_REFRESH_MINUTES_VIEWER = int(os.getenv("JWT_REFRESH_MINUTES_VIEWER", "10080"))
+
+    # [M-6] HTTP→HTTPS 강제 redirect 활성화 여부
+    FORCE_HTTPS_REDIRECT = _get_bool_env("FORCE_HTTPS_REDIRECT", "false")
+
+    # [M-7] PII 마스킹 활성화 (검색어/로그)
+    PII_MASKING_ENABLED = _get_bool_env("PII_MASKING_ENABLED", "true")
+
+    # [M-4] MFA(TOTP) 활성화 — admin 강제 / 그 외 선택
+    MFA_REQUIRED_FOR_ADMIN = _get_bool_env("MFA_REQUIRED_FOR_ADMIN", "true")
+    MFA_ISSUER = os.getenv("MFA_ISSUER", "CleverSearch")
+    # [보안] 하위호환 X-Role 헤더 인증 우회 가능성으로 폐기. 명시적으로만 활성화 가능.
+    # 운영 검증(_validate_production_security)에서 운영 환경에 켜져 있으면 부팅 차단.
+    ALLOW_LEGACY_X_ROLE = _get_bool_env("ALLOW_LEGACY_X_ROLE", "false")
 
     # 검색 파이프라인 점진 전환 플래그 (기본: 기존 동작 유지)
     SEARCH_PIPELINE_VERSION = os.getenv("SEARCH_PIPELINE_VERSION", "v1").strip().lower()

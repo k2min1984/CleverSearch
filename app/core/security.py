@@ -13,6 +13,13 @@
 # 강광민 / 2026-03-23 / 헤더 주석 추가
 ########################################################
 """
+import base64
+import hashlib
+import hmac as _hmac
+import os
+import secrets
+import struct
+import time as _time
 import uuid
 from datetime import datetime, timedelta, timezone
 from threading import Lock
@@ -96,24 +103,71 @@ def record_login_attempt(username: str, client_ip: str, success: bool) -> None:
         }
 
 def authenticate_user(username: str, password: str) -> dict:
+    """사용자 인증 + DB 기반 잠금 정책.
+
+    - 메모리 카운터(_LOGIN_ATTEMPTS) 가 워커별이라 분산/재시작 시 우회 가능했던 문제를
+      AuthUser.failed_login_count / locked_until 컬럼으로 영속화.
+    - 실패 누적 5회 도달 시 15분 잠금. 성공 시 카운터 리셋.
+    """
     uname = (username or "").strip()
+    now = datetime.now(timezone.utc)
     with get_db_session() as db:
         user = db.query(AuthUser).filter(AuthUser.username == uname, AuthUser.is_active.is_(True)).first()
         if not user:
+            # username enumeration 방지: 동일 메시지/지연
             raise HTTPException(status_code=401, detail="로그인 실패")
 
+        if user.locked_until and user.locked_until > now:
+            wait = int((user.locked_until - now).total_seconds())
+            raise HTTPException(status_code=429, detail=f"계정 잠김 — {wait}초 후 다시 시도하세요")
+
         if not verify_password(password or "", user.password_hash):
+            user.failed_login_count = int(user.failed_login_count or 0) + 1
+            if user.failed_login_count >= settings.AUTH_RATE_LIMIT_MAX_ATTEMPTS:
+                user.locked_until = now + timedelta(seconds=settings.AUTH_RATE_LIMIT_BLOCK_SECONDS)
+                user.failed_login_count = 0
+            user.updated_at = now
+            db.flush()
             raise HTTPException(status_code=401, detail="로그인 실패")
 
         role = db.query(AuthRole).filter(AuthRole.id == user.role_id, AuthRole.is_active.is_(True)).first()
         if not role:
             raise HTTPException(status_code=401, detail="권한 정보 없음")
 
+        # 성공 → 카운터 리셋
+        if user.failed_login_count or user.locked_until:
+            user.failed_login_count = 0
+            user.locked_until = None
+            user.updated_at = now
+            db.flush()
+
         return {"username": user.username, "role": role.name}
 
 
+def _access_minutes_for(role: str) -> int:
+    r = (role or "").lower()
+    if r == "admin":
+        return int(settings.JWT_ACCESS_MINUTES_ADMIN or settings.JWT_EXPIRE_MINUTES)
+    if r == "operator":
+        return int(settings.JWT_ACCESS_MINUTES_OPERATOR or settings.JWT_EXPIRE_MINUTES)
+    if r == "viewer":
+        return int(settings.JWT_ACCESS_MINUTES_VIEWER or settings.JWT_EXPIRE_MINUTES)
+    return int(settings.JWT_EXPIRE_MINUTES)
+
+
+def _refresh_minutes_for(role: str) -> int:
+    r = (role or "").lower()
+    if r == "admin":
+        return int(settings.JWT_REFRESH_MINUTES_ADMIN or settings.JWT_REFRESH_EXPIRE_MINUTES)
+    if r == "operator":
+        return int(settings.JWT_REFRESH_MINUTES_OPERATOR or settings.JWT_REFRESH_EXPIRE_MINUTES)
+    if r == "viewer":
+        return int(settings.JWT_REFRESH_MINUTES_VIEWER or settings.JWT_REFRESH_EXPIRE_MINUTES)
+    return int(settings.JWT_REFRESH_EXPIRE_MINUTES)
+
+
 def create_access_token(subject: str, role: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=_access_minutes_for(role))
     payload = {
         "sub": subject,
         "role": role,
@@ -127,7 +181,7 @@ def create_access_token(subject: str, role: str) -> str:
 
 
 def create_refresh_token(subject: str, role: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.JWT_REFRESH_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=_refresh_minutes_for(role))
     payload = {
         "sub": subject,
         "role": role,
@@ -200,6 +254,89 @@ def issue_token_pair(subject: str, role: str) -> dict:
         "refresh_token": refresh_token,
         "token_type": "bearer",
     }
+
+
+_LAST_REVOKED_CLEANUP_AT = 0.0
+
+
+def _b32_secret(length: int = 20) -> str:
+    """RFC 4648 Base32 시크릿 (TOTP 표준 길이)."""
+    raw = secrets.token_bytes(length)
+    return base64.b32encode(raw).decode("ascii").rstrip("=")
+
+
+def _hotp(secret_b32: str, counter: int, digits: int = 6) -> str:
+    key = base64.b32decode(secret_b32 + "=" * ((8 - len(secret_b32) % 8) % 8))
+    msg = struct.pack(">Q", counter)
+    digest = _hmac.new(key, msg, hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    code = ((digest[offset] & 0x7F) << 24) | (digest[offset + 1] << 16) | (digest[offset + 2] << 8) | digest[offset + 3]
+    return str(code % (10 ** digits)).zfill(digits)
+
+
+def _totp_now(secret_b32: str, *, period: int = 30, digits: int = 6) -> str:
+    return _hotp(secret_b32, int(_time.time()) // period, digits)
+
+
+def verify_totp(secret_b32: str, code: str, *, drift: int = 1, period: int = 30) -> bool:
+    """RFC 6238 TOTP 검증. drift 윈도 ±1 (총 90초)."""
+    if not secret_b32 or not code:
+        return False
+    try:
+        cur = int(_time.time()) // period
+        for off in range(-drift, drift + 1):
+            if _hmac.compare_digest(_hotp(secret_b32, cur + off), code.strip()):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def enroll_totp(username: str) -> dict:
+    """[M-4] 사용자에게 임시 secret 발급 → otpauth:// URL 반환. 확정은 confirm_totp."""
+    secret = _b32_secret(20)
+    issuer = settings.MFA_ISSUER or "CleverSearch"
+    label = f"{issuer}:{username}"
+    otpauth = (
+        f"otpauth://totp/{label}?secret={secret}&issuer={issuer}&algorithm=SHA1&digits=6&period=30"
+    )
+    return {"secret": secret, "otpauth_url": otpauth}
+
+
+def confirm_totp(user_id: int, secret_b32: str, code: str) -> dict:
+    """등록 단계: 사용자가 secret 으로 첫 코드 검증을 통과하면 mfa_enabled=True 저장."""
+    if not verify_totp(secret_b32, code):
+        return {"status": "fail", "message": "코드가 일치하지 않습니다"}
+    with get_db_session() as db:
+        user = db.query(AuthUser).filter(AuthUser.id == user_id).first()
+        if not user:
+            return {"status": "fail", "message": "사용자를 찾을 수 없습니다"}
+        user.mfa_secret = secret_b32
+        user.mfa_enabled = True
+        user.updated_at = datetime.now(timezone.utc)
+        db.flush()
+    return {"status": "ok", "message": "MFA 등록 완료"}
+
+
+def cleanup_expired_revoked_tokens(force: bool = False) -> dict:
+    """폐기 토큰 테이블에서 만료 시각이 지난 row 제거 — 무한 누적 차단."""
+    global _LAST_REVOKED_CLEANUP_AT
+    now_ts = monotonic()
+    # 호출 빈도 보호: 최소 5분 간격 (force=True 면 무시)
+    if not force and now_ts - _LAST_REVOKED_CLEANUP_AT < 300:
+        return {"status": "skipped", "reason": "throttled"}
+    _LAST_REVOKED_CLEANUP_AT = now_ts
+
+    deleted_access = 0
+    deleted_refresh = 0
+    cutoff = datetime.now(timezone.utc)
+    try:
+        with get_db_session() as db:
+            deleted_access = db.query(RevokedAccessToken).filter(RevokedAccessToken.expires_at < cutoff).delete(synchronize_session=False)
+            deleted_refresh = db.query(RevokedRefreshToken).filter(RevokedRefreshToken.expires_at < cutoff).delete(synchronize_session=False)
+    except Exception as exc:
+        return {"status": "fail", "message": str(exc)}
+    return {"status": "ok", "deleted_access": deleted_access, "deleted_refresh": deleted_refresh}
 
 
 def refresh_access_token(refresh_token: str) -> dict:

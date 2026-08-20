@@ -28,11 +28,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, or_, text
 
 from app.utils.crypto import encrypt as _encrypt, decrypt as _decrypt
 
-from app.core.database import CertificateStatus, DbSource, FileIndexState, IndexingHistory, NetworkEventLog, ScheduleEntry, SearchLog, SearchVolume, SmbSource, SmbSyncHistory, get_db_session
+from app.core.database import CertificateStatus, DbSource, FileIndexState, IndexingHistory, NetworkEventLog, ScheduleEntry, SearchLog, SearchVolume, SmbSource, SmbSyncHistory, SyncJob, get_db_session
 from app.core.opensearch import get_client
 from app.services.db_service import DBService
 from app.services.indexing_service import ALLOWED_EXTENSIONS, IndexingService
@@ -305,7 +305,10 @@ class SMBService:
                         raise FileNotFoundError(f"{conn_type.upper()} 경로 접근 실패: {source.share_path} — {retry_exc}") from retry_exc
 
                 try:
-                    for rel_path, full_path in client.walk(allowed_extensions=ALLOWED_EXTENSIONS):
+                    for entry in client.walk(allowed_extensions=ALLOWED_EXTENSIONS):
+                        # Phase 3 부터 walk() 는 FileEntry(rel_path, full_path, size, mtime) 반환
+                        rel_path = entry.rel_path
+                        full_path = entry.full_path
                         if indexed + skipped + unchanged + failed >= max_files:
                             break
                         file_name = rel_path.split("\\")[-1].split("/")[-1]
@@ -396,6 +399,75 @@ class SMBService:
                 ))
 
                 return {"status": "fail", "source_id": source_id, "message": str(exc)}
+
+    @staticmethod
+    def enqueue_sync_job(
+        source_id: int,
+        mode: str = "incremental",
+        trigger_type: str = "manual",
+        reset_cursor: bool = False,
+    ) -> dict[str, Any]:
+        """SMB/SSH SyncJob 1건 큐잉 (Phase 3 신규).
+
+        - mode: incremental | full (full 이면 cursor 초기화)
+        - 같은 source 에 진행 중인 Job(pending/running/paused) 이 있으면 그걸 반환
+        - source_type 은 SmbSource.connection_type 에 따라 'smb' 또는 'ssh' 로 자동 설정
+          → 워커가 같은 source 동시 처리 차단을 source_type+source_id 단위로 강제
+        """
+        if mode not in {"incremental", "full"}:
+            return {"status": "fail", "message": f"잘못된 mode: {mode}"}
+
+        with get_db_session() as db:
+            source = db.query(SmbSource).filter(SmbSource.id == source_id).first()
+            if not source:
+                return {"status": "fail", "message": "SMB/SSH source not found", "source_id": source_id}
+            if not source.is_active:
+                return {"status": "fail", "message": "SMB/SSH source 가 비활성 상태입니다"}
+
+            conn_type = (source.connection_type or "smb").lower()
+            if conn_type not in {"smb", "ssh"}:
+                return {"status": "fail", "message": f"지원하지 않는 connection_type: {conn_type}"}
+
+            running = (
+                db.query(SyncJob)
+                .filter(
+                    SyncJob.source_type == conn_type,
+                    SyncJob.source_id == source_id,
+                    SyncJob.status.in_(("pending", "running", "paused")),
+                )
+                .first()
+            )
+            if running is not None:
+                return {
+                    "status": "ok",
+                    "message": "이미 진행 중인 Job 이 있습니다",
+                    "job_id": running.id,
+                    "job_status": running.status,
+                    "duplicate": True,
+                }
+
+            now = datetime.now(timezone.utc)
+            initial_cursor = None if (mode == "full" or reset_cursor) else None  # SMB 초기 cursor 는 없음
+            job = SyncJob(
+                source_type=conn_type,
+                source_id=source_id,
+                status="pending",
+                mode=mode,
+                cursor_value=initial_cursor,
+                trigger_type=trigger_type,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(job)
+            db.flush()
+            return {
+                "status": "ok",
+                "message": "Job enqueued",
+                "job_id": job.id,
+                "job_status": job.status,
+                "source_type": conn_type,
+                "mode": mode,
+            }
 
     @staticmethod
     def sync_all_sources(max_files_per_source: int = 200, trigger_type: str = "manual") -> dict[str, Any]:
@@ -520,8 +592,13 @@ class IndexingHistoryService:
     ) -> list[dict[str, Any]]:
         """색인 이력 조회 (필터 선택 가능)"""
         with get_db_session() as db:
-            # 통합 이력은 실행 회차 요약(sync_summary)만 노출
-            query = db.query(IndexingHistory).filter(IndexingHistory.action == "sync_summary")
+            # 통합 이력은 실행 회차 요약(sync_summary) + 외부 에이전트 일자별 요약(agent_summary) 노출
+            query = db.query(IndexingHistory).filter(
+                or_(
+                    IndexingHistory.action == "sync_summary",
+                    IndexingHistory.action == "agent_summary",
+                )
+            )
             if source_type:
                 query = query.filter(IndexingHistory.source_type == source_type)
             if source_name:
@@ -1059,6 +1136,39 @@ class NetworkMonitorService:
             cls._last_status.pop(k, None)
 
 
+def _self_heal_db_sources_schema(exc: Exception) -> bool:
+    """db_sources / file_index_states 의 신규 컬럼 누락 에러를 만나면 자동으로 ALTER 재시도.
+
+    운영 환경에서 부팅 시 마이그레이션이 누락되거나 실패한 상태로 남았을 때,
+    핸들러 호출 시점에 한 번 더 마이그레이션을 시도해서 자가 치유한다.
+
+    반환: 마이그레이션을 시도해 본 경우 True (호출자에게 retry 권장).
+          명백히 무관한 에러면 False.
+    """
+    msg = str(exc).lower()
+    triggers = (
+        "no such column",            # SQLite
+        "undefined column",          # PostgreSQL
+        "unknown column",            # MySQL
+        "ora-00904",                 # Oracle
+        "invalid column name",       # MSSQL
+    )
+    if not any(t in msg for t in triggers):
+        return False
+    try:
+        from app.core.database import _migrate_add_missing_columns, engine
+        _migrate_add_missing_columns()
+        # 신규 컬럼이 추가됐을 수 있으므로 풀 커넥션의 stale prepared 캐시를 정리
+        try:
+            engine.dispose()
+        except Exception:
+            pass
+        return True
+    except Exception as heal_exc:
+        logger.warning("[SELF-HEAL] 자가 치유 실패: %s", heal_exc)
+        return False
+
+
 class DBIngestionService:
     """
     외부 DB 데이터 수집 서비스
@@ -1066,42 +1176,61 @@ class DBIngestionService:
     - 대용량 DB 조회 시 fetchmany 스트리밍으로 부하 방지 (분할 수집)
     - 조회 결과를 텍스트로 변환하여 IndexingService로 색인
     """
-    @staticmethod
-    def _validate_query_text(query_text: str) -> str:
-        """읽기 전용 SELECT 쿼리만 허용하여 위험한 실행을 차단합니다."""
-        q = (query_text or "").strip()
-        if not q:
-            raise ValueError("query_text는 비어 있을 수 없습니다")
-
-        # 주석 제거 후 검증
-        q_no_comment = re.sub(r"--.*?$", "", q, flags=re.MULTILINE).strip()
-        q_lower = q_no_comment.lower()
-
-        if not q_lower.startswith("select"):
-            raise ValueError("SELECT 쿼리만 허용됩니다")
-
-        forbidden = [
-            ";",
-            "insert ",
-            "update ",
-            "delete ",
-            "drop ",
-            "alter ",
-            "truncate ",
-            "create ",
-            "grant ",
-            "revoke ",
-            "execute ",
-            "call ",
-        ]
-        if any(token in q_lower for token in forbidden):
-            raise ValueError("위험한 SQL 키워드가 포함되어 있습니다")
-
-        return q_no_comment
+    # 식별자(테이블/컬럼) 화이트리스트.
+    # - schema.table 또는 단순 이름. 영숫자·밑줄만. 따옴표·세미콜론·공백 거부.
+    _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 
     @staticmethod
-    def list_sources(active_only: bool = False) -> list[dict[str, Any]]:
-        """등록된 DB 소스 목록 조회 (active_only=True이면 활성 소스만)"""
+    def _validate_identifier(value: str, label: str) -> str:
+        """식별자(테이블/뷰/컬럼명) 검증. 인젝션 차단의 1차 방어선."""
+        v = (value or "").strip()
+        if not v:
+            raise ValueError(f"{label} 가 비어 있습니다")
+        if not DBIngestionService._IDENT_RE.match(v):
+            raise ValueError(f"{label} 식별자 형식 오류 (영문자/숫자/밑줄, schema.name 만 허용): {v!r}")
+        return v
+
+    @staticmethod
+    def _split_columns(value: str) -> list[str]:
+        """콤마 구분 컬럼 문자열을 리스트로. 공백 trim, 빈값 제거."""
+        if not value:
+            return []
+        return [c.strip() for c in value.split(",") if c.strip()]
+
+    @staticmethod
+    def _build_select_query(
+        source_table: str,
+        select_columns: str | None,
+        pk_column: str,
+        cursor_column: str,
+        title_column: str | None = None,
+    ) -> str:
+        """뷰/테이블 + 컬럼 목록으로 안전한 SELECT 자동 조립.
+
+        형태: SELECT {pk}, {cursor}[, {title}][, {extra...}] FROM {table} ORDER BY {cursor}
+        cursor 기반 WHERE 는 워커가 외부에서 wrap 한다.
+        """
+        tbl = DBIngestionService._validate_identifier(source_table, "source_table")
+        pk = DBIngestionService._validate_identifier(pk_column, "pk_column")
+        cur = DBIngestionService._validate_identifier(cursor_column, "cursor_column")
+
+        cols: list[str] = []
+        for c in (pk, cur):
+            if c not in cols:
+                cols.append(c)
+        if title_column:
+            t = DBIngestionService._validate_identifier(title_column, "title_column")
+            if t not in cols:
+                cols.append(t)
+        for raw in DBIngestionService._split_columns(select_columns or ""):
+            c = DBIngestionService._validate_identifier(raw, "select_columns 항목")
+            if c not in cols:
+                cols.append(c)
+
+        return f"SELECT {', '.join(cols)} FROM {tbl} ORDER BY {cur}"
+
+    @staticmethod
+    def _list_sources_query(active_only: bool) -> list[dict[str, Any]]:
         with get_db_session() as db:
             query = db.query(DbSource)
             if active_only:
@@ -1116,6 +1245,12 @@ class DBIngestionService:
                     "is_active": row.is_active,
                     "chunk_size": row.chunk_size,
                     "title_column": row.title_column,
+                    "source_table": row.source_table,
+                    "select_columns": row.select_columns,
+                    "cursor_column": row.cursor_column,
+                    "cursor_type": row.cursor_type,
+                    "pk_column": row.pk_column,
+                    "last_cursor_value": row.last_cursor_value,
                     "last_synced_at": row.last_synced_at.isoformat() if row.last_synced_at else None,
                     "last_error": row.last_error,
                 }
@@ -1123,8 +1258,22 @@ class DBIngestionService:
             ]
 
     @staticmethod
-    def get_source(source_id: int, include_secret: bool = False) -> dict[str, Any]:
-        """DB 소스 단건 상세 조회 (수정 폼 채우기용)"""
+    def list_sources(active_only: bool = False) -> list[dict[str, Any]]:
+        """등록된 DB 소스 목록 조회 (active_only=True이면 활성 소스만).
+
+        Phase 2 의 신규 컬럼(cursor_column 등) 이 운영 DB 에 누락된 경우,
+        한 번 자가 치유 마이그레이션을 시도하고 재시도한다.
+        """
+        try:
+            return DBIngestionService._list_sources_query(active_only)
+        except Exception as exc:
+            if _self_heal_db_sources_schema(exc):
+                # 한 번만 재시도. 그래도 실패하면 원래 예외를 그대로 올린다.
+                return DBIngestionService._list_sources_query(active_only)
+            raise
+
+    @staticmethod
+    def _get_source_query(source_id: int, include_secret: bool) -> dict[str, Any]:
         with get_db_session() as db:
             row = db.query(DbSource).filter(DbSource.id == source_id).first()
             if not row:
@@ -1138,32 +1287,69 @@ class DBIngestionService:
                 "title_column": row.title_column,
                 "chunk_size": row.chunk_size,
                 "is_active": row.is_active,
+                "source_table": row.source_table,
+                "select_columns": row.select_columns,
+                "cursor_column": row.cursor_column,
+                "cursor_type": row.cursor_type,
+                "pk_column": row.pk_column,
+                "last_cursor_value": row.last_cursor_value,
                 "last_synced_at": row.last_synced_at.isoformat() if row.last_synced_at else None,
                 "last_error": row.last_error,
             }
             if include_secret:
                 result["connection_url"] = _decrypt(row.connection_url) if row.connection_url else None
-                result["query_text"] = row.query_text
             return result
+
+    @staticmethod
+    def get_source(source_id: int, include_secret: bool = True) -> dict[str, Any]:
+        """DB 소스 단건 상세 조회 (수정 폼 채우기용). 신규 컬럼 누락 시 자가 치유."""
+        try:
+            return DBIngestionService._get_source_query(source_id, include_secret)
+        except Exception as exc:
+            if _self_heal_db_sources_schema(exc):
+                return DBIngestionService._get_source_query(source_id, include_secret)
+            raise
 
     @staticmethod
     def upsert_source(
         name: str,
         db_type: str,
         connection_url: str,
-        query_text: str,
+        source_table: str,
+        select_columns: str | None = None,
         target_volume: str | None = None,
         title_column: str | None = None,
         chunk_size: int = 500,
         is_active: bool = True,
+        cursor_column: str | None = None,
+        cursor_type: str | None = None,
+        pk_column: str | None = None,
     ) -> dict[str, Any]:
         """
-        DB 소스 등록/수정 (Upsert)
-        - name 기준 기존 소스 있으면 UPDATE, 없으면 INSERT
-        - chunk_size: 한 번에 가져올 로우 수 (분할 수집 단위)
+        DB 소스 등록/수정 (Upsert) — 뷰/테이블 모드.
+        - 임의 SELECT 저장은 폐지. 운영자는 source_table(뷰/테이블) + select_columns(콤마 구분) 만 입력.
+        - 식별자 화이트리스트로 인젝션 차단. 자동 SELECT 조립은 워커 시점에 수행 (저장하지 않음).
+        - cursor_column / cursor_type / pk_column 은 동기화(워커 큐) 사용 시 필수.
         """
         with get_db_session() as db:
-            safe_query_text = DBIngestionService._validate_query_text(query_text)
+            # 0) connection_url SSRF 검증
+            try:
+                DBIngestionService._validate_connection_url(connection_url)
+            except ValueError as ve:
+                return {"status": "fail", "message": str(ve)}
+            # 1) 식별자 검증 (저장 전 1차 차단)
+            try:
+                tbl_norm = DBIngestionService._validate_identifier(source_table, "source_table")
+            except ValueError as ve:
+                return {"status": "fail", "message": str(ve)}
+            cols_norm: list[str] = []
+            for raw in DBIngestionService._split_columns(select_columns or ""):
+                try:
+                    cols_norm.append(DBIngestionService._validate_identifier(raw, "select_columns 항목"))
+                except ValueError as ve:
+                    return {"status": "fail", "message": str(ve)}
+            select_columns_norm = ", ".join(cols_norm) if cols_norm else None
+
             normalized_target_volume = (target_volume or "").strip() or None
             if normalized_target_volume:
                 volume = db.query(SearchVolume).filter(SearchVolume.alias_name == normalized_target_volume).first()
@@ -1177,36 +1363,137 @@ class DBIngestionService:
             row = db.query(DbSource).filter(DbSource.name == name).first()
             now = datetime.now(timezone.utc)
             enc_url = _encrypt(connection_url)
+            normalized_cursor_type = (cursor_type or "").strip().lower() or None
+            if normalized_cursor_type and normalized_cursor_type not in {"int", "datetime", "string"}:
+                return {"status": "fail", "message": "cursor_type 은 int|datetime|string 중 하나여야 합니다"}
             if row:
+                # 접속 URL 변경 시 캐시된 엔진 무효화
+                connection_changed = (row.connection_url != enc_url)
                 row.db_type = db_type
                 row.connection_url = enc_url
-                row.query_text = safe_query_text
+                row.source_table = tbl_norm
+                row.select_columns = select_columns_norm
                 row.target_volume = normalized_target_volume
                 row.title_column = title_column
                 row.chunk_size = chunk_size
                 row.is_active = is_active
+                row.cursor_column = cursor_column or None
+                row.cursor_type = normalized_cursor_type
+                row.pk_column = pk_column or None
                 row.updated_at = now
+                if connection_changed:
+                    try:
+                        from app.services.db_engine_cache import invalidate_engine
+                        invalidate_engine(row.id)
+                    except Exception:
+                        pass
             else:
                 row = DbSource(
                     name=name,
                     db_type=db_type,
                     connection_url=enc_url,
-                    query_text=safe_query_text,
+                    source_table=tbl_norm,
+                    select_columns=select_columns_norm,
                     target_volume=normalized_target_volume,
                     title_column=title_column,
                     chunk_size=chunk_size,
                     is_active=is_active,
+                    cursor_column=cursor_column or None,
+                    cursor_type=normalized_cursor_type,
+                    pk_column=pk_column or None,
                     created_at=now,
                     updated_at=now,
                 )
                 db.add(row)
             db.flush()
-            return {"id": row.id, "name": row.name, "db_type": row.db_type, "chunk_size": row.chunk_size, "target_volume": row.target_volume}
+            return {
+                "id": row.id, "name": row.name, "db_type": row.db_type,
+                "chunk_size": row.chunk_size, "target_volume": row.target_volume,
+                "source_table": row.source_table, "select_columns": row.select_columns,
+                "cursor_column": row.cursor_column, "cursor_type": row.cursor_type,
+                "pk_column": row.pk_column,
+            }
+
+    @staticmethod
+    def enqueue_sync_job(
+        source_id: int,
+        mode: str = "incremental",
+        trigger_type: str = "manual",
+        reset_cursor: bool = False,
+    ) -> dict[str, Any]:
+        """SyncJob 1건을 큐에 등록하고 워커가 백그라운드에서 처리하게 한다 (Phase 2 신규).
+
+        - mode: incremental | full  (full 이면 cursor 초기화)
+        - 같은 source 에 진행 중인 Job(pending/running) 이 이미 있으면 그걸 반환 (중복 방지)
+        - 등록만 하고 즉시 반환 → 호출자는 /api/admin/sync-jobs 로 진행률 조회
+        """
+        if mode not in {"incremental", "full"}:
+            return {"status": "fail", "message": f"잘못된 mode: {mode}"}
+
+        with get_db_session() as db:
+            source = db.query(DbSource).filter(DbSource.id == source_id).first()
+            if not source:
+                return {"status": "fail", "message": "DB source not found", "source_id": source_id}
+            if not source.is_active:
+                return {"status": "fail", "message": "DB source 가 비활성 상태입니다"}
+            missing = [
+                f for f in ("cursor_column", "cursor_type", "pk_column") if not getattr(source, f)
+            ]
+            if missing:
+                return {
+                    "status": "fail",
+                    "message": f"DB source 에 다음 필드가 비어있어 증분 색인 불가: {', '.join(missing)}",
+                }
+
+            # 진행 중 Job 중복 방지
+            running = (
+                db.query(SyncJob)
+                .filter(
+                    SyncJob.source_type == "db",
+                    SyncJob.source_id == source_id,
+                    SyncJob.status.in_(("pending", "running", "paused")),
+                )
+                .first()
+            )
+            if running is not None:
+                return {
+                    "status": "ok",
+                    "message": "이미 진행 중인 Job 이 있습니다",
+                    "job_id": running.id,
+                    "job_status": running.status,
+                    "duplicate": True,
+                }
+
+            now = datetime.now(timezone.utc)
+            initial_cursor = None if (mode == "full" or reset_cursor) else (source.last_cursor_value or None)
+            job = SyncJob(
+                source_type="db",
+                source_id=source_id,
+                status="pending",
+                mode=mode,
+                cursor_value=initial_cursor,
+                trigger_type=trigger_type,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(job)
+            db.flush()
+            return {
+                "status": "ok",
+                "message": "Job enqueued",
+                "job_id": job.id,
+                "job_status": job.status,
+                "mode": mode,
+            }
 
     @staticmethod
     def sync_source(source_id: int, max_rows: int = 5000) -> dict[str, Any]:
         """
-        DB 소스 동기화 실행 (분할 수집)
+        DB 소스 동기화 실행 (분할 수집) — [LEGACY]
+
+        ※ Phase 2 부터는 enqueue_sync_job() + IndexingWorker 경로 권장.
+        기존 호출자(스케줄러/관리자 API/v1) 호환을 위해 그대로 유지.
+
         - stream_results=True로 메모리 최소화
         - fetchmany(chunk_size)로 나눠서 색인 → 대용량 테이블도 안정적 처리
         - max_rows 제한으로 무한 수집 방지
@@ -1242,7 +1529,16 @@ class DBIngestionService:
                 target_index = (volume.index_name or "").strip() or None
 
             try:
-                safe_query_text = DBIngestionService._validate_query_text(source.query_text)
+                # LEGACY 동기화 — 뷰/테이블 모드의 SELECT 를 안전하게 자동 조립
+                if not source.source_table:
+                    return {"status": "fail", "source_id": source_id, "message": "source_table 미설정"}
+                safe_query_text = DBIngestionService._build_select_query(
+                    source_table=source.source_table,
+                    select_columns=source.select_columns,
+                    pk_column=source.pk_column or source.cursor_column or "id",
+                    cursor_column=source.cursor_column or source.pk_column or "id",
+                    title_column=source.title_column,
+                )
                 engine = create_engine(_decrypt(source.connection_url))
                 with engine.connect() as conn:
                     result = conn.execution_options(stream_results=True).execute(text(safe_query_text))
@@ -1321,17 +1617,54 @@ class DBIngestionService:
             "results": results,
         }
 
+    # [보안 SSRF] 허용된 외부 DB 드라이버 prefix 화이트리스트.
+    # 운영 시 환경변수 DB_CONNECTION_ALLOWED_HOSTS 로 호스트 화이트리스트 추가 가능.
+    _ALLOWED_URL_PREFIXES = (
+        "postgresql+psycopg2://",
+        "postgresql://",
+        "mysql+pymysql://",
+        "mysql://",
+        "mariadb+pymysql://",
+        "oracle+oracledb://",
+        "mssql+pymssql://",
+        "sqlite:///",
+    )
+
+    @staticmethod
+    def _validate_connection_url(connection_url: str) -> None:
+        """SSRF 차단: 허용된 드라이버 prefix 만, 그리고 환경변수로 명시된 호스트 화이트리스트만 허용."""
+        url = (connection_url or "").strip()
+        if not url:
+            raise ValueError("connection_url 비어 있음")
+        if not any(url.startswith(p) for p in DBIngestionService._ALLOWED_URL_PREFIXES):
+            raise ValueError("허용되지 않은 connection_url prefix")
+        allowlist = (os.getenv("DB_CONNECTION_ALLOWED_HOSTS", "") or "").strip()
+        if not allowlist:
+            return  # 정책 미설정 시 호스트 검증은 생략 (운영 가이드에 명시)
+        try:
+            from urllib.parse import urlsplit
+            host = (urlsplit(url).hostname or "").lower()
+        except Exception:
+            host = ""
+        allowed_hosts = {h.strip().lower() for h in allowlist.split(",") if h.strip()}
+        if host and host not in allowed_hosts:
+            raise ValueError(f"허용되지 않은 DB 호스트: {host}")
+
     @staticmethod
     def test_connection_url(connection_url: str) -> dict[str, Any]:
         """접속 URL로 DB 연결 테스트 (폼 입력값 직접 검증용)"""
         try:
+            DBIngestionService._validate_connection_url(connection_url)
             engine = create_engine(connection_url, connect_args={"connect_timeout": 5} if "postgresql" in connection_url else {})
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             engine.dispose()
             return {"status": "success", "message": "DB 연결 성공"}
+        except ValueError as ve:
+            return {"status": "fail", "message": str(ve)}
         except Exception as exc:
-            return {"status": "fail", "message": str(exc)}
+            # [보안] 외부 사용자에게 DB 내부 에러 노출 최소화
+            return {"status": "fail", "message": "DB 연결 실패 — 접속 정보를 확인하세요"}
 
     @staticmethod
     def test_connection(source_id: int) -> dict[str, Any]:
@@ -2266,11 +2599,15 @@ def bootstrap_sources_from_env(db_sources_json: str = "", smb_sources_json: str 
                     name=row.get("name"),
                     db_type=row.get("db_type", "unknown"),
                     connection_url=row.get("connection_url"),
-                    query_text=row.get("query_text", "SELECT 1"),
+                    source_table=row.get("source_table") or row.get("table") or "",
+                    select_columns=row.get("select_columns"),
                     target_volume=row.get("target_volume"),
                     title_column=row.get("title_column"),
                     chunk_size=int(row.get("chunk_size", 500)),
                     is_active=bool(row.get("is_active", True)),
+                    cursor_column=row.get("cursor_column"),
+                    cursor_type=row.get("cursor_type"),
+                    pk_column=row.get("pk_column"),
                 )
                 db_count += 1
         except Exception:

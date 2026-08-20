@@ -16,11 +16,13 @@ from __future__ import annotations
 import logging
 import os
 import stat
+from datetime import datetime, timezone
 from typing import Generator
 
 import paramiko
 
 from app.core.config import settings
+from app.utils.file_entry import FileEntry
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +102,14 @@ class SFTPClient:
         except (IOError, OSError, paramiko.SSHException):
             return False
 
-    def walk(self, allowed_extensions: set[str] | None = None) -> Generator[tuple[str, str], None, None]:
+    def walk(self, allowed_extensions: set[str] | None = None) -> Generator[FileEntry, None, None]:
         """
-        원격 디렉토리 재귀 탐색
-        Yields: (relative_path, full_remote_path)
+        원격 디렉토리 재귀 탐색.
+
+        Yields: FileEntry(rel_path, full_path, size, mtime)
+        - listdir_attr() 가 size/mtime 을 함께 돌려주므로 추가 round-trip 없이 메타 확보.
+        - 사전식 정렬 yield (설계서 §5.4 — 체크포인트 재개 안정성).
+        - NamedTuple 이므로 `for rel, full in walk()` 위치 unpack 도 그대로 동작.
         """
         if self._sftp is None:
             return
@@ -117,6 +123,8 @@ class SFTPClient:
                 logger.warning("SFTP listdir failed: %s — %s", current, exc)
                 continue
 
+            entries.sort(key=lambda e: (e.filename or "").lower())
+
             for entry in entries:
                 full_path = f"{current}/{entry.filename}"
                 if stat.S_ISDIR(entry.st_mode or 0):
@@ -126,7 +134,14 @@ class SFTPClient:
                     if allowed_extensions and ext not in allowed_extensions:
                         continue
                     rel = full_path[len(base):].lstrip("/")
-                    yield rel, full_path
+                    size = int(entry.st_size or 0)
+                    mtime: datetime | None = None
+                    if entry.st_mtime:
+                        try:
+                            mtime = datetime.fromtimestamp(float(entry.st_mtime), tz=timezone.utc)
+                        except (TypeError, ValueError, OSError):
+                            mtime = None
+                    yield FileEntry(rel_path=rel, full_path=full_path, size=size, mtime=mtime)
 
     def read_bytes(self, remote_path: str) -> bytes:
         """원격 파일을 바이너리로 읽기"""

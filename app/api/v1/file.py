@@ -30,6 +30,8 @@ from app.services.indexing_service import IndexingService
 from app.services.db_service import DBService
 from app.core.security import require_role
 from app.services.upload_security_service import (
+    MAX_MULTI_UPLOAD_FILES,
+    MAX_MULTI_UPLOAD_TOTAL_SIZE,
     MAX_UPLOAD_SIZE,
     build_safe_filenames,
     read_upload_limited,
@@ -100,10 +102,12 @@ async def _process_uploaded_file(file: UploadFile) -> dict:
             "storage_filename": storage_filename,
         }
     except Exception as e:
-        clean_err = DocumentUtils.sanitize_text(str(e))
+        # [보안 L-2] 사용자에게는 일반 메시지만 노출. 상세는 서버 로그.
+        import logging as _logging
+        _logging.getLogger(__name__).warning("upload internal error filename=%s: %s", filename, e)
         return {
             "status": "fail",
-            "message": f"서버 내부 오류: {clean_err}",
+            "message": "서버 내부 오류가 발생했습니다. 관리자에게 문의하세요.",
             "filename": filename,
         }
 
@@ -172,10 +176,38 @@ async def upload_multiple_files(files: list[UploadFile] = File(...)):
 
     if not files:
         raise HTTPException(status_code=400, detail="업로드할 파일이 없습니다")
+    if len(files) > MAX_MULTI_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"파일 개수 초과: 최대 {MAX_MULTI_UPLOAD_FILES}개까지 동시 업로드 가능",
+        )
+    # [보안 DoS 방어] Content-Length 합계로 사전 차단 (개별 파일 한도와 별개)
+    declared_total = 0
+    for f in files:
+        try:
+            sz = getattr(f, "size", None)
+            if isinstance(sz, int):
+                declared_total += sz
+        except Exception:
+            pass
+    if declared_total and declared_total > MAX_MULTI_UPLOAD_TOTAL_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"전체 업로드 용량 초과: 최대 {MAX_MULTI_UPLOAD_TOTAL_SIZE // 1024 // 1024}MB",
+        )
 
     results = []
+    actual_total = 0
     for upload_file in files:
-        results.append(await _process_uploaded_file(upload_file))
+        result = await _process_uploaded_file(upload_file)
+        results.append(result)
+        # 실제 누적도 다시 검증 (선언값 위변조 대비)
+        actual_total += int((result.get("size") or 0) if isinstance(result, dict) else 0)
+        if actual_total > MAX_MULTI_UPLOAD_TOTAL_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"전체 업로드 용량 초과(실측): 최대 {MAX_MULTI_UPLOAD_TOTAL_SIZE // 1024 // 1024}MB",
+            )
 
     success_count = len([r for r in results if r.get("status") == "success"])
     skipped_count = len([r for r in results if r.get("status") == "skipped"])

@@ -14,19 +14,19 @@
 
 <!-- DB 색인 탭 -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
-    <b><span aria-hidden="true">🗄️</span> DB 색인이란?</b> 외부 데이터베이스에 저장된 텍스트 데이터를 SQL 쿼리로 추출하여 OpenSearch에 색인합니다.<br>
-    • DB 타입을 선택하면 드라이버에 맞는 접속 URL이 자동 생성됩니다.<br>
-    • <b>연결 테스트</b> 버튼으로 접속 가능 여부를 사전에 확인하세요.<br>
-    • 카드의 <b>이력</b> 버튼을 클릭하면 해당 DB 소스의 색인 이력을 확인할 수 있습니다.
+    <b><span aria-hidden="true">🗄️</span> DB 색인이란?</b> 외부 데이터베이스의 <u>뷰(VIEW) 또는 테이블</u>에서 텍스트 데이터를 추출해 OpenSearch 에 색인합니다.<br>
+    • <b>임의 SELECT 입력은 받지 않습니다.</b> 보안상 <u>뷰/테이블 이름과 텍스트 컬럼 목록만 입력</u>하면 백엔드가 안전한 SELECT 를 자동 조립합니다.<br>
+    • JOIN·WHERE 등 복잡한 조건이 필요하면 DBA 에게 <b>전용 뷰 생성</b>을 요청해 주세요. 권한도 해당 뷰에 한정해 부여하는 것이 안전합니다.<br>
+    • <b>접속 테스트</b>: DB 타입·접속 URL 로 실제 접속 가능 여부를 사전에 확인합니다.<br>
+    • <b>동기화</b>: 백그라운드 큐(SyncJob) 등록 방식. cursor_column 기반 증분 색인 + 중단 시 재개되며 다른 기능에 부하를 주지 않습니다.<br>
+    • <b>이력</b>: 해당 DB 소스의 색인 이력을 카드에서 펼쳐봅니다.
 </div>
 
-<!-- 액션 바 -->
+<!-- 액션 바 — 신규 등록만 우측 정렬 -->
 <div class="flex gap-2 flex-wrap mb-4">
-    <button id="dbAddBtn" type="button" class="admin-write px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-sm font-semibold">+ 신규 등록</button>
     <div class="flex-1"></div>
-    <input id="dbSyncId" placeholder="동기화할 source_id" class="bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm w-40" />
-    <button id="dbSyncBtn" type="button" class="admin-write px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-sm">소스ID 동기화</button>
-    <button id="dbSyncAllBtn" type="button" class="admin-write px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-sm">전체 동기화</button>
+    <input id="dbSyncId" type="hidden" />
+    <button id="dbAddBtn" type="button" class="admin-write text-sm font-semibold">+ 신규 등록</button>
 </div>
 
 <!-- 등록/수정 모달 -->
@@ -36,7 +36,9 @@
         <div class="relative bg-gray-800 border border-gray-600 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div class="flex items-center justify-between px-5 py-4 border-b border-gray-700">
                 <h3 id="dbModalTitle" class="text-base font-bold text-gray-100">DB 소스 등록</h3>
-                <button id="dbModalCloseBtn" type="button" class="w-8 h-8 rounded-lg hover:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-white transition-colors" style="font-size:20px;line-height:1" aria-label="닫기"></button>
+                <button id="dbModalCloseBtn" type="button" data-skip-normalize="1" class="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-200 hover:text-white flex items-center justify-center transition-colors shrink-0" aria-label="닫기">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
             </div>
             <div class="px-5 py-4 space-y-4">
                 <div class="grid grid-cols-2 gap-3">
@@ -100,15 +102,52 @@
                         <input id="dbChunk" type="number" placeholder="500" value="500" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
                     </div>
                 </div>
-                <div>
-                    <label class="block text-xs text-gray-400 mb-1">SELECT 쿼리 *</label>
-                    <textarea id="dbQuery" rows="3" placeholder="SELECT id, title, content FROM posts WHERE ..." class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm"></textarea>
+                <!-- 증분 색인 — 동기화(워커 큐) 사용 시 필수 -->
+                <div class="rounded-lg p-3" style="border:2px solid #f59e0b;background:rgba(245,158,11,0.10);box-shadow:0 0 0 1px rgba(245,158,11,0.15) inset;">
+                    <div class="flex items-center gap-2 mb-2 flex-wrap">
+                        <span class="text-sm font-bold" style="color:#111827">⚙ 증분 색인 설정</span>
+                        <span class="text-xs" style="color:#374151">— 동기화(워커 큐) 사용 시 3개 필드 모두 필수</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">증분 기준 컬럼 (cursor_column)</label>
+                            <input id="dbCursorColumn" placeholder="updated_at 또는 id" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                            <div class="text-[11px] text-gray-500 mt-1">외부 DB에 인덱스 필수. 영문/숫자/밑줄만</div>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">증분 기준 타입 (cursor_type)</label>
+                            <select id="dbCursorType" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm">
+                                <option value="">선택…</option>
+                                <option value="int">int</option>
+                                <option value="datetime">datetime</option>
+                                <option value="string">string</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">PK 컬럼 (pk_column)</label>
+                            <input id="dbPkColumn" placeholder="id" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                            <div class="text-[11px] text-gray-500 mt-1">OpenSearch 문서 _id 생성용</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 뷰/테이블 모드 -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">소스 테이블/뷰 이름 *</label>
+                        <input id="dbSourceTable" placeholder="예: v_search_posts 또는 myschema.v_search_posts" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                        <div class="text-[11px] text-gray-500 mt-1">영문/숫자/밑줄, schema.name 형태만 허용</div>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">텍스트 컬럼 (콤마 구분)</label>
+                        <input id="dbSelectColumns" placeholder="예: title, content, summary" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
+                        <div class="text-[11px] text-gray-500 mt-1">색인 대상 컬럼만 명시. pk/cursor/title 컬럼은 자동 포함됨</div>
+                    </div>
                 </div>
             </div>
             <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-700">
-                <button id="dbTestConnBtn" type="button" class="admin-write px-3 py-1.5 rounded bg-teal-600 hover:bg-teal-500 text-sm">연결 테스트</button>
-                <button id="dbClearBtn" type="button" class="px-4 py-1.5 rounded bg-gray-700 hover:bg-gray-600 text-sm">초기화</button>
-                <button id="dbSaveBtn" type="button" class="admin-write px-5 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-sm font-semibold">저장</button>
+                <button id="dbTestConnBtn" type="button" class="admin-write text-sm">접속 테스트</button>
+                <button id="dbClearBtn" type="button" class="text-sm">초기화</button>
+                <button id="dbSaveBtn" type="button" class="admin-write text-sm font-semibold">저장</button>
             </div>
         </div>
     </div>
@@ -241,32 +280,46 @@ function renderDbCards() {
         const errorBadge = r.last_error ? `<div class="mt-3 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-600" title="${(r.last_error||'').replace(/"/g,'&quot;')}"><span class="font-bold">⚠ 오류:</span> ${fmt(r.last_error)}</div>` : '';
         const volume = fmt(r.target_volume || "cleversearch-docs");
 
-        const deleteBtn = isViewer ? '' : `<button type="button" class="absolute top-3 right-3 w-7 h-7 rounded-full bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-500 flex items-center justify-center transition-colors btn-db-delete" data-id="${safeId}" title="삭제">
+        // 좌상단 = ID, 우상단 = 연필(수정) + 닫기(X), 본문 뱃지 행 = 토글(우측 정렬)
+        const idTag = `<div class="absolute top-3 left-3 z-10 text-xs text-gray-500 font-mono select-none">ID: ${safeId}</div>`;
+        const editIcon = isViewer ? '' : `<button type="button" data-skip-normalize="1" class="w-7 h-7 rounded-full bg-gray-100 hover:bg-blue-100 text-gray-500 hover:text-blue-600 flex items-center justify-center transition-colors btn-db-edit text-sm" data-id="${safeId}" data-idx="${globalIdx}" title="수정">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+        </button>`;
+        const deleteBtn = isViewer ? '' : `<button type="button" data-skip-normalize="1" class="w-7 h-7 rounded-full bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-500 flex items-center justify-center transition-colors btn-db-delete text-sm" data-id="${safeId}" title="삭제">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>`;
+        const topRight = (editIcon || deleteBtn) ? `<div class="absolute top-3 right-3 flex items-center gap-1.5 z-10">${editIcon}${deleteBtn}</div>` : '';
 
+        const incrementalReady = !!(r.cursor_column && r.cursor_type && r.pk_column);
+        const enqueueBtnAttrs = incrementalReady
+            ? ''
+            : ' disabled title="cursor_column / cursor_type / pk_column 을 모두 채워야 워커 색인이 가능합니다"';
+        const enqueueBtnExtra = incrementalReady ? '' : ' opacity-40 cursor-not-allowed';
+
+        // 카드 하단 액션 버튼 (3개): 접속 테스트 / 동기화(=워커 큐 등록) / 이력
+        const syncBtnAttrs = incrementalReady
+            ? ' title="동기화: 백그라운드 큐 등록. cursor 기반 증분·재개. 다른 기능과 격리"'
+            : ' disabled title="cursor_column / cursor_type / pk_column 을 모두 채워야 동기화 가능"';
+        const syncBtnExtra = incrementalReady ? '' : ' opacity-40 cursor-not-allowed';
         const btns = isViewer ? '' : `
-            <div class="grid grid-cols-4 gap-2 mt-auto pt-4">
-                <button type="button" class="text-xs font-bold py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white btn-db-test" data-id="${safeId}">접속 테스트</button>
-                <button type="button" class="text-xs font-bold py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white btn-db-sync" data-id="${safeId}">동기화</button>
-                <button type="button" class="text-xs font-bold py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white btn-db-edit" data-id="${safeId}" data-idx="${globalIdx}">수정</button>
-                <button type="button" class="text-xs font-bold py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white btn-db-hist" data-idx="${globalIdx}">이력</button>
+            <div class="grid grid-cols-3 gap-2 mt-auto pt-4">
+                <button type="button" data-skip-normalize="1" style="color:#fff" class="text-xs font-bold py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white shadow-sm transition-colors btn-db-test" data-id="${safeId}" title="접속 URL 로 실제 접속 가능 여부 점검">접속 테스트</button>
+                <button type="button" data-skip-normalize="1" style="color:#fff" class="text-xs font-bold py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-colors btn-db-sync${syncBtnExtra}" data-id="${safeId}"${syncBtnAttrs}>동기화</button>
+                <button type="button" data-skip-normalize="1" style="color:#fff" class="text-xs font-bold py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white shadow-sm transition-colors btn-db-hist" data-idx="${globalIdx}" title="이 DB 소스의 색인 이력을 카드에서 펼쳐봅니다">이력</button>
             </div>`;
 
-        return `<div class="relative bg-white rounded-xl p-5 hover:shadow-xl transition-all shadow-md flex flex-col min-h-[260px]">
-            ${deleteBtn}
-            <!-- 상단: 큰 아이콘 + 이름 + 배지 -->
+        return `<div class="relative bg-white rounded-xl p-5 pt-10 hover:shadow-xl transition-all shadow-md flex flex-col min-h-[260px]">
+            ${idTag}
+            ${topRight}
+            <!-- 상단: 큰 아이콘 + 이름 + 배지 (활성토글은 우측 정렬) -->
             <div class="flex items-center gap-3 mb-4">
                 <div class="text-5xl leading-none shrink-0">${typeIcon(r.db_type)}</div>
                 <div class="flex-1 min-w-0">
                     <div class="font-bold text-lg text-gray-900 truncate">${fmt(r.name)}</div>
-                    <div class="flex items-center gap-2 mt-1">
-                        <span class="px-2.5 py-1 rounded-full text-xs font-bold ${typeBgColor(r.db_type)} text-white tracking-wide">${dbTypeName(r.db_type)}</span>
+                    <div class="flex items-center gap-2 mt-1 flex-wrap">
+                        <span class="px-2.5 py-1 rounded-full text-xs font-bold ${typeBgColor(r.db_type)} text-white tracking-wide" style="color:#fff">${dbTypeName(r.db_type)}</span>
+                        <div class="ml-auto">${toggleSwitch}</div>
                     </div>
-                </div>
-                <div class="flex flex-col items-end gap-1 shrink-0 mr-10">
-                    ${toggleSwitch}
-                    <span class="text-xs text-gray-400 font-mono">ID: ${safeId}</span>
                 </div>
             </div>
             <!-- 정보 그리드 -->
@@ -286,6 +339,14 @@ function renderDbCards() {
                 <div>
                     <div class="text-gray-400 text-xs mb-0.5 font-medium">최근 동기화</div>
                     <div class="${lastSync ? 'text-gray-800' : 'text-amber-500'} font-semibold">${lastSync || "미동기화"}</div>
+                </div>
+                <div class="col-span-2">
+                    <div class="text-gray-400 text-xs mb-0.5 font-medium">증분 색인</div>
+                    <div class="text-gray-800 font-semibold text-xs">
+                        ${incrementalReady
+                            ? `<span class="text-emerald-700">✓ 사용 가능</span> · cursor=<span class="font-mono text-indigo-700">${fmt(r.cursor_column)}</span> (${fmt(r.cursor_type)}) · pk=<span class="font-mono text-indigo-700">${fmt(r.pk_column)}</span>${r.last_cursor_value ? ` · 마지막=<span class="font-mono">${fmt(String(r.last_cursor_value).slice(0,30))}</span>` : ''}`
+                            : '<span class="text-amber-600">⚠ 미설정 (cursor_column/cursor_type/pk_column 입력 필요)</span>'}
+                    </div>
                 </div>
             </div>
             ${errorBadge}
@@ -343,13 +404,11 @@ function bindDbActions() {
             return;
         }
 
+        // 카드 [동기화] = 워커 큐 등록(enqueueDbSource). LEGACY 즉시 동기화는 폐기.
         const syncBtn = e.target.closest(".btn-db-sync");
-        if (syncBtn) {
+        if (syncBtn && !syncBtn.disabled) {
             const id = Number(syncBtn.dataset.id || 0);
-            if (Number.isFinite(id) && id > 0) {
-                document.getElementById("dbSyncId").value = id;
-                syncDbSourceById();
-            }
+            if (Number.isFinite(id) && id > 0) enqueueDbSource(id);
             return;
         }
 
@@ -386,22 +445,40 @@ async function upsertDbSource() {
     const name = (document.getElementById("dbName").value || "").trim();
     const dbType = (document.getElementById("dbType").value || "").trim();
     const connectionUrl = (document.getElementById("dbConn").value || "").trim();
-    const queryText = (document.getElementById("dbQuery").value || "").trim();
+    const sourceTable = (document.getElementById("dbSourceTable").value || "").trim();
+    const selectColumns = (document.getElementById("dbSelectColumns").value || "").trim();
 
-    if (!name || !dbType || !connectionUrl || !queryText) {
-        alert("이름, DB 타입, 접속 URL, SELECT 쿼리는 필수 입력입니다.");
+    if (!name || !dbType || !connectionUrl || !sourceTable) {
+        alert("이름, DB 타입, 접속 URL, 소스 테이블/뷰 이름은 필수 입력입니다.");
         return;
+    }
+    // 클라이언트 1차 검증 — 식별자 화이트리스트 (서버에서도 다시 검증)
+    const IDENT = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/;
+    if (!IDENT.test(sourceTable)) {
+        alert("소스 테이블/뷰 이름 형식 오류: 영문/숫자/밑줄, schema.name 형태만 허용");
+        return;
+    }
+    for (const c of selectColumns.split(",").map(s => s.trim()).filter(Boolean)) {
+        if (!IDENT.test(c)) {
+            alert(`컬럼 식별자 형식 오류: ${c}`);
+            return;
+        }
     }
 
     const payload = {
         name,
         db_type: dbType,
         connection_url: connectionUrl,
-        query_text: queryText,
+        source_table: sourceTable,
+        select_columns: selectColumns || null,
         target_volume: document.getElementById("dbTargetVolume").value || null,
         title_column: document.getElementById("dbTitleCol").value || null,
         chunk_size: Number(document.getElementById("dbChunk").value || 500),
-        is_active: true
+        is_active: true,
+        // 증분 색인 필드 — 모두 채워야 동기화(워커 큐) 가능
+        cursor_column: (document.getElementById("dbCursorColumn").value || "").trim() || null,
+        cursor_type: (document.getElementById("dbCursorType").value || "").trim() || null,
+        pk_column: (document.getElementById("dbPkColumn").value || "").trim() || null,
     };
     const result = await apiFetch(`${SYS_API}/db/sources`, { method: "POST", body: JSON.stringify(payload) });
     writeJson("dbOutput", result);
@@ -420,6 +497,31 @@ async function loadDbSources() {
     const result = await apiFetch(`${SYS_API}/db/sources?active_only=false`, { method: "GET" });
     writeJson("dbOutput", result.data);
     populateDbList(result.data);
+}
+
+/* [Phase 2] 워커 색인 — SyncJob enqueue */
+async function enqueueDbSource(sourceId) {
+    const choice = confirm(
+        "DB 소스 ID " + sourceId + " 의 증분 색인 Job 을 큐에 등록합니다.\n\n" +
+        "확인: 증분 모드(incremental, 마지막 cursor 부터)\n" +
+        "취소: 모드 선택 창으로 이동"
+    );
+    let mode = "incremental";
+    if (!choice) {
+        const fullChoice = confirm("⚠ 전체 재색인(full) 모드로 등록하시겠습니까?\n\n확인: full 모드 (cursor 초기화)\n취소: 작업 중단");
+        if (!fullChoice) return;
+        mode = "full";
+    }
+    const url = `${SYS_API}/db/sources/${sourceId}/enqueue?mode=${mode}`;
+    const result = await apiFetch(url, { method: "POST" });
+    writeJson("dbOutput", result);
+    if (result.ok) {
+        const job = result.data || {};
+        const dup = job.duplicate ? " (중복: 기존 Job 재사용)" : "";
+        alert(`✅ 워커 색인 Job 등록 완료${dup}\nJob ID: ${job.job_id} / 모드: ${job.mode || mode} / 상태: ${job.job_status}`);
+    } else {
+        alert("❌ 워커 색인 등록 실패: " + (result.data?.detail || JSON.stringify(result.data)));
+    }
 }
 
 async function syncDbSourceById() {
@@ -537,7 +639,9 @@ function closeDbModal() {
 
 async function loadDbSourceDetail(sourceId) {
     if (!sourceId) return;
-    const result = await apiFetch(`${SYS_API}/db/sources/${sourceId}`, { method: "GET" });
+    // include_secret=true 를 명시해야 backend 가 connection_url / query_text 를 반환 (admin 권한 한정).
+    // 빠뜨리면 수정 폼이 빈값으로 채워져 기존 내용을 못 불러오는 증상.
+    const result = await apiFetch(`${SYS_API}/db/sources/${sourceId}?include_secret=true`, { method: "GET" });
     if (!result.ok) {
         alert("DB 소스 상세 조회 실패: " + (result.data?.detail || JSON.stringify(result.data)));
         return;
@@ -548,8 +652,12 @@ async function loadDbSourceDetail(sourceId) {
     document.getElementById("dbTargetVolume").value = r.target_volume || "";
     document.getElementById("dbTitleCol").value = r.title_column || "";
     document.getElementById("dbChunk").value = r.chunk_size || 500;
-    document.getElementById("dbQuery").value = r.query_text || "";
+    document.getElementById("dbSourceTable").value = r.source_table || "";
+    document.getElementById("dbSelectColumns").value = r.select_columns || "";
     document.getElementById("dbConn").value = r.connection_url || "";
+    document.getElementById("dbCursorColumn").value = r.cursor_column || "";
+    document.getElementById("dbCursorType").value = r.cursor_type || "";
+    document.getElementById("dbPkColumn").value = r.pk_column || "";
 
     const parsed = parseConnectionUrl(r.connection_url || "");
     if (parsed.db_type) document.getElementById("dbType").value = parsed.db_type;
@@ -563,13 +671,16 @@ async function loadDbSourceDetail(sourceId) {
 }
 
 function clearDbForm() {
-    ["dbName","dbHost","dbPort","dbDatabase","dbUsername","dbPassword","dbConn","dbTitleCol","dbQuery"].forEach(id => {
+    ["dbName","dbHost","dbPort","dbDatabase","dbUsername","dbPassword","dbConn","dbTitleCol",
+     "dbSourceTable","dbSelectColumns",
+     "dbCursorColumn","dbPkColumn","dbSyncId"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.value = "";
     });
     document.getElementById("dbType").value = "";
     document.getElementById("dbTargetVolume").value = "";
     document.getElementById("dbChunk").value = 500;
+    document.getElementById("dbCursorType").value = "";
 }
 
 loadDbSources();
@@ -579,8 +690,6 @@ const _dbCloseBtn = document.getElementById("dbModalCloseBtn");
 if (_dbCloseBtn) { _dbCloseBtn.textContent = "\u2715"; _dbCloseBtn.addEventListener("click", closeDbModal); }
 document.getElementById("dbModalOverlay")?.addEventListener("click", closeDbModal);
 document.getElementById("dbSaveBtn")?.addEventListener("click", async () => { await upsertDbSource(); closeDbModal(); });
-document.getElementById("dbSyncBtn")?.addEventListener("click", syncDbSourceById);
-document.getElementById("dbSyncAllBtn")?.addEventListener("click", syncAllDbSources);
 document.getElementById("dbClearBtn")?.addEventListener("click", clearDbForm);
 document.getElementById("dbTestConnBtn")?.addEventListener("click", testDbConnectionFromForm);
 document.getElementById("dbType")?.addEventListener("change", onDbTypeChange);

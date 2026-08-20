@@ -63,11 +63,17 @@ class DbSourceRequest(BaseModel):
     name: str = Field(..., min_length=2)
     db_type: str = Field(..., min_length=2)
     connection_url: str = Field(..., min_length=5)
-    query_text: str = Field(..., min_length=5)
+    # [뷰/테이블 모드] 임의 SELECT 저장 폐지. 식별자만 받아 백엔드가 SELECT 조립.
+    source_table: str = Field(..., min_length=1, max_length=200)
+    select_columns: str | None = None
     target_volume: str | None = None
     title_column: str | None = None
     chunk_size: int = Field(default=500, ge=50, le=5000)
     is_active: bool = True
+    # [Phase 2] 증분 색인용 필드
+    cursor_column: str | None = None
+    cursor_type: str | None = None  # int | datetime | string
+    pk_column: str | None = None
 
 
 class VolumeRequest(BaseModel):
@@ -128,6 +134,24 @@ async def sync_smb_source(source_id: int, max_files: int = Query(200, ge=1, le=2
 @router.post("/smb/sources/sync-all", dependencies=[Depends(require_role("operator"))], summary="SMB 전체 즉시 동기화")
 async def sync_all_smb_sources(max_files_per_source: int = Query(200, ge=1, le=2000)):
     return SMBService.sync_all_sources(max_files_per_source=max_files_per_source)
+
+
+@router.post(
+    "/smb/sources/{source_id}/enqueue",
+    dependencies=[Depends(require_role("operator"))],
+    summary="SMB/SSH 증분 색인 Job 큐잉 (워커 처리)",
+)
+async def enqueue_smb_sync_job(
+    source_id: int,
+    mode: str = Query("incremental", pattern="^(incremental|full)$"),
+    reset_cursor: bool = Query(False),
+):
+    result = SMBService.enqueue_sync_job(
+        source_id=source_id, mode=mode, trigger_type="manual", reset_cursor=reset_cursor,
+    )
+    if isinstance(result, dict) and result.get("status") == "fail":
+        raise HTTPException(status_code=400, detail=result.get("message") or "enqueue failed")
+    return result
 
 
 @router.post("/smb/sources/{source_id}/test", dependencies=[Depends(require_role("operator"))], summary="SMB 연결 테스트")
@@ -224,11 +248,15 @@ async def upsert_db_source(req: DbSourceRequest):
         name=req.name,
         db_type=req.db_type,
         connection_url=req.connection_url,
-        query_text=req.query_text,
+        source_table=req.source_table,
+        select_columns=req.select_columns,
         target_volume=req.target_volume,
         title_column=req.title_column,
         chunk_size=req.chunk_size,
         is_active=req.is_active,
+        cursor_column=req.cursor_column,
+        cursor_type=req.cursor_type,
+        pk_column=req.pk_column,
     )
     if isinstance(result, dict) and result.get("status") == "fail":
         raise HTTPException(status_code=400, detail=result.get("message") or "DB source upsert failed")
@@ -271,6 +299,105 @@ async def sync_db_source(source_id: int, max_rows: int = Query(3000, ge=100, le=
 @router.post("/db/sources/sync-all", dependencies=[Depends(require_role("operator"))], summary="DB 전체 즉시 동기화")
 async def sync_all_db_sources(max_rows_per_source: int = Query(3000, ge=100, le=20000)):
     return DBIngestionService.sync_all_sources(max_rows_per_source=max_rows_per_source)
+
+
+# ────────── 증분 색인 — SyncJob 큐 (Phase 2) ──────────
+
+@router.post(
+    "/db/sources/{source_id}/enqueue",
+    dependencies=[Depends(require_role("operator"))],
+    summary="DB 증분 색인 Job 큐잉 (워커 처리)",
+)
+async def enqueue_db_sync_job(
+    source_id: int,
+    mode: str = Query("incremental", pattern="^(incremental|full)$"),
+    reset_cursor: bool = Query(False),
+):
+    result = DBIngestionService.enqueue_sync_job(
+        source_id=source_id, mode=mode, trigger_type="manual", reset_cursor=reset_cursor,
+    )
+    if isinstance(result, dict) and result.get("status") == "fail":
+        raise HTTPException(status_code=400, detail=result.get("message") or "enqueue failed")
+    return result
+
+
+@router.get(
+    "/sync-jobs",
+    dependencies=[Depends(require_role("viewer"))],
+    summary="증분 색인 Job 진행 상태 조회",
+)
+async def list_sync_jobs(
+    status: str | None = Query(None, description="pending|running|done|failed|paused"),
+    limit: int = Query(50, ge=1, le=500),
+):
+    from app.core.database import SyncJob, get_db_session
+    with get_db_session() as db:
+        q = db.query(SyncJob)
+        if status:
+            q = q.filter(SyncJob.status == status)
+        rows = q.order_by(SyncJob.created_at.desc()).limit(limit).all()
+        return [
+            {
+                "id": r.id,
+                "source_type": r.source_type,
+                "source_id": r.source_id,
+                "status": r.status,
+                "mode": r.mode,
+                "processed": r.processed,
+                "indexed": r.indexed,
+                "skipped": r.skipped,
+                "failed": r.failed,
+                "total_estimated": r.total_estimated,
+                "cursor_value": r.cursor_value,
+                "trigger_type": r.trigger_type,
+                "worker_id": r.worker_id,
+                "lease_until": r.lease_until.isoformat() if r.lease_until else None,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "last_error": r.last_error,
+            }
+            for r in rows
+        ]
+
+
+@router.post(
+    "/sync-jobs/{job_id}/pause",
+    dependencies=[Depends(require_role("operator"))],
+    summary="증분 색인 Job 일시정지",
+)
+async def pause_sync_job(job_id: int):
+    from datetime import datetime, timezone
+    from app.core.database import SyncJob, get_db_session
+    with get_db_session() as db:
+        job = db.query(SyncJob).filter(SyncJob.id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.status not in {"pending", "running"}:
+            raise HTTPException(status_code=400, detail=f"현재 상태({job.status})에서는 일시정지 불가")
+        job.status = "paused"
+        job.lease_until = None
+        job.updated_at = datetime.now(timezone.utc)
+        return {"status": "ok", "job_id": job_id}
+
+
+@router.post(
+    "/sync-jobs/{job_id}/resume",
+    dependencies=[Depends(require_role("operator"))],
+    summary="증분 색인 Job 재개",
+)
+async def resume_sync_job(job_id: int):
+    from datetime import datetime, timezone
+    from app.core.database import SyncJob, get_db_session
+    with get_db_session() as db:
+        job = db.query(SyncJob).filter(SyncJob.id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.status != "paused":
+            raise HTTPException(status_code=400, detail=f"paused 상태가 아닙니다(현재={job.status})")
+        job.status = "pending"
+        job.updated_at = datetime.now(timezone.utc)
+        return {"status": "ok", "job_id": job_id}
 
 
 class DbTestConnectionRequest(BaseModel):
@@ -423,13 +550,15 @@ async def get_cert_status(cert_dir: str = Query("cert"), warn_days: int = Query(
 
 
 @router.post("/ssl/renew-script", dependencies=[Depends(require_role("admin"))], summary="인증서 갱신 스크립트 생성")
-async def generate_renew_script(output_path: str = Query("scripts/renew_certs.ps1")):
-    return VolumeSSLService.generate_renew_script(output_path=output_path)
+async def generate_renew_script():
+    # [보안] 사용자 입력 경로 받지 않음. 고정 경로만 사용.
+    return VolumeSSLService.generate_renew_script(output_path="scripts/renew_certs.ps1")
 
 
 @router.post("/ssl/renew-run", dependencies=[Depends(require_role("admin"))], summary="인증서 갱신 스크립트 실행")
-async def run_renew_script(req: RenewRunRequest):
-    return VolumeSSLService.execute_renew_script(script_path=req.script_path)
+async def run_renew_script():
+    # [보안] 사용자 입력 경로 받지 않음. execute_renew_script 도 화이트리스트 경로 검증.
+    return VolumeSSLService.execute_renew_script(script_path="scripts/renew_certs.ps1")
 
 
 @router.post("/ops/run-smoke-test", dependencies=[Depends(require_role("admin"))], summary="시스템 스모크 테스트 실행")

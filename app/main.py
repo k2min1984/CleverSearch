@@ -33,7 +33,10 @@ from app.api.v1 import search, index, file, admin, system, auth
 from app.core.setup import create_index # 인덱스 초기화 함수
 from app.core.config import settings
 from app.core.database import init_database
+from app.core.security import require_role
 from app.services.system_service import FileWatcherService, IngestionSchedulerService, NetworkMonitorService, bootstrap_sources_from_env
+from app.services.worker_service import IndexingWorker
+from fastapi import Depends
 
 # --- [경로 설정] 프로젝트 루트 디렉터리 및 정적 파일 경로 확정 ---
 # os.path.abspath(__file__) -> .../app/main.py
@@ -68,21 +71,31 @@ def _startup_action_guide(exc: Exception) -> str:
     return "직전 STARTUP 로그의 실패 단계를 기준으로 환경변수/네트워크/권한을 점검하세요."
 
 
+_DEFAULT_JWT_SECRET = "change-this-in-production-at-least-32-chars"
+_DEFAULT_CRED_SECRET = "change-this-credential-secret-in-production"
+
+
 def _validate_production_security() -> None:
     if settings.APP_ENV not in {"prod", "production"}:
         return
 
     violations = []
-    if settings.JWT_SECRET == "change-this-in-production-at-least-32-chars" or len(settings.JWT_SECRET) < 32:
+    if settings.JWT_SECRET == _DEFAULT_JWT_SECRET or len(settings.JWT_SECRET) < 32:
         violations.append("JWT_SECRET 은 운영에서 32자 이상 강력한 값으로 설정해야 합니다.")
+    if settings.CREDENTIAL_SECRET == _DEFAULT_CRED_SECRET or len(settings.CREDENTIAL_SECRET) < 32:
+        violations.append("CREDENTIAL_SECRET 은 운영에서 32자 이상 강력한 값으로 설정해야 합니다.")
     if settings.OS_PASSWORD.lower() in {"admin", "admin123!", "changeme"}:
         violations.append("OS_PASSWORD 가 기본값/약한 값입니다. 운영용 비밀번호로 교체하세요.")
+    if (settings.DB_PASSWORD or "").lower() in {"cleversearch123", "admin", "changeme", "password"}:
+        violations.append("DB_PASSWORD 가 기본값/약한 값입니다. 운영용 비밀번호로 교체하세요.")
     if "*" in settings.CORS_ALLOWED_ORIGINS:
         violations.append("CORS_ALLOWED_ORIGINS 에 '*' 사용 금지 (운영).")
     if settings.ENABLE_API_DOCS:
         violations.append("운영에서는 ENABLE_API_DOCS=false 권장/필수입니다.")
     if not settings.OPENSEARCH_VERIFY_CERTS:
         violations.append("운영에서는 OPENSEARCH_VERIFY_CERTS=true 로 TLS 검증을 활성화해야 합니다.")
+    if settings.ALLOW_LEGACY_X_ROLE:
+        violations.append("운영에서 ALLOW_LEGACY_X_ROLE=true 는 인증 우회 위험이므로 차단합니다.")
 
     if violations:
         raise RuntimeError("[보안 설정 오류] " + " | ".join(violations))
@@ -123,9 +136,37 @@ async def lifespan(app: FastAPI):
         else:
             _startup_log("INFO", "SCHEDULER", "자동 색인 스케줄러 비활성화 상태")
 
+        # 증분 색인 워커 (SyncJob 폴링) — Phase 1 공통 인프라
+        if settings.AUTO_START_INDEX_WORKER:
+            _startup_log("INFO", "INDEX-WORKER", "증분 색인 워커 시작")
+            # Phase 2: DB 색인 핸들러 등록
+            try:
+                import app.services.db_job_processor  # noqa: F401
+                _startup_log("PASS", "INDEX-WORKER", "DB 색인 핸들러 등록 완료")
+            except Exception as exc:
+                _startup_log("WARN", "INDEX-WORKER", f"DB 색인 핸들러 등록 실패: {exc}")
+            # Phase 3: SMB/SSH 색인 핸들러 등록
+            try:
+                import app.services.smb_job_processor  # noqa: F401
+                _startup_log("PASS", "INDEX-WORKER", "SMB/SSH 색인 핸들러 등록 완료")
+            except Exception as exc:
+                _startup_log("WARN", "INDEX-WORKER", f"SMB/SSH 색인 핸들러 등록 실패: {exc}")
+            IndexingWorker.start()
+            _startup_log("PASS", "INDEX-WORKER", "증분 색인 워커 시작 완료")
+        else:
+            _startup_log("INFO", "INDEX-WORKER", "증분 색인 워커 비활성화 상태")
+
         # 네트워크 모니터 자동 시작 (DB/OpenSearch 연결 감시)
         NetworkMonitorService.start(interval_seconds=30)
         _startup_log("PASS", "NETWORK", "네트워크 모니터 시작 완료")
+
+        # [보안] 폐기 토큰 테이블 만료 row 청소 (부팅 시 1회)
+        try:
+            from app.core.security import cleanup_expired_revoked_tokens
+            res = cleanup_expired_revoked_tokens(force=True)
+            _startup_log("PASS", "TOKEN-CLEANUP", f"폐기 토큰 정리: {res}")
+        except Exception as exc:
+            _startup_log("WARN", "TOKEN-CLEANUP", f"폐기 토큰 정리 실패: {exc}")
 
         _startup_log("PASS", "READY", "서비스 기동 준비 완료")
     except Exception as e:
@@ -141,6 +182,12 @@ async def lifespan(app: FastAPI):
     FileWatcherService.stop()
     NetworkMonitorService.stop()
     IngestionSchedulerService.stop()
+    IndexingWorker.stop()
+    try:
+        from app.services.db_engine_cache import clear_all as _clear_engine_cache
+        _clear_engine_cache()
+    except Exception:
+        pass
     _startup_log("INFO", "SHUTDOWN", "CleverSearch 종료")
 
 # --- FastAPI 인스턴스 설정 ---
@@ -175,6 +222,12 @@ if settings.APP_ENV in {"dev", "test", "local"} and "testserver" not in allowed_
 
 if allowed_hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+
+
+# [M-6] HTTP → HTTPS 강제 리다이렉트 (운영 환경 또는 명시적 활성화 시)
+if settings.FORCE_HTTPS_REDIRECT or settings.APP_ENV in {"prod", "production"}:
+    from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+    app.add_middleware(HTTPSRedirectMiddleware)
 
 
 def _inject_nonce_to_html(html: str, nonce: str) -> str:
@@ -273,7 +326,7 @@ async def add_security_headers(request: Request, call_next):
                 "Content-Security-Policy",
                 "default-src 'self'; "
                 f"script-src 'self' 'nonce-{csp_nonce}'; "
-                "script-src-attr 'unsafe-inline'; "
+                "script-src-attr 'none'; "
                 "style-src 'self' 'unsafe-inline'; "
                 "font-src 'self' data:; "
                 "img-src 'self' data: blob:; "
@@ -284,10 +337,10 @@ async def add_security_headers(request: Request, call_next):
             response.headers.setdefault(
                 "Content-Security-Policy",
                 "default-src 'self'; "
-                f"script-src 'self' 'nonce-{csp_nonce}' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
-                "script-src-attr 'unsafe-inline'; "
-                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; "
-                "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
+                f"script-src 'self' 'nonce-{csp_nonce}'; "
+                "script-src-attr 'none'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "font-src 'self' data:; "
                 "img-src 'self' data: blob:; "
                 "connect-src 'self' https:; "
                 "frame-ancestors 'none';",
@@ -300,7 +353,8 @@ async def add_security_headers(request: Request, call_next):
 if os.path.exists(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 else:
-    print(f"⚠️ [Warning] 정적 파일 경로를 찾을 수 없습니다: {STATIC_DIR}")
+    import logging as _logging
+    _logging.getLogger(__name__).warning("정적 파일 경로를 찾을 수 없습니다: %s", STATIC_DIR)
 
 # --- 라우터 등록 (새 구조: 역할별 분리) ---
 # 사용자 API
@@ -314,11 +368,17 @@ app.include_router(admin_index.router, prefix="/api/v1/admin/index", tags=["Admi
 app.include_router(common_auth.router, prefix="/api/v1/common/auth", tags=["Common-Auth"])
 
 # --- [하위 호환] 기존 /api/v1/ 경로 유지 (프론트 점진 전환용) ---
-app.include_router(search.router, prefix="/api/v1/search", tags=["Search (Legacy)"])
+# [보안] 인증 누락 라우트가 외부 노출되는 것을 막기 위해 prefix 단위로 RBAC 강제.
+# auth 는 자체 로그인/refresh 가 있어 viewer 로 보호하지 않고 기존대로.
+_legacy_viewer = [Depends(require_role("viewer"))]
+_legacy_operator = [Depends(require_role("operator"))]
+app.include_router(search.router, prefix="/api/v1/search", tags=["Search (Legacy)"], dependencies=_legacy_viewer)
+# index 는 X-Agent-Key 기반 /agent-notify, /agent-check 를 포함하므로 prefix 보호를 걸지 않고
+# 라우트별로 require_role 또는 _verify_agent_key 를 사용한다.
 app.include_router(index.router, prefix="/api/v1/index", tags=["Index (Legacy)"])
-app.include_router(file.router, prefix="/api/v1/file", tags=["File (Legacy)"])
-app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin (Legacy)"])
-app.include_router(system.router, prefix="/api/v1/system", tags=["System (Legacy)"])
+app.include_router(file.router, prefix="/api/v1/file", tags=["File (Legacy)"], dependencies=_legacy_operator)
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin (Legacy)"], dependencies=_legacy_operator)
+app.include_router(system.router, prefix="/api/v1/system", tags=["System (Legacy)"], dependencies=_legacy_operator)
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth (Legacy)"])
 
 # --- 루트 경로: 사용자 페이지 반환 ---

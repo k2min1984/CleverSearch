@@ -16,6 +16,13 @@ except Exception:  # pragma: no cover
 MAX_UPLOAD_SIZE = 30 * 1024 * 1024
 CHUNK_SIZE = 1024 * 1024
 
+# [보안] 다중 업로드 보호
+MAX_MULTI_UPLOAD_FILES = 20
+MAX_MULTI_UPLOAD_TOTAL_SIZE = 200 * 1024 * 1024  # 200MB
+# [보안] OOXML/HWPX zip 폭탄 방어 — 풀린 총 크기 / 압축비 한도
+MAX_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
+MAX_COMPRESSION_RATIO = 100  # 압축비 100배 초과면 거부
+
 ZIP_EXPECTED_PREFIX = {
     "docx": "word/",
     "pptx": "ppt/",
@@ -87,7 +94,18 @@ def _is_valid_zip_family(ext: str, content: bytes) -> bool:
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
             names = zf.namelist()
-            return any(name.startswith(expected_prefix) for name in names)
+            if not any(name.startswith(expected_prefix) for name in names):
+                return False
+            # [보안] zip bomb 방어 — 풀린 총 크기 / 개별 압축비 검사
+            total_uncompressed = 0
+            for info in zf.infolist():
+                total_uncompressed += int(info.file_size or 0)
+                if total_uncompressed > MAX_UNCOMPRESSED_BYTES:
+                    return False
+                if info.compress_size and info.file_size:
+                    if info.file_size / max(info.compress_size, 1) > MAX_COMPRESSION_RATIO:
+                        return False
+            return True
     except Exception:
         return False
 

@@ -9,11 +9,48 @@
 ########################################################
 -->
 
+<!-- ──────────── 증분 색인 작업 큐 (Phase 4) ──────────── -->
+<div class="bg-emerald-900/20 border border-emerald-700 rounded-lg p-3 mb-3 text-sm text-emerald-200">
+    <b>⚙ 증분 색인 작업 큐 (SyncJob)</b> &mdash; SMB/DB 탭의 <b>워커 색인</b> 버튼으로 등록한 백그라운드 Job 의 진행 상태입니다.
+    상태가 <b>pending → running → done</b> 순서로 진행되며, 실패 시 <b>failed</b>, 사용자가 멈추면 <b>paused</b> 가 됩니다.
+</div>
+
+<div class="flex flex-wrap gap-2 mb-2 items-center">
+    <select id="jobFilterStatus" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
+        <option value="">전체 상태</option>
+        <option value="pending">pending (대기)</option>
+        <option value="running">running (실행 중)</option>
+        <option value="done">done (완료)</option>
+        <option value="failed">failed (실패)</option>
+        <option value="paused">paused (일시정지)</option>
+    </select>
+    <input id="jobFilterLimit" type="number" placeholder="조회 수" value="50" min="1" max="500" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
+    <button onclick="loadSyncJobs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">조회</button>
+    <label class="inline-flex items-center gap-1 text-xs text-gray-400 ml-2">
+        <input id="jobAutoRefresh" type="checkbox" /> 5초마다 자동 새로고침
+    </label>
+    <span id="jobLastRefreshed" class="text-xs text-gray-500"></span>
+</div>
+
+<div class="overflow-auto mb-5 border border-gray-700 rounded">
+    <table class="w-full text-sm">
+        <thead><tr class="bg-gray-800 text-gray-300 text-left">
+            <th class="p-2">ID</th><th class="p-2">타입</th><th class="p-2">소스ID</th>
+            <th class="p-2">상태</th><th class="p-2">모드</th><th class="p-2">진행률</th>
+            <th class="p-2">색인/스킵/실패</th><th class="p-2">cursor</th>
+            <th class="p-2">시작</th><th class="p-2">종료</th>
+            <th class="p-2 admin-write">동작</th>
+        </tr></thead>
+        <tbody id="jobBody"><tr><td class="p-2 text-gray-500" colspan="11">조회 버튼을 눌러주세요.</td></tr></tbody>
+    </table>
+</div>
+<pre id="jobOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto hidden mb-4"></pre>
+
 <!-- 색인 이력 탭 (통합 감사용) -->
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
     <b>📑 통합 색인 이력이란?</b> SMB/DB/파일감시 실행 회차별 요약 이력을 통합 조회하는 감사용 화면입니다.<br>
     • 소스별 즉시 확인은 SMB/DB 탭 목록의 <b>이력</b> 아코디언을 사용하세요.<br>
-    • <b>source_type</b>: smb, db, watcher<br>
+    • <b>source_type</b>: smb, ssh, db, watcher<br>
     • <b>action</b>: sync_summary(실행 요약)<br>
     • <b>status</b>: success(성공), fail(실패), partial(부분성공)
 </div>
@@ -119,5 +156,125 @@ async function deleteIndexingHistory() {
     }
 }
 
+/* ──────────── SyncJob 패널 (Phase 4) ──────────── */
+let _jobAutoTimer = null;
+
+async function loadSyncJobs() {
+    const status = document.getElementById("jobFilterStatus").value;
+    const limit = document.getElementById("jobFilterLimit").value || 50;
+    let url = `${SYS_API}/sync-jobs?limit=${limit}`;
+    if (status) url += `&status=${encodeURIComponent(status)}`;
+    const result = await apiFetch(url, { method: "GET" });
+    const data = Array.isArray(result.data) ? result.data : [];
+    writeJson("jobOutput", data);
+    renderSyncJobs(data);
+    const ts = new Date().toLocaleTimeString();
+    const el = document.getElementById("jobLastRefreshed");
+    if (el) el.textContent = `마지막 갱신: ${ts}`;
+}
+
+function renderSyncJobs(rows) {
+    const body = document.getElementById("jobBody");
+    if (!body) return;
+    if (!Array.isArray(rows) || rows.length === 0) {
+        body.innerHTML = '<tr><td class="p-2 text-gray-500" colspan="11">진행 중이거나 완료된 Job 이 없습니다.</td></tr>';
+        return;
+    }
+    const isViewer = (typeof loggedInRole !== "undefined") && loggedInRole === "viewer";
+    const statusBadge = (s) => {
+        if (s === "running")  return '<span class="px-1.5 py-0.5 rounded text-xs bg-blue-900/60 text-blue-200">▶ running</span>';
+        if (s === "pending")  return '<span class="px-1.5 py-0.5 rounded text-xs bg-amber-900/60 text-amber-200">⌛ pending</span>';
+        if (s === "done")     return '<span class="px-1.5 py-0.5 rounded text-xs bg-green-900/60 text-green-200">✓ done</span>';
+        if (s === "failed")   return '<span class="px-1.5 py-0.5 rounded text-xs bg-red-900/60 text-red-200">✗ failed</span>';
+        if (s === "paused")   return '<span class="px-1.5 py-0.5 rounded text-xs bg-gray-700 text-gray-200">⏸ paused</span>';
+        return fmt(s);
+    };
+    const typeBadge = (t) => {
+        const cls = t === "db" ? "bg-purple-900/50 text-purple-200"
+                  : t === "smb" ? "bg-blue-900/50 text-blue-200"
+                  : t === "ssh" ? "bg-emerald-900/50 text-emerald-200"
+                  : "bg-gray-800 text-gray-300";
+        return `<span class="px-1.5 py-0.5 rounded text-xs ${cls}">${fmt(t)}</span>`;
+    };
+    const progress = (r) => {
+        const total = Number(r.total_estimated || 0);
+        const done = Number(r.processed || 0);
+        if (total > 0) {
+            const pct = Math.min(100, Math.round((done / total) * 100));
+            return `<div class="text-xs text-gray-400 mb-0.5">${done.toLocaleString()} / ${total.toLocaleString()} (${pct}%)</div>` +
+                   `<div class="w-32 h-2 bg-gray-700 rounded"><div class="h-2 bg-emerald-500 rounded" style="width:${pct}%"></div></div>`;
+        }
+        return `<span class="text-xs text-gray-300">${done.toLocaleString()} 처리</span>`;
+    };
+    const stats = (r) => {
+        return `<span class="text-emerald-400">${Number(r.indexed||0).toLocaleString()}</span>` +
+               ` / <span class="text-gray-300">${Number(r.skipped||0).toLocaleString()}</span>` +
+               ` / <span class="text-red-400">${Number(r.failed||0).toLocaleString()}</span>`;
+    };
+    const cursor = (r) => {
+        const v = r.cursor_value || "";
+        return v ? `<span class="font-mono text-xs">${fmt(String(v).slice(0,40))}</span>` : '<span class="text-gray-500 text-xs">-</span>';
+    };
+
+    body.innerHTML = rows.map((r) => {
+        const id = Number(r.id || 0);
+        const ctrls = isViewer ? '' : (() => {
+            const list = [];
+            if (r.status === "running" || r.status === "pending") {
+                list.push(`<button class="text-xs px-2 py-0.5 rounded bg-amber-700 hover:bg-amber-600 text-white btn-job-pause" data-id="${id}">일시정지</button>`);
+            }
+            if (r.status === "paused") {
+                list.push(`<button class="text-xs px-2 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white btn-job-resume" data-id="${id}">재개</button>`);
+            }
+            return list.length ? `<div class="flex gap-1">${list.join('')}</div>` : '<span class="text-gray-500 text-xs">-</span>';
+        })();
+        const errCell = r.last_error
+            ? `<div class="text-xs text-red-400 truncate max-w-xs" title="${(r.last_error||'').replace(/"/g,'&quot;')}">⚠ ${fmt(r.last_error)}</div>`
+            : '';
+        return `<tr class="border-t border-gray-700">
+            <td class="p-2 font-mono text-xs">${id}</td>
+            <td class="p-2">${typeBadge(r.source_type)}</td>
+            <td class="p-2 font-mono text-xs">${fmt(r.source_id)}</td>
+            <td class="p-2">${statusBadge(r.status)}${errCell}</td>
+            <td class="p-2 text-xs">${fmt(r.mode)}</td>
+            <td class="p-2">${progress(r)}</td>
+            <td class="p-2 text-xs">${stats(r)}</td>
+            <td class="p-2">${cursor(r)}</td>
+            <td class="p-2 text-xs">${fmt(r.started_at)}</td>
+            <td class="p-2 text-xs">${fmt(r.finished_at)}</td>
+            <td class="p-2 admin-write">${ctrls}</td>
+        </tr>`;
+    }).join("");
+}
+
+async function pauseSyncJob(jobId) {
+    if (!confirm(`Job ${jobId} 을(를) 일시정지하시겠습니까?\n진행 중인 chunk 까지는 마무리되고 다음 chunk 부터 멈춥니다.`)) return;
+    const result = await apiFetch(`${SYS_API}/sync-jobs/${jobId}/pause`, { method: "POST" });
+    if (result.ok) { await loadSyncJobs(); }
+    else { alert("일시정지 실패: " + (result.data?.detail || JSON.stringify(result.data))); }
+}
+
+async function resumeSyncJob(jobId) {
+    const result = await apiFetch(`${SYS_API}/sync-jobs/${jobId}/resume`, { method: "POST" });
+    if (result.ok) { await loadSyncJobs(); }
+    else { alert("재개 실패: " + (result.data?.detail || JSON.stringify(result.data))); }
+}
+
+document.getElementById("jobBody")?.addEventListener("click", (e) => {
+    const pauseBtn = e.target.closest(".btn-job-pause");
+    if (pauseBtn) { pauseSyncJob(Number(pauseBtn.dataset.id)); return; }
+    const resumeBtn = e.target.closest(".btn-job-resume");
+    if (resumeBtn) { resumeSyncJob(Number(resumeBtn.dataset.id)); return; }
+});
+
+document.getElementById("jobAutoRefresh")?.addEventListener("change", (e) => {
+    if (_jobAutoTimer) { clearInterval(_jobAutoTimer); _jobAutoTimer = null; }
+    if (e.target.checked) {
+        _jobAutoTimer = setInterval(loadSyncJobs, 5000);
+        loadSyncJobs();
+    }
+});
+
+loadSyncJobs();
 loadIndexingHistory();
 </script>

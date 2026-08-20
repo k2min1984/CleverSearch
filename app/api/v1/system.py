@@ -59,11 +59,16 @@ class DbSourceRequest(BaseModel):
     name: str = Field(..., min_length=2)
     db_type: str = Field(..., min_length=2)
     connection_url: str = Field(..., min_length=5)
-    query_text: str = Field(..., min_length=5)
+    # [뷰/테이블 모드] 임의 SELECT 저장 폐지. 식별자만 받아 백엔드가 SELECT 조립.
+    source_table: str = Field(..., min_length=1, max_length=200)
+    select_columns: str | None = None
     target_volume: str | None = None
     title_column: str | None = None
     chunk_size: int = Field(default=500, ge=50, le=5000)
     is_active: bool = True
+    cursor_column: str | None = None
+    cursor_type: str | None = None
+    pk_column: str | None = None
 
 
 class VolumeRequest(BaseModel):
@@ -212,11 +217,15 @@ async def upsert_db_source(req: DbSourceRequest):
         name=req.name,
         db_type=req.db_type,
         connection_url=req.connection_url,
-        query_text=req.query_text,
+        source_table=req.source_table,
+        select_columns=req.select_columns,
         target_volume=req.target_volume,
         title_column=req.title_column,
         chunk_size=req.chunk_size,
         is_active=req.is_active,
+        cursor_column=req.cursor_column,
+        cursor_type=req.cursor_type,
+        pk_column=req.pk_column,
     )
     if isinstance(result, dict) and result.get("status") == "fail":
         raise HTTPException(status_code=400, detail=result.get("message") or "DB source upsert failed")

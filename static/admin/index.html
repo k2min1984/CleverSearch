@@ -258,6 +258,33 @@
             color: #334155 !important;
         }
 
+        /*
+         * 채도 짙은 배경(파랑/초록/청록/인디고/주황/빨강/하늘/슬레이트 등) 위의
+         * 뱃지/버튼은 어댑터의 text-white→#334155 강제 변환을 다시 흰색으로 되돌린다.
+         * (다크→라이트 전환이 컬러 액션 버튼·뱃지 가독성을 떨어뜨리던 문제 보정)
+         */
+        #tabContent .bg-blue-600, #tabContent .bg-blue-700,
+        #tabContent .bg-blue-500, #tabContent .bg-blue-800,
+        #tabContent .bg-emerald-600, #tabContent .bg-emerald-700,
+        #tabContent .bg-teal-600, #tabContent .bg-teal-700,
+        #tabContent .bg-indigo-600, #tabContent .bg-indigo-700,
+        #tabContent .bg-amber-600, #tabContent .bg-amber-700,
+        #tabContent .bg-orange-600, #tabContent .bg-orange-700,
+        #tabContent .bg-red-600, #tabContent .bg-red-700,
+        #tabContent .bg-rose-600, #tabContent .bg-rose-700,
+        #tabContent .bg-sky-600, #tabContent .bg-sky-700,
+        #tabContent .bg-slate-700, #tabContent .bg-slate-800,
+        #tabContent [data-on-color="white"] {
+            color: #ffffff !important;
+        }
+        #tabContent .bg-blue-600.text-white, #tabContent .bg-blue-700.text-white,
+        #tabContent .bg-emerald-600.text-white, #tabContent .bg-teal-600.text-white,
+        #tabContent .bg-indigo-600.text-white, #tabContent .bg-amber-600.text-white,
+        #tabContent .bg-orange-600.text-white, #tabContent .bg-red-600.text-white,
+        #tabContent .bg-rose-600.text-white, #tabContent .bg-sky-600.text-white {
+            color: #ffffff !important;
+        }
+
         #tabContent .border-gray-700, #tabContent .border-gray-600, #tabContent .border-gray-500 {
             border-color: #dce3ef !important;
         }
@@ -1243,7 +1270,22 @@
             }
         }
 
+        function clearAdminLocalStorage() {
+            // 로그인 화면이 토큰 존재만 보고 /admin 으로 자동 이동하지 않도록
+            // 모든 인증 관련 localStorage 키를 한 번에 정리한다.
+            localStorage.removeItem("cleversearch_admin_token");
+            localStorage.removeItem("cleversearch_admin_refresh_token");
+            localStorage.removeItem("cleversearch_admin_username");
+            localStorage.removeItem("cleversearch_admin_role");
+            localStorage.removeItem("cleversearch_admin_active_tab");
+            localStorage.removeItem("cleversearch_admin_force_dashboard_once");
+        }
+
         function forceLoginRedirect() {
+            // 쿠키 인증이 무너진 상태에서 localStorage 토큰만 살아있으면
+            // login.html 이 다시 /admin 으로 보내며 무한루프(화면 와리가리)가 발생한다.
+            // 리다이렉트 직전에 잔존 localStorage 토큰을 모두 정리해서 차단한다.
+            clearAdminLocalStorage();
             window.location.replace("/static/admin/login.html");
         }
 
@@ -1264,10 +1306,7 @@
             refreshToken = "";
             loggedInUsername = "";
             loggedInRole = "viewer";
-            localStorage.removeItem("cleversearch_admin_username");
-            localStorage.removeItem("cleversearch_admin_role");
-            localStorage.removeItem("cleversearch_admin_active_tab");
-            localStorage.removeItem("cleversearch_admin_force_dashboard_once");
+            clearAdminLocalStorage();
             forceLoginRedirect();
         }
 
@@ -1444,6 +1483,9 @@
             container.querySelectorAll("button").forEach(button => {
                 if (button.classList.contains("tab")) return;
                 if (button.classList.contains("js-doc-delete")) return;
+                // 카드 내 컬러 액션 버튼·신규등록 같이 자체 색상 디자인을 가진 버튼은 변형하지 않는다.
+                // (btn-unified 가 !important 로 색상/모서리/패딩을 덮어써 SMB/DB 카드 디자인이 깨지는 문제)
+                if (button.dataset.skipNormalize === "1") return;
 
                 button.classList.add("btn-unified");
                 const text = (button.textContent || "").replace(/\s+/g, "").trim();

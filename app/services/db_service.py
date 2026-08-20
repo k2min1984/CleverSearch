@@ -53,12 +53,14 @@ class DBService:
 
     @staticmethod
     def save_search_log(user_id: str, query: str, total_hits: int, search_type: str = "manual_search", is_failed: bool = None) -> None:
-        # 인기검색/실패검색/추천검색의 기준이 되는 원본 로그를 적재합니다.
+        # [M-7] 검색어 PII 마스킹 후 저장 — 주민/카드/연락처/이메일 등 식별정보 보호
+        from app.common.pii import mask_pii
+        masked_query = mask_pii(query or "")
         with get_db_session() as db:
             db.add(
                 SearchLog(
                     user_id=user_id or "anonymous",
-                    query=query,
+                    query=masked_query,
                     total_hits=total_hits,
                     is_failed=is_failed if is_failed is not None else (total_hits == 0),
                     search_type=search_type,
@@ -68,8 +70,10 @@ class DBService:
     @staticmethod
     def save_recent_search(user_id: str, query: str, keep_limit: int = 20) -> None:
         # 동일 검색어는 최신 시각만 갱신하고, 사용자별 보관 개수를 제한합니다.
+        # [M-7] PII 마스킹 후 저장
+        from app.common.pii import mask_pii
         user = user_id or "anonymous"
-        normalized_query = DBService._safe_str(query).strip()
+        normalized_query = DBService._safe_str(mask_pii(query or "")).strip()
         if not normalized_query:
             return
         with get_db_session() as db:

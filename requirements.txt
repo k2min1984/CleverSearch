@@ -1,47 +1,50 @@
+# [보안] 모든 의존성은 명시적 버전 핀(== 또는 >=, <) 사용.
+# 운영 배포 시 pip-audit / safety check CI 통합 필수.
+
 # ── Web Framework & Server ──
-fastapi
-uvicorn[standard]
-python-multipart
-python-dotenv
-pydantic
+fastapi==0.128.0
+uvicorn[standard]==0.40.0
+python-multipart==0.0.22
+python-dotenv==1.2.1
+pydantic==2.12.5
 
 # ── Search Engine ──
-opensearch-py
+opensearch-py==3.1.0
 
 # ── Database & ORM ──
-sqlalchemy
-alembic
-psycopg2-binary
-pymysql
-oracledb
+sqlalchemy==2.0.48
+alembic==1.18.4
+psycopg2-binary==2.9.10
+pymysql==1.1.2
+oracledb==3.4.2
 
 # ── AI / Embedding ──
-sentence-transformers
-numpy
+sentence-transformers==5.2.3
+numpy==1.26.4
 
 # ── Document Parsing ──
-pymupdf
-pdfplumber
-python-docx
-python-pptx
-openpyxl
-pandas
-olefile
+pymupdf==1.26.7
+pdfplumber==0.11.9
+python-docx==1.2.0
+python-pptx==1.0.2
+openpyxl==3.1.5
+pandas==2.2.3
+olefile==0.47
 python-magic>=0.4.27; platform_system != "Windows"
 python-magic-bin>=0.4.14; platform_system == "Windows"
 
 # ── Image & OCR (PaddleOCR optional – install separately if needed) ──
-Pillow
-pytesseract
+Pillow==12.1.0
+pytesseract==0.3.13
 # paddlepaddle   # GPU/CPU 환경에 따라 별도 설치 권장: pip install paddlepaddle
 # paddleocr      # pip install paddleocr (PaddleOCR 미설치 시 Tesseract 폴백)
 
 # ── Korean NLP ──
-py-hanspell
+py-hanspell==1.1
 
 # ── Auth & Security ──
-PyJWT
-cryptography
-smbprotocol
-paramiko
-watchfiles
+PyJWT==2.12.1
+cryptography==46.0.4
+smbprotocol==1.16.1
+paramiko==4.0.0
+watchfiles==1.1.1

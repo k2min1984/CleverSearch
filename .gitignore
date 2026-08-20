@@ -45,6 +45,19 @@ final_patch.json
 patch.json
 popular_settings.json
 
+# Local build/demo artifacts
+build_portable/
+*.bak
+app/core/file/*.zip
+
+# Local certificates and private keys (already tracked demo certs are unaffected)
+cert/*.crt
+cert/*.key
+cert/*.pem
+
+# Local assistant configuration
+.claude/
+
 # 개인 문서 (커밋 제외)
 docs/강광민_수행업무_이해가이드.md
 docs/PM_설명서_학습가이드_20260406_강광민.md

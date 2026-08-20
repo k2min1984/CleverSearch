@@ -14,12 +14,14 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Generator
 
 import smbclient
 from smbprotocol.exceptions import SMBConnectionClosed, SMBException
 
 from app.core.config import settings
+from app.utils.file_entry import FileEntry
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +98,14 @@ class SMBClient:
         except (SMBException, OSError, ValueError):
             return False
 
-    def walk(self, allowed_extensions: set[str] | None = None) -> Generator[tuple[str, str], None, None]:
+    def walk(self, allowed_extensions: set[str] | None = None) -> Generator[FileEntry, None, None]:
         """
-        공유 폴더 재귀 탐색
-        Yields: (relative_path, full_smb_path)
+        공유 폴더 재귀 탐색.
+
+        Yields: FileEntry(rel_path, full_path, size, mtime)
+        - 메타데이터(size, mtime) 만 가져오고 read_bytes 는 호출하지 않는다.
+        - 결과는 같은 디렉토리 안에서 사전식 정렬되어 yield 된다 (체크포인트 재개 안정성).
+        - NamedTuple 이므로 기존 `for rel, full in walk()` 도 그대로 동작 (위치 0/1 동일).
         """
         stack = [self.base_path]
         while stack:
@@ -110,6 +116,9 @@ class SMBClient:
                 logger.warning("SMB scandir failed: %s — %s", current, exc)
                 continue
 
+            # 디렉토리/파일 모두 사전식 정렬 → 체크포인트 재개 안정성 (설계서 §5.4)
+            entries.sort(key=lambda e: e.name.lower())
+
             for entry in entries:
                 if entry.is_dir():
                     stack.append(entry.path)
@@ -118,7 +127,8 @@ class SMBClient:
                     if allowed_extensions and ext not in allowed_extensions:
                         continue
                     rel = entry.path.replace(self.base_path, "").lstrip("\\").lstrip("/")
-                    yield rel, entry.path
+                    size, mtime = _safe_stat(entry)
+                    yield FileEntry(rel_path=rel, full_path=entry.path, size=size, mtime=mtime)
 
     def read_bytes(self, smb_path: str) -> bytes:
         """SMB 경로의 파일을 바이너리로 읽기"""
@@ -132,3 +142,25 @@ class SMBClient:
 
     def __exit__(self, *exc):
         self.disconnect()
+
+
+def _safe_stat(entry) -> tuple[int, datetime | None]:
+    """smbprotocol DirEntry 에서 size/mtime 을 안전하게 추출.
+
+    smbprotocol 0.x 에서는 stat() 호출 시 한 번 더 SMB round-trip 이 생기지만,
+    walk 단계에서 read_bytes 를 회피하는 효과가 훨씬 크므로 비용 대비 이득.
+    """
+    size: int = 0
+    mtime: datetime | None = None
+    try:
+        st = entry.stat()
+        size = int(getattr(st, "st_size", 0) or 0)
+        st_mtime = getattr(st, "st_mtime", None)
+        if st_mtime:
+            try:
+                mtime = datetime.fromtimestamp(float(st_mtime), tz=timezone.utc)
+            except (TypeError, ValueError, OSError):
+                mtime = None
+    except Exception as exc:  # 권한/일시 오류 등 — 메타 없이 진행 가능
+        logger.debug("SMB stat failed for %s: %s", getattr(entry, "path", "?"), exc)
+    return size, mtime
