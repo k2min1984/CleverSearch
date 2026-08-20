@@ -624,8 +624,8 @@ def _migrate_add_missing_columns() -> None:
         ("db_sources", "last_cursor_value", "TEXT", True),
         ("db_sources", "pk_column", "VARCHAR(128)", True),
         # Phase 3 — file_index_states
-        ("file_index_states", "mtime", "DATETIME", True),
-        ("file_index_states", "last_seen_at", "DATETIME", True),
+        ("file_index_states", "mtime", "TIMESTAMP", True),
+        ("file_index_states", "last_seen_at", "TIMESTAMP", True),
         ("file_index_states", "os_doc_id", "VARCHAR(64)", True),
     ]
     # 보조 인덱스 (table, name, columns) — CREATE INDEX IF NOT EXISTS 가능 DB 만 적용
