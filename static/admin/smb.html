@@ -45,6 +45,7 @@
                         <select id="smbConnType" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm">
                             <option value="smb">SMB (네트워크 공유)</option>
                             <option value="ssh">SSH (SFTP)</option>
+                            <option value="local">로컬 폴더</option>
                         </select>
                     </div>
                     <div>
@@ -66,7 +67,7 @@
                 <div id="smbFields">
                     <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-xs text-gray-400 mb-1">SMB 경로 *</label>
+                            <label id="smbPathLabel" class="block text-xs text-gray-400 mb-1">SMB 경로 *</label>
                             <input id="smbPath" placeholder="\\\\server\\share\\path" class="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-sm" />
                         </div>
                         <div class="grid grid-cols-2 gap-3">
@@ -123,10 +124,10 @@
 <pre id="smbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto hidden"></pre>
 
 <script>
-let smbRows = [];
-let smbPage = 1;
-const SMB_PAGE_SIZE = 8;
-let _smbSourceCache = [];
+window.smbRows = [];
+window.smbPage = 1;
+window.SMB_PAGE_SIZE = 8;
+window._smbSourceCache = [];
 
 function changeSmbPage(nextPage) {
     const totalPages = Math.max(1, Math.ceil(smbRows.length / SMB_PAGE_SIZE));
@@ -167,9 +168,12 @@ function renderSmbCards() {
         const safeId = Number.isFinite(Number(r.id)) ? Number(r.id) : "";
         const connType = r.connection_type || "smb";
         const isSsh = connType === "ssh";
-        const typeBadge = isSsh
-            ? '<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-600 text-white tracking-wide" style="color:#fff">SSH / SFTP</span>'
-            : '<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-600 text-white tracking-wide" style="color:#fff">SMB / CIFS</span>';
+        const isLocal = connType === "local";
+        const typeBadge = isLocal
+            ? '<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-violet-600 text-white tracking-wide" style="color:#fff">LOCAL</span>'
+            : (isSsh
+                ? '<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-600 text-white tracking-wide" style="color:#fff">SSH / SFTP</span>'
+                : '<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-600 text-white tracking-wide" style="color:#fff">SMB / CIFS</span>');
         const pathDisplay = isSsh ? `${fmt(r.ssh_host||"")}:${fmt(r.share_path)}` : fmt(r.share_path);
         const port = Number(r.port) || (isSsh ? 22 : 445);
         const active = r.is_active
@@ -222,7 +226,7 @@ function renderSmbCards() {
             <!-- 정보 그리드 -->
             <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm mb-3">
                 <div>
-                    <div class="text-gray-400 text-xs mb-0.5 font-medium">${isSsh ? "SSH 호스트" : "공유 경로"}</div>
+                    <div class="text-gray-400 text-xs mb-0.5 font-medium">${isSsh ? "SSH 호스트" : (isLocal ? "로컬 경로" : "공유 경로")}</div>
                     <div class="text-gray-800 font-semibold truncate" title="${pathDisplay}">${pathDisplay}</div>
                 </div>
                 <div>
@@ -334,8 +338,9 @@ function bindSmbActions() {
 
 async function upsertSmbSource() {
     const connType = document.getElementById("smbConnType").value;
+    const name = document.getElementById("smbName").value.trim();
     const payload = {
-        name: document.getElementById("smbName").value,
+        name,
         connection_type: connType,
         username: document.getElementById("smbUser").value || null,
         password: document.getElementById("smbPass").value || null,
@@ -348,11 +353,19 @@ async function upsertSmbSource() {
         payload.ssh_key_path = document.getElementById("sshKeyPath").value || null;
         payload.domain = null;
     } else {
-        payload.share_path = document.getElementById("smbPath").value;
+        payload.share_path = document.getElementById("smbPath").value.trim();
         payload.domain = document.getElementById("smbDomain").value || null;
         payload.port = parseInt(document.getElementById("smbPort").value) || 445;
         payload.ssh_host = null;
         payload.ssh_key_path = null;
+    }
+    if (name.length < 2) {
+        alert("소스 이름을 2자 이상 입력해주세요.");
+        return false;
+    }
+    if (!payload.share_path) {
+        alert(connType === "local" ? "로컬 폴더 경로를 입력해주세요." : "연결 경로를 입력해주세요.");
+        return false;
     }
     const result = await apiFetch(`${SYS_API}/smb/sources`, { method: "POST", body: JSON.stringify(payload) });
     writeJson("smbOutput", result);
@@ -360,8 +373,13 @@ async function upsertSmbSource() {
         alert("SMB/SSH 소스 저장 완료");
         await loadSmbSources();
     } else {
-        alert("저장 실패: " + (result.data?.detail || JSON.stringify(result.data)));
+        const details = Array.isArray(result.data?.detail)
+            ? result.data.detail.map(item => item.msg || JSON.stringify(item)).join("\n")
+            : (result.data?.detail || result.data?.message || JSON.stringify(result.data));
+        alert("저장 실패: " + details);
+        return false;
     }
+    return true;
 }
 
 async function loadSmbSources() {
@@ -401,8 +419,10 @@ async function enqueueSmbSource(sourceId) {
     writeJson("smbOutput", result);
     if (result.ok) {
         const job = result.data || {};
-        const dup = job.duplicate ? " (중복: 기존 Job 재사용)" : "";
-        alert(`✅ 워커 색인 Job 등록 완료${dup}\nJob ID: ${job.job_id} / 타입: ${job.source_type} / 모드: ${job.mode || mode} / 상태: ${job.job_status}`);
+        const typeLabel = { local: "로컬 폴더", smb: "SMB 공유 폴더", ssh: "SSH/SFTP" }[job.source_type] || job.source_type || "확인 필요";
+        const statusLabel = { pending: "대기", running: "처리 중", done: "완료", failed: "실패", paused: "일시정지" }[job.job_status] || "확인 필요";
+        const message = job.duplicate ? "이미 접수된 작업이 있어 기존 작업을 안내합니다." : "동기화 작업이 접수되었습니다.";
+        alert(`${message}\nJob ID: ${job.job_id} / 타입: ${typeLabel} / 모드: ${job.mode || mode} / 상태: ${statusLabel} (${job.job_status})\n\n왼쪽 [통합 색인 이력]에서 같은 Job ID의 완료 여부를 확인하세요.`);
     } else {
         alert("❌ 워커 색인 등록 실패: " + (result.data?.detail || JSON.stringify(result.data)));
     }
@@ -528,15 +548,22 @@ function toggleSshFields() {
     const connType = document.getElementById("smbConnType").value;
     document.getElementById("smbFields").classList.toggle("hidden", connType === "ssh");
     document.getElementById("sshFields").classList.toggle("hidden", connType !== "ssh");
+    const isLocal = connType === "local";
+    document.getElementById("smbPathLabel").textContent = isLocal ? "로컬 폴더 경로 *" : "SMB 경로 *";
+    document.getElementById("smbPath").placeholder = isLocal ? "C:\\Users\\C2R\\Downloads\\테스트용 문서 파일" : "\\\\server\\share\\path";
+    document.getElementById("smbDomain").disabled = isLocal;
+    document.getElementById("smbPort").disabled = isLocal;
 }
 
 loadSmbSources();
 bindSmbActions();
 document.getElementById("smbAddBtn")?.addEventListener("click", () => { clearSmbForm(); openSmbModal(false); });
-const _smbCloseBtn = document.getElementById("smbModalCloseBtn");
-if (_smbCloseBtn) { _smbCloseBtn.textContent = "\u2715"; _smbCloseBtn.addEventListener("click", closeSmbModal); }
+window._smbCloseBtn = document.getElementById("smbModalCloseBtn");
+if (window._smbCloseBtn) { window._smbCloseBtn.textContent = "\u2715"; window._smbCloseBtn.addEventListener("click", closeSmbModal); }
 document.getElementById("smbModalOverlay")?.addEventListener("click", closeSmbModal);
-document.getElementById("smbSaveBtn")?.addEventListener("click", async () => { await upsertSmbSource(); closeSmbModal(); });
+document.getElementById("smbSaveBtn")?.addEventListener("click", async () => {
+    if (await upsertSmbSource()) closeSmbModal();
+});
 document.getElementById("smbClearBtn")?.addEventListener("click", clearSmbForm);
 document.getElementById("smbConnType")?.addEventListener("change", toggleSshFields);
 

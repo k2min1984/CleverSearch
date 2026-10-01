@@ -25,6 +25,7 @@ from typing import Any, Iterable
 from app.core.config import settings
 from app.core.database import (
     FileIndexState,
+    IndexingHistory,
     SearchVolume,
     SessionLocal,
     SmbSource,
@@ -218,6 +219,8 @@ def _record_history(
     status: str, indexed: int, skipped: int, failed: int, unchanged: int,
     message: str | None, trigger_type: str,
 ) -> None:
+    if status == "success" and failed:
+        status = "partial" if indexed + skipped + unchanged else "fail"
     duration_ms = int((finished_at - started_at).total_seconds() * 1000)
     summary = f"unchanged={unchanged}"
     final_msg = (message or "")[:500] if message else summary
@@ -238,6 +241,14 @@ def _record_history(
                 duration_ms=duration_ms,
             )
         )
+        total = indexed + skipped + failed + unchanged
+        session.add(IndexingHistory(
+            source_type=conn_type, source_name=source_name,
+            file_name=f"총 {total}건 (성공 {indexed} / 실패 {failed} / 스킵 {skipped} / 변경없음 {unchanged})",
+            action="sync_summary", status=status,
+            message=(f"trigger={trigger_type}, source_id={source_id}, success={indexed}, skipped={skipped}, unchanged={unchanged}, failed={failed}; {message or ''}")[:500],
+            created_at=finished_at,
+        ))
         session.commit()
     except Exception as exc:
         session.rollback()
@@ -266,6 +277,9 @@ def _set_last_error(source_id: int, message: str) -> None:
 def _build_client(source: SmbSource):
     password = _decrypt(source.password) if source.password else None
     conn_type = (source.connection_type or "smb").lower()
+    if conn_type == "local":
+        from app.utils.local_file_client import LocalFileClient
+        return LocalFileClient(base_path=source.share_path), conn_type
     if conn_type == "ssh":
         from app.utils.sftp_client import SFTPClient
         return SFTPClient(
@@ -325,13 +339,14 @@ def process_smb_job(job_id: int) -> dict[str, Any]:
         job = session.query(SyncJob).filter(SyncJob.id == job_id).first()
         if job is None:
             return {"status": "failed", "error": f"job not found: {job_id}"}
-        if job.source_type not in {"smb", "ssh"}:
+        if job.source_type not in {"smb", "ssh", "local"}:
             return {"status": "failed", "error": f"unexpected source_type: {job.source_type}"}
 
         source = session.query(SmbSource).filter(SmbSource.id == job.source_id).first()
         if source is None:
             return {"status": "failed", "error": f"smb source not found: {job.source_id}"}
 
+        initial_counts = {name: int(getattr(job, name) or 0) for name in ("processed", "indexed", "skipped", "failed")}
         source_id = source.id
         source_name = source.name
         target_volume = None  # SmbSource 에는 target_volume 컬럼이 없음 → 기본 인덱스 사용
@@ -553,6 +568,20 @@ def process_smb_job(job_id: int) -> dict[str, Any]:
         except Exception:
             pass
 
+    # Bulk writes update chunk counters; metadata/hash skips must also be reflected.
+    # Start from the saved checkpoint counts so resumed jobs keep earlier progress.
+    with SessionLocal() as session:
+        job = session.get(SyncJob, job_id)
+        if job is not None:
+            job.processed = initial_counts["processed"] + total_processed
+            job.indexed = initial_counts["indexed"] + total_indexed
+            job.skipped = initial_counts["skipped"] + total_skipped + total_unchanged
+            job.failed = initial_counts["failed"] + total_failed
+            final_cursor = last_path_processed or final_cursor
+            job.cursor_value = final_cursor
+            job.updated_at = _utcnow()
+            session.commit()
+
     # OpenSearch refresh 1회 (설계서 §3.3)
     if target_index and (total_indexed > 0):
         try:
@@ -630,3 +659,4 @@ def _finalize(*, job_id: int, source_id: int, source_name: str, conn_type: str,
 # ---------------------------------------------------------------------------
 register_handler("smb", process_smb_job)
 register_handler("ssh", process_smb_job)
+register_handler("local", process_smb_job)

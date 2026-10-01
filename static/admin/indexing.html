@@ -11,7 +11,7 @@
 
 <!-- ──────────── 증분 색인 작업 큐 (Phase 4) ──────────── -->
 <div class="bg-emerald-900/20 border border-emerald-700 rounded-lg p-3 mb-3 text-sm text-emerald-200">
-    <b>⚙ 증분 색인 작업 큐 (SyncJob)</b> &mdash; SMB/DB 탭의 <b>워커 색인</b> 버튼으로 등록한 백그라운드 Job 의 진행 상태입니다.
+    <b>⚙ 증분 색인 작업 큐 (SyncJob)</b> &mdash; SMB/DB 탭의 <b>동기화</b> 버튼으로 등록한 백그라운드 Job 의 진행 상태입니다.
     상태가 <b>pending → running → done</b> 순서로 진행되며, 실패 시 <b>failed</b>, 사용자가 멈추면 <b>paused</b> 가 됩니다.
 </div>
 
@@ -25,7 +25,7 @@
         <option value="paused">paused (일시정지)</option>
     </select>
     <input id="jobFilterLimit" type="number" placeholder="조회 수" value="50" min="1" max="500" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
-    <button onclick="loadSyncJobs()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">조회</button>
+    <button id="jobLoadBtn" type="button" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">조회</button>
     <label class="inline-flex items-center gap-1 text-xs text-gray-400 ml-2">
         <input id="jobAutoRefresh" type="checkbox" /> 5초마다 자동 새로고침
     </label>
@@ -50,7 +50,7 @@
 <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 mb-4 text-sm text-blue-200">
     <b>📑 통합 색인 이력이란?</b> SMB/DB/파일감시 실행 회차별 요약 이력을 통합 조회하는 감사용 화면입니다.<br>
     • 소스별 즉시 확인은 SMB/DB 탭 목록의 <b>이력</b> 아코디언을 사용하세요.<br>
-    • <b>source_type</b>: smb, ssh, db, watcher<br>
+    • <b>source_type</b>: local(로컬 폴더), smb, ssh, db, watcher<br>
     • <b>action</b>: sync_summary(실행 요약)<br>
     • <b>status</b>: success(성공), fail(실패), partial(부분성공)
 </div>
@@ -59,7 +59,9 @@
 <div class="flex flex-wrap gap-2 mb-3 items-center">
     <select id="idxFilterType" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm">
         <option value="">전체 타입</option>
+        <option value="local">로컬 폴더</option>
         <option value="smb">SMB</option>
+        <option value="ssh">SSH/SFTP</option>
         <option value="db">DB</option>
         <option value="watcher">파일감시</option>
     </select>
@@ -68,15 +70,16 @@
         <option value="">전체 상태</option>
         <option value="success">성공</option>
         <option value="fail">실패</option>
+        <option value="partial">부분 성공</option>
     </select>
     <input id="idxFilterLimit" type="number" placeholder="조회 수" value="100" min="1" max="1000" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
-    <button onclick="loadIndexingHistory()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">조회</button>
+    <button id="idxLoadBtn" type="button" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">조회</button>
 </div>
 
 <!-- 이력 삭제 -->
 <div class="flex flex-wrap gap-2 mb-3 items-center">
     <input id="idxDeleteDays" type="number" placeholder="N일 이전 삭제" value="30" min="1" max="365" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-36" />
-    <button onclick="deleteIndexingHistory()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">이력 정리</button>
+    <button id="idxDeleteBtn" type="button" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">이력 정리</button>
     <span class="text-xs text-gray-500">※ 지정 일수 이전의 이력을 일괄 삭제합니다</span>
 </div>
 
@@ -157,7 +160,7 @@ async function deleteIndexingHistory() {
 }
 
 /* ──────────── SyncJob 패널 (Phase 4) ──────────── */
-let _jobAutoTimer = null;
+window._jobAutoTimer = window._jobAutoTimer || null;
 
 async function loadSyncJobs() {
     const status = document.getElementById("jobFilterStatus").value;
@@ -274,6 +277,10 @@ document.getElementById("jobAutoRefresh")?.addEventListener("change", (e) => {
         loadSyncJobs();
     }
 });
+
+document.getElementById("jobLoadBtn")?.addEventListener("click", loadSyncJobs);
+document.getElementById("idxLoadBtn")?.addEventListener("click", loadIndexingHistory);
+document.getElementById("idxDeleteBtn")?.addEventListener("click", deleteIndexingHistory);
 
 loadSyncJobs();
 loadIndexingHistory();

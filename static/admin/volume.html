@@ -25,9 +25,9 @@
 </div>
 
 <div class="flex gap-2 mb-3 flex-wrap">
-    <button onclick="createVolume()" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">볼륨 생성</button>
-    <button onclick="loadVolumeList()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">목록 새로고침</button>
-    <button onclick="fillVolumePreset()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">권장값 채우기</button>
+    <button id="volumeCreateBtn" type="button" class="admin-write px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">볼륨 생성</button>
+    <button id="volumeReloadBtn" type="button" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">목록 새로고침</button>
+    <button id="volumePresetBtn" type="button" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">권장값 채우기</button>
 </div>
 
 <div id="volumeNotice" class="text-sm mb-2"></div>
@@ -37,8 +37,8 @@
 </div>
 
 <script>
-let _volumeCache = [];
-let _editingVolumeId = null;
+window._volumeCache = [];
+window._editingVolumeId = null;
 
 function showVolumeNotice(message, isError = false) {
     const el = document.getElementById("volumeNotice");
@@ -106,15 +106,15 @@ async function loadVolumeList() {
     const isAdmin = loggedInRole === "admin";
     body.innerHTML = data.map((r, idx) => {
         if (_editingVolumeId === r.id) {
-            const saveBtn = (!isViewer && isAdmin) ? `<span class="text-emerald-400 cursor-pointer hover:underline mr-2" onclick="saveVolumeEdit(${idx})">저장</span>` : "";
-            const cancelBtn = (!isViewer && isAdmin) ? `<span class="text-gray-300 cursor-pointer hover:underline mr-2" onclick="cancelVolumeEdit()">취소</span>` : "";
+            const saveBtn = (!isViewer && isAdmin) ? `<button type="button" class="text-emerald-400 cursor-pointer hover:underline mr-2 js-volume-save" data-idx="${idx}">저장</button>` : "";
+            const cancelBtn = (!isViewer && isAdmin) ? `<button type="button" class="text-gray-300 cursor-pointer hover:underline mr-2 js-volume-cancel">취소</button>` : "";
             return `<tr class="border-t border-gray-700 bg-gray-900/40"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.index_name)}</td><td class="p-2"><input id="editAliasName" value="${fmt(r.alias_name || r.index_name)}" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-full" /></td><td class="p-2">${fmt(r.shards)}</td><td class="p-2"><input id="editReplicas" type="number" min="0" max="5" value="${fmt(r.replicas)}" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-20" /></td><td class="p-2">${r.is_active?"✅ 사용":"❌ 미사용"}</td><td class="p-2">${saveBtn}${cancelBtn}</td></tr>`;
         }
 
         const toggleText = r.is_active ? "비활성화" : "활성화";
-        const editBtn = (!isViewer && isAdmin) ? `<span class="text-blue-400 cursor-pointer hover:underline mr-2" onclick="startVolumeEdit(${idx})">수정</span>` : '';
-        const toggleBtn = (!isViewer && isAdmin) ? `<span class="text-indigo-400 cursor-pointer hover:underline mr-2" onclick="toggleVolumeActive(${idx})">${toggleText}</span>` : '';
-        const delBtn = (!isViewer && isAdmin) ? `<span class="btn-del" onclick="deleteVolume(${idx})">삭제</span>` : '-';
+        const editBtn = (!isViewer && isAdmin) ? `<button type="button" class="text-blue-400 cursor-pointer hover:underline mr-2 js-volume-edit" data-idx="${idx}">수정</button>` : '';
+        const toggleBtn = (!isViewer && isAdmin) ? `<button type="button" class="text-indigo-400 cursor-pointer hover:underline mr-2 js-volume-toggle" data-idx="${idx}">${toggleText}</button>` : '';
+        const delBtn = (!isViewer && isAdmin) ? `<button type="button" class="btn-del js-volume-delete" data-idx="${idx}">삭제</button>` : '-';
         return `<tr class="border-t border-gray-700"><td class="p-2">${fmt(r.id)}</td><td class="p-2">${fmt(r.index_name)}</td><td class="p-2">${fmt(r.alias_name || r.index_name)}</td><td class="p-2">${fmt(r.shards)}</td><td class="p-2">${fmt(r.replicas)}</td><td class="p-2">${r.is_active?"✅ 사용":"❌ 미사용"}</td><td class="p-2">${editBtn}${toggleBtn}${delBtn}</td></tr>`;
     }).join("");
 }
@@ -199,6 +199,20 @@ async function deleteVolume(idx) {
         alert("삭제 실패: " + (result.data?.detail || JSON.stringify(result.data)));
     }
 }
+
+document.getElementById("volumeCreateBtn")?.addEventListener("click", createVolume);
+document.getElementById("volumeReloadBtn")?.addEventListener("click", loadVolumeList);
+document.getElementById("volumePresetBtn")?.addEventListener("click", fillVolumePreset);
+document.getElementById("volumeBody")?.addEventListener("click", (event) => {
+    const action = event.target.closest("button");
+    if (!action) return;
+    const idx = Number(action.dataset.idx);
+    if (action.classList.contains("js-volume-save")) saveVolumeEdit(idx);
+    else if (action.classList.contains("js-volume-cancel")) cancelVolumeEdit();
+    else if (action.classList.contains("js-volume-edit")) startVolumeEdit(idx);
+    else if (action.classList.contains("js-volume-toggle")) toggleVolumeActive(idx);
+    else if (action.classList.contains("js-volume-delete")) deleteVolume(idx);
+});
 
 loadVolumePanel();
 </script>

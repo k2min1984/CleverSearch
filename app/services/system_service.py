@@ -270,7 +270,10 @@ class SMBService:
             conn_type = source.connection_type or "smb"
 
             try:
-                if conn_type == "ssh":
+                if conn_type == "local":
+                    from app.utils.local_file_client import LocalFileClient
+                    client = LocalFileClient(base_path=source.share_path)
+                elif conn_type == "ssh":
                     from app.utils.sftp_client import SFTPClient
                     client = SFTPClient(
                         host=source.ssh_host or "",
@@ -425,7 +428,7 @@ class SMBService:
                 return {"status": "fail", "message": "SMB/SSH source 가 비활성 상태입니다"}
 
             conn_type = (source.connection_type or "smb").lower()
-            if conn_type not in {"smb", "ssh"}:
+            if conn_type not in {"smb", "ssh", "local"}:
                 return {"status": "fail", "message": f"지원하지 않는 connection_type: {conn_type}"}
 
             running = (
@@ -443,6 +446,8 @@ class SMBService:
                     "message": "이미 진행 중인 Job 이 있습니다",
                     "job_id": running.id,
                     "job_status": running.status,
+                    "source_type": running.source_type,
+                    "mode": running.mode,
                     "duplicate": True,
                 }
 
@@ -522,7 +527,10 @@ class SMBService:
             conn_type = source.connection_type or "smb"
 
             try:
-                if conn_type == "ssh":
+                if conn_type == "local":
+                    from app.utils.local_file_client import LocalFileClient
+                    client = LocalFileClient(base_path=source.share_path)
+                elif conn_type == "ssh":
                     from app.utils.sftp_client import SFTPClient
                     client = SFTPClient(
                         host=source.ssh_host or "",
@@ -1062,13 +1070,7 @@ class NetworkMonitorService:
 
     @classmethod
     def _check_smb_sources(cls) -> None:
-        """활성 SMB 소스별 연결 상태 점검"""
-        smb_client_cls = None
-        try:
-            from app.utils.smb_client import SMBClient
-            smb_client_cls = SMBClient
-        except Exception:
-            smb_client_cls = None
+        """활성 파일 소스(SMB/SSH/local)별 연결 상태 점검"""
 
         try:
             with get_db_session() as db:
@@ -1090,28 +1092,34 @@ class NetworkMonitorService:
             current_ok = False
             client = None
             try:
-                if smb_client_cls is not None:
-                    password = _decrypt(row.password) if row.password else None
-                    client = smb_client_cls(
+                conn_type = (row.connection_type or "smb").lower()
+                password = _decrypt(row.password) if row.password else None
+                if conn_type == "local":
+                    from app.utils.local_file_client import LocalFileClient
+                    client = LocalFileClient(base_path=row.share_path)
+                elif conn_type == "ssh":
+                    from app.utils.sftp_client import SFTPClient
+                    client = SFTPClient(
+                        host=row.ssh_host or "",
+                        remote_path=row.share_path,
+                        username=row.username,
+                        password=password,
+                        port=row.port or 22,
+                        key_path=row.ssh_key_path,
+                    )
+                else:
+                    from app.utils.smb_client import SMBClient
+                    client = SMBClient(
                         share_path=row.share_path,
                         username=row.username,
                         password=password,
                         domain=row.domain,
                         port=row.port or 445,
                     )
-                    client.connect()
-                    current_ok = True
-                else:
-                    # 의존성 미설치 환경에서는 UNC 경로 접근 가능 여부로 최소 점검
-                    current_ok = os.path.isdir(row.share_path)
-                    if current_ok:
-                        try:
-                            os.listdir(row.share_path)
-                        except Exception:
-                            # 읽기 권한이 없어도 경로 접근 자체는 정상으로 간주
-                            pass
-                    else:
-                        error_detail = f"path not reachable: {row.share_path}"
+                client.connect()
+                current_ok = client.test_connection()
+                if not current_ok:
+                    error_detail = f"path not reachable: {row.share_path}"
             except Exception as exc:
                 error_detail = str(exc)
                 current_ok = False
@@ -1124,7 +1132,7 @@ class NetworkMonitorService:
 
             cls._handle_state_transition(
                 key=key,
-                source_type="smb",
+                source_type=(row.connection_type or "smb").lower(),
                 source_name=row.name,
                 current_ok=current_ok,
                 error_detail=error_detail,
@@ -1461,6 +1469,8 @@ class DBIngestionService:
                     "message": "이미 진행 중인 Job 이 있습니다",
                     "job_id": running.id,
                     "job_status": running.status,
+                    "source_type": running.source_type,
+                    "mode": running.mode,
                     "duplicate": True,
                 }
 
@@ -1483,6 +1493,7 @@ class DBIngestionService:
                 "message": "Job enqueued",
                 "job_id": job.id,
                 "job_status": job.status,
+                "source_type": job.source_type,
                 "mode": mode,
             }
 
@@ -1844,6 +1855,7 @@ class IngestionSchedulerService:
     - schedule_entries 테이블 기준으로 각 소스별 개별 주기 동기화
     - 60초마다 due 엔트리 확인 후 실행
     """
+    _interval_seconds: int = 60
     _thread: threading.Thread | None = None
     _stop_event: threading.Event | None = None
     _last_run_at: datetime | None = None
@@ -1884,14 +1896,17 @@ class IngestionSchedulerService:
                 "smb_results": smb_results,
                 "db_results": db_results,
             }
-            cls._stop_event.wait(60)
+            cls._stop_event.wait(cls._interval_seconds)
 
     @classmethod
-    def start(cls) -> dict[str, Any]:
+    def start(cls, interval_seconds: int = 60) -> dict[str, Any]:
         """스케줄러 시작"""
         if cls._thread and cls._thread.is_alive():
             return {"status": "already-running"}
 
+        if interval_seconds < 1:
+            raise ValueError("interval_seconds must be positive")
+        cls._interval_seconds = interval_seconds
         cls._stop_event = threading.Event()
         cls._thread = threading.Thread(target=cls._loop, daemon=True)
         cls._thread.start()
@@ -1911,6 +1926,7 @@ class IngestionSchedulerService:
         """스케줄러 현재 상태 조회"""
         return {
             "running": bool(cls._thread and cls._thread.is_alive()),
+            "interval_seconds": cls._interval_seconds,
             "last_run_at": cls._last_run_at.isoformat() if cls._last_run_at else None,
             "last_summary": cls._last_summary,
         }
@@ -2245,7 +2261,7 @@ class VolumeSSLService:
 
             index_name = (row.index_name or "").strip()
             alias_name = (row.alias_name or "").strip() or index_name
-            if index_name == "cleversearch-docs":
+            if index_name == settings.OPENSEARCH_INDEX or alias_name == settings.OPENSEARCH_INDEX:
                 return {"status": "fail", "message": "default volume cannot be deleted"}
 
             linked_count = db.query(DbSource).filter(DbSource.target_volume == alias_name).count()

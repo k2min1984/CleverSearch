@@ -59,6 +59,7 @@ cert/*.pem
 
 # Local assistant configuration
 .claude/
+server_8000*.log
 
 # 개인 문서 (커밋 제외)
 docs/강광민_수행업무_이해가이드.md

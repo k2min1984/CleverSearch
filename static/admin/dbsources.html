@@ -162,14 +162,14 @@
 <pre id="dbOutput" class="bg-gray-900 border border-gray-700 rounded p-3 text-xs overflow-auto hidden"></pre>
 
 <script>
-let dbRows = [];
-let dbPage = 1;
-const DB_PAGE_SIZE = 8;
-let _dbSourceCache = [];
-let _activeVolumes = [];
+window.dbRows = [];
+window.dbPage = 1;
+window.DB_PAGE_SIZE = 8;
+window._dbSourceCache = [];
+window._activeVolumes = [];
 
 /* DB 타입별 기본 포트/드라이버 매핑 */
-const DB_DRIVERS = {
+window.DB_DRIVERS = {
     postgresql: { port: 5432, driver: "postgresql+psycopg2", template: (u,p,h,pt,d) => `postgresql+psycopg2://${u}:${p}@${h}:${pt}/${d}` },
     mysql:      { port: 3306, driver: "mysql+pymysql",       template: (u,p,h,pt,d) => `mysql+pymysql://${u}:${p}@${h}:${pt}/${d}?charset=utf8mb4` },
     oracle:     { port: 1521, driver: "oracle+oracledb",     template: (u,p,h,pt,d) => `oracle+oracledb://${u}:${p}@${h}:${pt}/${d}` },
@@ -686,8 +686,8 @@ function clearDbForm() {
 loadDbSources();
 bindDbActions();
 document.getElementById("dbAddBtn")?.addEventListener("click", () => { clearDbForm(); openDbModal(false); });
-const _dbCloseBtn = document.getElementById("dbModalCloseBtn");
-if (_dbCloseBtn) { _dbCloseBtn.textContent = "\u2715"; _dbCloseBtn.addEventListener("click", closeDbModal); }
+window._dbCloseBtn = document.getElementById("dbModalCloseBtn");
+if (window._dbCloseBtn) { window._dbCloseBtn.textContent = "\u2715"; window._dbCloseBtn.addEventListener("click", closeDbModal); }
 document.getElementById("dbModalOverlay")?.addEventListener("click", closeDbModal);
 document.getElementById("dbSaveBtn")?.addEventListener("click", async () => { await upsertDbSource(); closeDbModal(); });
 document.getElementById("dbClearBtn")?.addEventListener("click", clearDbForm);

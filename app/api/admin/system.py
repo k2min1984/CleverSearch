@@ -48,7 +48,7 @@ router = APIRouter()
 
 class SmbSourceRequest(BaseModel):
     name: str = Field(..., min_length=2)
-    connection_type: str = Field(default="smb", pattern=r"^(smb|ssh)$")
+    connection_type: str = Field(default="smb", pattern=r"^(smb|ssh|local)$")
     share_path: str = Field(..., min_length=1)
     username: str | None = None
     password: str | None = None

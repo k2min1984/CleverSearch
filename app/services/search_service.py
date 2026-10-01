@@ -662,8 +662,18 @@ class SearchService:
             w = ScoringConfigService.get_weights()
             if is_chosung:
                 return SearchService._build_chosung_clause(keyword, w["chosung"])
+            # Nori splits compounds (운영지침 -> 운영, 지침). A single input
+            # word must match adjacent tokens, not scattered words in a long PDF.
+            # Apply before pagination/counts; keep multiword AND and synonym paths.
+            phrase_filters = []
+            if len(keyword.split()) == 1:
+                phrase_filters.append({"multi_match": {
+                    "query": keyword, "type": "phrase", "slop": 0,
+                    "fields": ["Title", "all_text", "alltext"],
+                }})
             return {
                 "bool": {
+                    "filter": phrase_filters,
                     "should": [
                         { "match_phrase": { "Title": { "query": keyword, "boost": w["title_phrase"] } } }, 
                         { "match": { "Title": { "query": keyword, "boost": w["title_and"], "operator": "and" } } },
@@ -797,7 +807,7 @@ class SearchService:
 
             # [여기에 딱 2줄 추가!] 터미널 창에 1등 문서 점수 출력하기
             if response['hits']['hits']:
-                print(f"👉 [점수 확인] '{req.query}' 검색 ➡️ 최고 점수: {response['hits']['hits'][0]['_score']}")            
+                print(f"[SCORE] '{req.query}' 검색 -> 최고 점수: {response['hits']['hits'][0]['_score']}")
 
             # --- [3순위] 검색 실패 및 통계 추적 로그 남기기 ---
             # 운영 통계의 성공/실패는 사용자 체감과 동일하게 total_hits 기준으로 판정합니다.
@@ -877,7 +887,7 @@ class SearchService:
             processed_results = []
             for hit in raw_hits:
                 # [추가] 모든 문서의 실제 점수를 터미널에 까발려라!
-                print(f"📄 문서: {hit['_source'].get('Title')} ➡️ 점수: {hit['_score']}")
+                print(f"[DOCUMENT] 문서: {hit['_source'].get('Title')} -> 점수: {hit['_score']}")
                 source = hit['_source']
                 raw_text = source.get("all_text") or source.get("alltext") or ""
                 summary, page_num = None, "1"
@@ -1077,4 +1087,4 @@ class SearchService:
         except Exception as e:
             # 만약 에러가 나더라도 가게 문이 닫혀있으면 안 되므로 강제로 다시 열어줌
             client.indices.open(index=index_name)
-            return {"status": "error", "message": str(e)}        
+            return {"status": "error", "message": str(e)}

@@ -175,3 +175,25 @@ def validate_signature(ext: str, content: bytes) -> None:
         return
 
     raise HTTPException(status_code=400, detail="지원하지 않는 파일 형식입니다")
+
+
+async def validate_upload_batch(files: list[UploadFile]) -> None:
+    """Validate actual spooled bytes before any document is indexed; rewind for processing."""
+    if not files:
+        raise HTTPException(status_code=400, detail="업로드할 파일이 없습니다")
+    if len(files) > MAX_MULTI_UPLOAD_FILES:
+        raise HTTPException(status_code=413, detail=f"파일 개수 초과: 최대 {MAX_MULTI_UPLOAD_FILES}개까지 동시 업로드 가능")
+    total = 0
+    for file in files:
+        size = 0
+        await file.seek(0)
+        try:
+            while chunk := await file.read(CHUNK_SIZE):
+                size += len(chunk)
+                total += len(chunk)
+                if size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(status_code=413, detail=f"파일 크기 초과: 최대 {MAX_UPLOAD_SIZE // 1024 // 1024}MB 허용")
+                if total > MAX_MULTI_UPLOAD_TOTAL_SIZE:
+                    raise HTTPException(status_code=413, detail=f"전체 업로드 용량 초과: 최대 {MAX_MULTI_UPLOAD_TOTAL_SIZE // 1024 // 1024}MB")
+        finally:
+            await file.seek(0)

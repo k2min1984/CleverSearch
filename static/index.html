@@ -87,7 +87,7 @@
             <div class="flex justify-end mb-2">
                 <a href="/admin" class="text-xs text-gray-500 hover:text-slate-700">관리자 리스트</a>
             </div>
-            <h1 class="text-5xl font-bold mb-8 cursor-pointer tracking-tight" onclick="goHome()">
+            <h1 id="searchHomeLogo" class="text-5xl font-bold mb-8 cursor-pointer tracking-tight" role="button" tabindex="0">
                 <span class="text-indigo-600">Clever</span><span class="text-slate-800">Search</span>
             </h1>
             
@@ -95,7 +95,7 @@
                 <div class="search-container flex items-center bg-[#303134] rounded-full border border-[#5f6368] px-5 py-3 shadow-sm focus-within:shadow-lg transition-all">
                     <i class="fas fa-search text-gray-400 mr-3"></i>
                     <input type="text" id="searchInput" class="flex-1 bg-transparent border-none text-slate-800 focus:outline-none text-lg" placeholder="검색어 입력..." autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="autocompleteList" aria-activedescendant="">
-                    <button onclick="resetFiltersAndSearch()" class="search-submit-btn bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium ml-2 transition">검색</button>
+                    <button id="searchSubmitBtn" type="button" class="search-submit-btn bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full font-medium ml-2 transition">검색</button>
                 </div>
                 <div id="autocompleteList" role="listbox" class="absolute top-full left-0 w-full bg-[#303134] border border-[#5f6368] rounded-b-2xl shadow-xl z-50 hidden overflow-hidden mt-1 text-left"></div>
             </div>
@@ -109,11 +109,11 @@
         </div>
 
         <div id="categoryTabs" class="hidden max-w-3xl mx-auto mb-4 flex gap-6 text-sm text-gray-400 border-b border-gray-700 overflow-x-auto">
-            <button onclick="filterCategory('all')" class="category-tab pb-2 border-b-2 border-blue-500 text-blue-500 font-bold" id="tab-all">전체 <span class="text-xs opacity-60" id="count-all"></span></button>
-            <button onclick="filterCategory('PLAN')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-PLAN">사업계획서 <span class="text-xs opacity-60" id="count-PLAN"></span></button>
-            <button onclick="filterCategory('REPORT')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-REPORT">결과보고서 <span class="text-xs opacity-60" id="count-REPORT"></span></button>
-            <button onclick="filterCategory('RULE')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-RULE">사내규정 <span class="text-xs opacity-60" id="count-RULE"></span></button>
-            <button onclick="filterCategory('OTHERS')" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-OTHERS">기타 <span class="text-xs opacity-60" id="count-OTHERS"></span></button>
+            <button type="button" data-category="all" class="category-tab pb-2 border-b-2 border-blue-500 text-blue-500 font-bold" id="tab-all">전체 <span class="text-xs opacity-60" id="count-all"></span></button>
+            <button type="button" data-category="PLAN" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-PLAN">사업계획서 <span class="text-xs opacity-60" id="count-PLAN"></span></button>
+            <button type="button" data-category="REPORT" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-REPORT">결과보고서 <span class="text-xs opacity-60" id="count-REPORT"></span></button>
+            <button type="button" data-category="RULE" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-RULE">사내규정 <span class="text-xs opacity-60" id="count-RULE"></span></button>
+            <button type="button" data-category="OTHERS" class="category-tab pb-2 border-b-2 border-transparent hover:text-white" id="tab-OTHERS">기타 <span class="text-xs opacity-60" id="count-OTHERS"></span></button>
         </div>
 
         <div id="filterToggleWrap" class="hidden max-w-3xl mx-auto mb-2 sm:hidden">
@@ -483,10 +483,13 @@
             autocompleteList.querySelectorAll('[data-suggestion]').forEach((row) => {
                 if (row.dataset.bound === '1') return;
                 row.dataset.bound = '1';
-                row.addEventListener('click', () => {
+                row.addEventListener('click', (event) => {
+                    // A nested delete button must not select/search its parent row.
+                    if (event.target.closest('button')) return;
                     selectSuggestion(decodeURIComponent(row.dataset.suggestion || ''));
                 });
                 row.addEventListener('keydown', (event) => {
+                    if (event.target !== row) return;
                     if (event.key !== 'Enter' && event.key !== ' ') return;
                     event.preventDefault();
                     selectSuggestion(decodeURIComponent(row.dataset.suggestion || ''));
@@ -569,7 +572,8 @@
                 const recommendBase = Array.isArray(recommendJson) ? recommendJson : [];
                 const recommendList = recommendBase.filter(keyword => !recentList.includes(keyword)).slice(0, 4);
                 const popularBase = Array.isArray(popularJson) ? popularJson : [];
-                const popularList = popularBase.filter(keyword => !recentList.includes(keyword) && !recommendList.includes(keyword)).slice(0, 4);
+                // The API already applies the administrator's display limit.
+                const popularList = popularBase;
 
                 renderSuggestionGroups([
                     { title: '최근 검색어', iconClass: 'fa-clock-rotate-left', items: recentList, removable: true, clearable: true },
@@ -801,7 +805,6 @@
         let lastExecutedQuery = '';
 
         function goHome() {
-            const SAFE_HOME_URL = 'https://127.0.0.1:8000/';
             try {
                 sessionStorage.removeItem(SEARCH_STATE_KEY);
                 sessionStorage.removeItem(SEARCH_SCROLL_KEY);
@@ -813,21 +816,8 @@
             skipPersistOnUnload = true;
             searchInput.value = '';
 
-            try {
-                const parsed = new URL(SAFE_HOME_URL);
-                const isAllowed =
-                    parsed.protocol === 'https:' &&
-                    parsed.hostname === '127.0.0.1' &&
-                    parsed.port === '8000' &&
-                    parsed.pathname === '/' &&
-                    !parsed.search &&
-                    !parsed.hash;
-                if (!isAllowed) throw new Error('unsafe home url');
-                window.location.assign(parsed.toString());
-            } catch (_) {
-                // Fail-safe: keep navigation within same-origin root only
-                window.location.assign('/');
-            }
+            // Keep the current origin and protocol for both local and HTTPS deployments.
+            window.location.assign('/');
         }
 
         function clearDetailFilters() {
@@ -1143,7 +1133,7 @@
                                 <i class="far fa-file-alt mr-1"></i> ${escapeHtml(item.location || '-')}
                             </div>
                             <h3 class="text-xl text-indigo-700 group-hover:underline font-medium cursor-pointer">
-                                ${escapeHtml(titleText)}
+                                <a class="document-title-link" href="${escapeHtml(buildDocumentUrl(item.id))}" target="_blank" rel="noopener">${escapeHtml(titleText)}</a>
                             </h3>
                         </div>
                         <button class="text-slate-400 hover:text-slate-700 transition px-2 py-1">
@@ -1158,15 +1148,15 @@
                     </div>
                     <div class="preview-popup">
                         <div class="text-xs text-indigo-600 font-bold mb-1"><span aria-hidden="true">📄</span> 본문 미리보기</div>
-                        <div class="text-slate-600 whitespace-pre-wrap">${escapeHtml(previewText || '미리보기 데이터 없음')}</div>
+                        <div class="text-slate-600 whitespace-pre-wrap">${highlightEscapedText(previewText || '미리보기 데이터 없음', getHighlightTokens())}</div>
                     </div>
                 `;
                 
-                card.onclick = (event) => {
+                card.addEventListener('click', (event) => {
                     if (event.target.closest('button, a, input, textarea, select')) return;
                     const osDocId = item.id;
                     openDocumentView(osDocId, item);
-                };
+                });
 
                 card.addEventListener('keydown', (event) => {
                     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -1180,93 +1170,39 @@
             });
         }
 
-        // 문서 상세 보기 (포맷팅된 새 창)
-        async function openDocumentView(docId, item) {
-            const safeDocId = encodeURIComponent(String(docId ?? ""));
-            const win = window.open('about:blank', '_blank');
-            if (!win) {
-                showToast('팝업이 차단되었습니다. 브라우저에서 팝업을 허용해 주세요.', 'error');
-                return;
-            }
-
-            win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>문서 로딩 중...</title>
-<style>
-    body { font-family: 'Malgun Gothic', sans-serif; background: #f3f6fb; color: #334155; margin: 0; padding: 2rem; }
-    .loading { max-width: 900px; margin: 0 auto; background: #fff; border: 1px solid #d6dfec; border-radius: 10px; padding: 1rem 1.25rem; }
-</style></head><body><div class="loading">문서를 불러오는 중입니다...</div></body></html>`);
-            win.document.close();
-
-            try {
-                const res = await fetch(`${SEARCH_API}/read/${safeDocId}`);
-                if (!res.ok) {
-                    throw new Error(`HTTP ${res.status}`);
-                }
-                const data = await res.json();
-                const c = data.content || data._source || data;
-                const title = c.Title || c.origin_file || c.originfile || item.content?.origin_file || item.content?.originfile || '문서';
-                const origin = c.origin_file || c.originfile || item.content?.origin_file || item.content?.originfile || '-';
-                const category = c.doc_category || c.doccategory || item.content?.doc_category || item.content?.doccategory || '-';
-                const ext = c.file_ext || c.fileext || item.content?.file_ext || item.content?.fileext || '-';
-                const text = c.all_text || c.alltext || c.text || item.content?.all_text || item.content?.alltext || '';
-                const indexed = c.indexed_at || c.indexedat || data.indexed_at || data.indexedat || '';
-
-                const safeTitle = escapeHtml(title);
-                const safeOrigin = escapeHtml(origin);
-                const safeCategory = escapeHtml(category);
-                const safeExt = escapeHtml(ext);
-                const safeIndexed = escapeHtml(indexed ? indexed.substring(0, 10) : '-');
-                const safeText = highlightEscapedText(text || '본문 데이터 없음', getHighlightTokens());
-
-                try {
-                    sessionStorage.setItem(SEARCH_SCROLL_KEY, String(window.scrollY || 0));
-                    sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify(buildSearchState()));
-                } catch (_) {
-                    // ignore persistence errors
-                }
-                win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${safeTitle}</title>
-<style>
-    body { font-family: 'Malgun Gothic', sans-serif; background: #f3f6fb; color: #334155; margin: 0; padding: 2rem; line-height: 1.7; }
-  .container { max-width: 900px; margin: 0 auto; }
-        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-    h1 { color: #4f46e5; font-size: 1.5rem; border-bottom: 2px solid #d6dfec; padding-bottom: 0.5rem; }
-    .meta { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1rem 0; font-size: 0.85rem; color: #64748b; }
-    .meta span { background: #ffffff; border: 1px solid #d6dfec; padding: 4px 10px; border-radius: 6px; }
-    .content { background: #ffffff; border: 1px solid #d6dfec; border-radius: 8px; padding: 1.5rem; white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; max-height: 70vh; overflow-y: auto; }
-        .close-btn { display: inline-block; margin-top: 1rem; color: #4f46e5; cursor: pointer; text-decoration: underline; border: none; background: transparent; padding: 0; font: inherit; }
-</style></head><body>
-<div class="container">
-        <h1><span aria-hidden="true">📄</span><span class="sr-only">문서 제목</span> ${safeTitle}</h1>
-  <div class="meta">
-                <span><span aria-hidden="true">📁</span> 파일명: ${safeOrigin}</span>
-                <span><span aria-hidden="true">📂</span> 카테고리: ${safeCategory}</span>
-                <span><span aria-hidden="true">📋</span> 확장자: ${safeExt}</span>
-                <span><span aria-hidden="true">📅</span> 색인일: ${safeIndexed}</span>
-  </div>
-    <div class="content">${safeText}</div>
-    <button class="close-btn" type="button" onclick="window.close()" aria-label="문서 창 닫기">← 닫기</button>
-</div></body></html>`);
-                win.document.close();
-            } catch (e) {
-                const safeMsg = escapeHtml(e?.message || '문서 로드 실패');
-                win.document.write(`<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>문서 로드 실패</title>
-<style>
-    body { font-family: 'Malgun Gothic', sans-serif; background: #f8fafc; color: #334155; margin: 0; padding: 2rem; }
-    .panel { max-width: 900px; margin: 0 auto; background: #fff; border: 1px solid #d6dfec; border-radius: 10px; padding: 1rem 1.25rem; }
-    .error { color: #b91c1c; margin: 0 0 0.75rem; }
-    a { color: #4f46e5; }
-</style></head><body>
-<div class="panel">
-    <p class="error">문서를 새 창에서 렌더링하지 못했습니다: ${safeMsg}</p>
-    <p><a href="${SEARCH_API}/read/${safeDocId}" target="_self" rel="noopener">원본 응답 열기</a></p>
-    <button type="button" onclick="window.close()">창 닫기</button>
-</div>
-</body></html>`);
-                win.document.close();
-            }
+        // A real URL lets the new tab load independently of its opener.
+        function buildDocumentUrl(docId) {
+            const params = new URLSearchParams({
+                id: String(docId ?? ''),
+                q: getHighlightTokens().join(' '),
+            });
+            return `/static/user/document.html?${params.toString()}`;
         }
+
+        function openDocumentView(docId) {
+            try {
+                sessionStorage.setItem(SEARCH_SCROLL_KEY, String(window.scrollY || 0));
+                sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify(buildSearchState()));
+            } catch (_) {
+                // Storage may be disabled; opening the document still works.
+            }
+            window.open(buildDocumentUrl(docId), '_blank', 'noopener');
+        }
+
+        // CSP 호환 UI 이벤트 (인라인 onclick 사용 금지)
+        const searchHomeLogo = document.getElementById('searchHomeLogo');
+        searchHomeLogo.addEventListener('click', goHome);
+        searchHomeLogo.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                goHome();
+            }
+        });
+        document.getElementById('searchSubmitBtn').addEventListener('click', resetFiltersAndSearch);
+        document.getElementById('categoryTabs').addEventListener('click', (event) => {
+            const button = event.target.closest('.category-tab');
+            if (button?.dataset.category) filterCategory(button.dataset.category);
+        });
 
         // 필터 변경 감지 이벤트
         document.getElementById('dateFilter').addEventListener('change', () => {

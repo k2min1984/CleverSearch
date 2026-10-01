@@ -34,7 +34,8 @@ class TestAuthSecurity(unittest.TestCase):
                 headers={"X-Role": "viewer"},
                 json={"index_name": "auth-test-index-xrole", "shards": 1, "replicas": 0},
             )
-            self.assertEqual(viewer_forbidden.status_code, 403)
+            # X-Role is no longer authentication; unauthenticated requests are 401.
+            self.assertEqual(viewer_forbidden.status_code, 401)
 
             admin_allowed = client.post(
                 "/api/v1/system/volume/create",

@@ -28,17 +28,19 @@ from app.common.utils import DocumentUtils
 from app.common.embedding import embedder  #[추가] AI 벡터 변환기 가져오기
 from app.services.indexing_service import IndexingService
 from app.services.db_service import DBService
+from app.core.config import settings
 from app.core.security import require_role
 from app.services.upload_security_service import (
     MAX_UPLOAD_SIZE,
     build_safe_filenames,
     read_upload_limited,
     validate_signature,
+    validate_upload_batch,
 )
 
 router = APIRouter()
 client = get_client()
-INDEX_NAME = "cleversearch-docs"
+INDEX_NAME = settings.OPENSEARCH_INDEX
 
 # 허용된 확장자 목록 (doc, ppt는 라이브러리 미지원으로 제외)
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'hwp', 'hwpx', 'pdf', 'docx', 'pptx', 'jpg', 'jpeg', 'png'}
@@ -48,7 +50,7 @@ def ensure_index():
     try:
         IndexingService.ensure_index()
     except Exception as e:
-        print(f"❌ 인덱스 생성 실패: {str(e)}")
+        print(f"[ERROR] 인덱스 생성 실패: {str(e)}")
 
 
 async def _process_uploaded_file(file: UploadFile) -> dict:
@@ -168,11 +170,8 @@ async def upload_file_sync(file: UploadFile = File(...), request_id: str = Form(
 @router.post("/upload-multiple")
 async def upload_multiple_files(files: list[UploadFile] = File(...)):
     """다중 파일 업로드 처리. 파일별 결과를 모두 반환합니다."""
+    await validate_upload_batch(files)
     ensure_index()
-
-    if not files:
-        raise HTTPException(status_code=400, detail="업로드할 파일이 없습니다")
-
     results = []
     for upload_file in files:
         results.append(await _process_uploaded_file(upload_file))
@@ -285,7 +284,7 @@ async def search_documents(keyword: str = Query(...)):
 
     # 백엔드에서 실제로 몇 점을 주고 있는지 멱살 잡고 확인하기
     if res['hits']['hits']:
-        print(f"👉 [디버그] 검색어: '{keyword}' / 1등 문서 점수: {res['hits']['hits'][0]['_score']}")
+        print(f"[DEBUG] 검색어: '{keyword}' / 1등 문서 점수: {res['hits']['hits'][0]['_score']}")
 
     # 검색된 문서 리스트 반환
     return res['hits']['hits']

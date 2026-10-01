@@ -78,9 +78,9 @@ def create_index():
     try:
         if not client.indices.exists(index=index_name):
             client.indices.create(index=index_name, body=body)
-            print(f"✅ 인덱스 생성 완료: '{index_name}' (Nori Analyzer 적용됨)")
+            print(f"[OPENSEARCH][PASS] 인덱스 생성 완료: '{index_name}' (Nori Analyzer 적용됨)")
         else:
-            print(f"ℹ️ 인덱스가 이미 존재합니다: '{index_name}'")
+            print(f"[OPENSEARCH][INFO] 인덱스가 이미 존재합니다: '{index_name}'")
     except Exception as e:
         raise RuntimeError(
             f"인덱스 초기화 실패(index={index_name}): {e}"

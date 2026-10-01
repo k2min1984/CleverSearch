@@ -17,11 +17,12 @@ from app.schemas.search_schema import SearchRequest
 from app.services.search_service import SearchService
 from app.common.utils import DocumentUtils
 from app.core.opensearch import get_client  # 지렁이 줄을 없애줄 녀석입니다!
+from app.core.config import settings
 from app.core.security import require_role
 
 # OpenSearch 통신용 변수 세팅
 client = get_client()
-INDEX_NAME = "cleversearch-docs"
+INDEX_NAME = settings.OPENSEARCH_INDEX
 
 router = APIRouter()
 

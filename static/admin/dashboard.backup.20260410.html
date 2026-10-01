@@ -19,8 +19,8 @@
         </div>
         <div class="flex flex-wrap gap-2">
             <input id="dashboardDays" type="number" min="1" value="7" class="w-20" />
-            <button onclick="runSmokeFromUI()" class="btn-soft px-3 py-2 text-sm">스모크 실행</button>
-            <button onclick="toggleDashboardDebug()" class="btn-soft px-3 py-2 text-sm">디버그</button>
+            <button id="dashboardSmokeBtn" type="button" class="btn-soft px-3 py-2 text-sm">스모크 실행</button>
+            <button id="dashboardDebugBtn" type="button" class="btn-soft px-3 py-2 text-sm">디버그</button>
         </div>
     </div>
 
@@ -145,4 +145,6 @@ async function runSmokeFromUI() {
 }
 
 document.getElementById("dashboardDays")?.addEventListener("change", loadDashboard);
+document.getElementById("dashboardSmokeBtn")?.addEventListener("click", runSmokeFromUI);
+document.getElementById("dashboardDebugBtn")?.addEventListener("click", toggleDashboardDebug);
 </script>

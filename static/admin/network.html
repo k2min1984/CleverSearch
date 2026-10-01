@@ -22,9 +22,9 @@
     <div class="flex flex-wrap gap-2 items-center">
         <label class="text-sm text-gray-400">감시 간격(초):</label>
         <input id="monInterval" type="number" min="10" max="600" value="30" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
-        <button onclick="startMonitor()" class="admin-write px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
-        <button onclick="stopMonitor()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">중지</button>
-        <button onclick="loadMonitorStatus()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">상태 확인</button>
+        <button id="netStartBtn" type="button" class="admin-write px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-sm">시작</button>
+        <button id="netStopBtn" type="button" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">중지</button>
+        <button id="netStatusBtn" type="button" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">상태 확인</button>
     </div>
     <div id="monStatusBox" class="mt-2 text-sm"></div>
 </div>
@@ -46,14 +46,14 @@
     </select>
     <input id="netFilterName" placeholder="소스명 (선택)" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-40" />
     <input id="netFilterLimit" type="number" placeholder="조회 수" value="100" min="1" max="1000" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-24" />
-    <button onclick="loadNetworkEvents()" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">조회</button>
-    <button onclick="toggleNetView()" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
+    <button id="netLoadBtn" type="button" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-sm">조회</button>
+    <button id="netToggleViewBtn" type="button" class="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 text-sm">JSON / 리스트 전환</button>
 </div>
 
 <!-- 이력 삭제 -->
 <div class="flex flex-wrap gap-2 mb-3 items-center">
     <input id="netDeleteDays" type="number" placeholder="N일 이전 삭제" value="90" min="1" max="365" class="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm w-36" />
-    <button onclick="deleteNetworkEvents()" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">이력 정리</button>
+    <button id="netDeleteBtn" type="button" class="admin-write px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-sm">이력 정리</button>
     <span class="text-xs text-gray-500">※ 지정 일수 이전의 네트워크 이벤트를 일괄 삭제합니다</span>
 </div>
 
@@ -158,6 +158,13 @@ function toggleNetView() {
     document.getElementById("netOutput").classList.toggle("hidden");
     document.getElementById("netList").classList.toggle("hidden");
 }
+
+document.getElementById("netStartBtn")?.addEventListener("click", startMonitor);
+document.getElementById("netStopBtn")?.addEventListener("click", stopMonitor);
+document.getElementById("netStatusBtn")?.addEventListener("click", loadMonitorStatus);
+document.getElementById("netLoadBtn")?.addEventListener("click", loadNetworkEvents);
+document.getElementById("netToggleViewBtn")?.addEventListener("click", toggleNetView);
+document.getElementById("netDeleteBtn")?.addEventListener("click", deleteNetworkEvents);
 
 loadMonitorStatus();
 loadNetworkEvents();

@@ -117,7 +117,7 @@ class SmbSource(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(120), nullable=False, unique=True, index=True)
-    connection_type = Column(String(10), nullable=False, default="smb", index=True)  # smb / ssh
+    connection_type = Column(String(10), nullable=False, default="smb", index=True)  # smb / ssh / local
     share_path = Column(String(400), nullable=False)
     username = Column(String(200), nullable=True)
     password = Column(String(200), nullable=True)

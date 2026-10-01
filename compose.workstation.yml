@@ -1,0 +1,43 @@
+name: cleversearch-workstation
+services:
+  postgres:
+    image: postgres:16
+    container_name: cleversearch-workstation-pg
+    environment:
+      POSTGRES_DB: cleversearch_local
+      POSTGRES_USER: cleversearch
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Use --env-file .env.workstation}
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - workstation-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cleversearch -d cleversearch_local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  opensearch:
+    image: cleversearch-opensearch:latest
+    build:
+      context: .
+      dockerfile: opensearch.Dockerfile
+    container_name: cleversearch-workstation-os
+    environment:
+      discovery.type: single-node
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms1g -Xmx1g"
+    ports:
+      - "127.0.0.1:19200:9200"
+    volumes:
+      - workstation-os:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  workstation-pg:
+  workstation-os:

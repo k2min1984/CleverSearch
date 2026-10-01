@@ -307,6 +307,11 @@ async def add_security_headers(request: Request, call_next):
             headers=copied_headers,
             media_type=media_type,
         )
+        # 관리자 프래그먼트/검색 UI의 이전 이벤트 속성이 브라우저 캐시에
+        # 남아 CSP 오류를 재발시키지 않도록 HTML은 항상 재검증 없이 새로 받습니다.
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     # Swagger/ReDoc 경로는 cdn.jsdelivr.net 리소스가 필요하므로 별도 CSP 적용
     _docs_paths = ("/docs", "/redoc", "/openapi.json")
     _admin_ui_path = request.url.path == "/admin" or request.url.path.startswith("/static/admin/")
